@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Share2,
   Receipt,
+  Trash2,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, formatPhone, amountToWords, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
@@ -39,6 +40,7 @@ export default function ChallanDetailPage() {
     updateChallanStatus,
     updateShareStatus,
     duplicateChallan,
+    deleteChallan,
     showToast,
     isLoading,
   } = useApp();
@@ -46,6 +48,7 @@ export default function ChallanDetailPage() {
   const [mounted, setMounted] = useState(false);
   const [challan, setChallan] = useState<Challan | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [viewMode, setViewMode] = useState<'challan' | 'bill'>('challan');
 
   useEffect(() => {
@@ -167,6 +170,13 @@ export default function ChallanDetailPage() {
     showToast(`Challan ${challan.challan_number} marked as cancelled`);
   };
 
+  const confirmDelete = () => {
+    deleteChallan(challan.id);
+    showToast(`Challan ${challan.challan_number} permanently deleted`, 'success');
+    setShowDeleteModal(false);
+    router.push('/challans');
+  };
+
   return (
     <div className="space-y-4 pb-20 sm:pb-8 max-w-4xl mx-auto">
       {/* Top Header & Fast Action Bar */}
@@ -263,12 +273,20 @@ export default function ChallanDetailPage() {
             {challan.status !== 'cancelled' && (
               <button
                 onClick={() => setShowCancelModal(true)}
-                className="btn-ghost py-1.5 px-2 text-xs font-medium text-red-500 hover:bg-red-50"
+                className="btn-ghost py-1.5 px-2 text-xs font-medium text-amber-600 hover:bg-amber-50"
                 title="Cancel Challan"
               >
                 <Ban size={14} />
               </button>
             )}
+
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="btn-ghost py-1.5 px-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
+              title="Delete Challan Permanently"
+            >
+              <Trash2 size={15} />
+            </button>
           </div>
         </div>
       </div>
@@ -643,10 +661,21 @@ export default function ChallanDetailPage() {
         isOpen={showCancelModal}
         title="Cancel Challan?"
         message={`Are you sure you want to mark challan ${challan.challan_number} as cancelled?`}
-        variant="danger"
+        variant="warning"
         confirmLabel="Yes, Cancel"
         onConfirm={confirmCancel}
         onCancel={() => setShowCancelModal(false)}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteModal}
+        title="Delete Challan Permanently?"
+        message={`Are you sure you want to permanently delete challan ${challan.challan_number}? This cannot be undone and will delete it from all databases.`}
+        variant="danger"
+        confirmLabel="Yes, Delete Permanently"
+        onConfirm={confirmDelete}
+        onCancel={() => setShowDeleteModal(false)}
       />
     </div>
   );

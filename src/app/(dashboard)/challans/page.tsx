@@ -27,12 +27,14 @@ import {
   ChevronRight,
   LayoutList,
   Layers,
+  Trash2,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
 import { openWhatsApp, generateShareMessage } from '@/lib/whatsapp';
+import { SwipeableChallanCard } from '@/components/challans/swipeable-challan-card';
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
   const badgeClasses: Record<ChallanStatus, string> = {
@@ -62,6 +64,7 @@ export default function ChallansPage() {
     updateChallanStatus,
     updateShareStatus,
     duplicateChallan,
+    deleteChallan,
     isLoading,
   } = useApp();
 
@@ -73,6 +76,7 @@ export default function ChallansPage() {
   const [viewMode, setViewMode] = useState<'list' | 'company' | 'creator'>('list');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [cancelModalChallan, setCancelModalChallan] = useState<Challan | null>(null);
+  const [deleteModalChallan, setDeleteModalChallan] = useState<Challan | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -214,6 +218,14 @@ export default function ChallansPage() {
     updateChallanStatus(cancelModalChallan.id, 'cancelled');
     showToast(`Challan ${cancelModalChallan.challan_number} marked as cancelled`);
     setCancelModalChallan(null);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteModalChallan) return;
+    const num = deleteModalChallan.challan_number;
+    deleteChallan(deleteModalChallan.id);
+    showToast(`Challan ${num} permanently deleted`, 'success');
+    setDeleteModalChallan(null);
   };
 
   if (!mounted || isLoading) {
@@ -485,54 +497,15 @@ export default function ChallansPage() {
 
                 {/* Company Challans */}
                 {!isCollapsed && (
-                  <div className="p-2 sm:p-3 space-y-2 bg-white">
+                  <div className="p-2 sm:p-3 space-y-2 bg-surface-50/30">
                     {group.items.map((challan) => (
-                      <div
+                      <SwipeableChallanCard
                         key={challan.id}
-                        onClick={() => router.push(`/challans/${challan.id}`)}
-                        className="p-2.5 rounded-lg border border-surface-100 hover:border-surface-300 hover:bg-surface-50/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer text-xs"
-                      >
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-bold text-primary-600">
-                            {challan.challan_number}
-                          </span>
-                          <span className="text-surface-400">•</span>
-                          <span className="text-surface-600">
-                            {formatDateIndian(challan.challan_date)}
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-100 text-surface-700 border border-surface-200 font-semibold">
-                            By {challan.created_by || challan.prepared_by || 'Rushank'}
-                          </span>
-                          <StatusBadge status={challan.status} />
-                        </div>
-
-                        <div className="flex items-center justify-between sm:justify-end gap-3">
-                          <span className="text-surface-600 font-medium">
-                            {challan.total_quantity} {challan.items?.[0]?.unit || 'sheets'}
-                          </span>
-                          {challan.total_amount && challan.total_amount > 0 ? (
-                            <span className="font-mono font-bold text-surface-900 bg-surface-50 border border-surface-200 px-1.5 py-0.5 rounded text-xs">
-                              ₹{challan.total_amount.toLocaleString('en-IN')}
-                            </span>
-                          ) : null}
-                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => router.push(`/challans/${challan.id}/bill`)}
-                              className="p-1 text-[#b8860b] hover:bg-[#b8860b]/10 rounded"
-                              title="View Memo Bill Slip"
-                            >
-                              <Receipt size={14} />
-                            </button>
-                            <button
-                              onClick={(e) => handlePrint(challan, e)}
-                              className="p-1 text-surface-500 hover:bg-surface-100 rounded"
-                              title="Print"
-                            >
-                              <Printer size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                        challan={challan}
+                        onDelete={(c) => setDeleteModalChallan(c)}
+                        onPrint={handlePrint}
+                        onWhatsApp={handleWhatsApp}
+                      />
                     ))}
                   </div>
                 )}
@@ -603,55 +576,15 @@ export default function ChallansPage() {
 
                 {/* Creator Challans */}
                 {!isCollapsed && (
-                  <div className="p-2 sm:p-3 space-y-2 bg-white">
+                  <div className="p-2 sm:p-3 space-y-2 bg-surface-50/30">
                     {group.items.map((challan) => (
-                      <div
+                      <SwipeableChallanCard
                         key={challan.id}
-                        onClick={() => router.push(`/challans/${challan.id}`)}
-                        className="p-2.5 rounded-lg border border-surface-100 hover:border-surface-300 hover:bg-surface-50/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer text-xs"
-                      >
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-bold text-primary-600">
-                            {challan.challan_number}
-                          </span>
-                          <span className="text-surface-400">•</span>
-                          <span className="font-semibold text-surface-900">
-                            {challan.customer_name}
-                          </span>
-                          <span className="text-surface-400">•</span>
-                          <span className="text-surface-500">
-                            {formatDateIndian(challan.challan_date)}
-                          </span>
-                          <StatusBadge status={challan.status} />
-                        </div>
-
-                        <div className="flex items-center justify-between sm:justify-end gap-3">
-                          <span className="text-surface-600 font-medium">
-                            {challan.total_quantity} {challan.items?.[0]?.unit || 'sheets'}
-                          </span>
-                          {challan.total_amount && challan.total_amount > 0 ? (
-                            <span className="font-mono font-bold text-surface-900 bg-surface-50 border border-surface-200 px-1.5 py-0.5 rounded text-xs">
-                              ₹{challan.total_amount.toLocaleString('en-IN')}
-                            </span>
-                          ) : null}
-                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => router.push(`/challans/${challan.id}/bill`)}
-                              className="p-1 text-[#b8860b] hover:bg-[#b8860b]/10 rounded"
-                              title="View Memo Bill Slip"
-                            >
-                              <Receipt size={14} />
-                            </button>
-                            <button
-                              onClick={(e) => handlePrint(challan, e)}
-                              className="p-1 text-surface-500 hover:bg-surface-100 rounded"
-                              title="Print"
-                            >
-                              <Printer size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                        challan={challan}
+                        onDelete={(c) => setDeleteModalChallan(c)}
+                        onPrint={handlePrint}
+                        onWhatsApp={handleWhatsApp}
+                      />
                     ))}
                   </div>
                 )}
@@ -661,105 +594,16 @@ export default function ChallansPage() {
         </div>
       ) : (
         <>
-          {/* Mobile Card List (Ultra-Responsive & Zero Horizontal Overflow) */}
+          {/* Mobile Card List (Apple Motion 60 FPS Swipe-to-Delete) */}
           <div className="md:hidden space-y-2.5">
             {challans.map((challan) => (
-              <div
+              <SwipeableChallanCard
                 key={challan.id}
-                onClick={() => router.push(`/challans/${challan.id}`)}
-                className="card p-3 active:scale-[0.99] transition-transform shadow-xs hover:border-surface-300"
-              >
-                {/* Header row: Number, Date, Status */}
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono font-bold text-primary-600 text-sm">
-                      {challan.challan_number}
-                    </span>
-                    <span className="text-[11px] text-surface-400">
-                      • {formatDateIndian(challan.challan_date)}
-                    </span>
-                  </div>
-                  <StatusBadge status={challan.status} />
-                </div>
-
-                {/* Customer name & Item snippet */}
-                <div className="py-1.5 border-y border-surface-100">
-                  <div className="font-semibold text-xs text-surface-900 truncate">
-                    {challan.customer_name}
-                  </div>
-                  <div className="text-[11px] text-surface-500 truncate mt-0.5">
-                    {challan.items && challan.items[0]?.item_description ? (
-                      <span>
-                        {challan.items[0].item_description}
-                        {challan.items.length > 1 && ` (+${challan.items.length - 1} more)`}
-                      </span>
-                    ) : (
-                      'No items specified'
-                    )}
-                  </div>
-                </div>
-
-                {/* Footer row: Total Quantity, Total Amount & 1-Tap Action Icons */}
-                <div className="flex items-center justify-between pt-2">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-bold text-surface-800">
-                      {challan.total_quantity}{' '}
-                      <span className="font-normal text-[11px] text-surface-400">
-                        {challan.items?.[0]?.unit || 'sheets'}
-                      </span>
-                    </span>
-                    {challan.total_amount && challan.total_amount > 0 ? (
-                      <span className="font-mono text-primary-700 bg-primary-50 border border-primary-200 px-1.5 py-0.5 rounded text-[11px] font-bold flex items-center gap-1">
-                        {challan.apply_gst && (
-                          <span className="text-[9px] uppercase font-bold text-emerald-700 bg-emerald-100/70 px-1 rounded">
-                            GST
-                          </span>
-                        )}
-                        ₹{challan.total_amount.toLocaleString('en-IN')}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/challans/${challan.id}/bill`);
-                      }}
-                      className="p-1.5 bg-[#b8860b]/10 text-[#b8860b] rounded-md hover:bg-[#b8860b]/20"
-                      title="View After-Delivery Bill Slip"
-                    >
-                      <Receipt size={15} />
-                    </button>
-                    <button
-                      onClick={(e) => handlePrint(challan, e)}
-                      className="p-1.5 bg-surface-100 text-surface-700 rounded-md hover:bg-surface-200"
-                      title="Print / PDF"
-                    >
-                      <Printer size={15} />
-                    </button>
-                    {challan.customer_phone && (
-                      <button
-                        onClick={(e) => handleWhatsApp(challan, e)}
-                        className="p-1.5 bg-emerald-50 text-emerald-700 rounded-md hover:bg-emerald-100"
-                        title="WhatsApp Share"
-                      >
-                        <Send size={15} />
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/challans/${challan.id}/edit`);
-                      }}
-                      className="p-1.5 bg-surface-100 text-surface-700 rounded-md hover:bg-surface-200"
-                      title="Edit"
-                    >
-                      <Edit size={15} />
-                    </button>
-                  </div>
-                </div>
-              </div>
+                challan={challan}
+                onDelete={(c) => setDeleteModalChallan(c)}
+                onPrint={handlePrint}
+                onWhatsApp={handleWhatsApp}
+              />
             ))}
           </div>
 
@@ -888,6 +732,16 @@ export default function ChallansPage() {
                           >
                             <Copy size={15} />
                           </button>
+                          <button
+                            title="Delete Challan"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteModalChallan(challan);
+                            }}
+                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -914,6 +768,17 @@ export default function ChallansPage() {
         confirmLabel="Yes, Cancel"
         onConfirm={confirmCancel}
         onCancel={() => setCancelModalChallan(null)}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteModalChallan}
+        title="Delete Challan Permanently?"
+        message={`Are you sure you want to permanently delete challan ${deleteModalChallan?.challan_number} for ${deleteModalChallan?.customer_name}? This will remove it from the system and cloud database.`}
+        variant="danger"
+        confirmLabel="Yes, Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteModalChallan(null)}
       />
     </div>
   );

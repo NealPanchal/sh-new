@@ -20,17 +20,28 @@ import {
   LayoutList,
   ChevronDown,
   ChevronUp,
+  Trash2,
 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function DeliveryBillsPage() {
   const router = useRouter();
-  const { getChallans, profile, showToast, isLoading } = useApp();
+  const { getChallans, profile, deleteChallan, showToast, isLoading } = useApp();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
   const [creatorFilter, setCreatorFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'list' | 'company' | 'creator'>('list');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [deleteModalChallan, setDeleteModalChallan] = useState<Challan | null>(null);
+
+  const confirmDelete = () => {
+    if (!deleteModalChallan) return;
+    const num = deleteModalChallan.reference_number || deleteModalChallan.challan_number;
+    deleteChallan(deleteModalChallan.id);
+    showToast(`Bill / Challan ${num} permanently deleted`, 'success');
+    setDeleteModalChallan(null);
+  };
 
   React.useEffect(() => {
     setMounted(true);
@@ -233,6 +244,13 @@ export default function DeliveryBillsPage() {
             >
               <Eye size={13} />
               <span>View Slip</span>
+            </button>
+            <button
+              onClick={() => setDeleteModalChallan(c)}
+              className="p-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-md border border-rose-200/60"
+              title="Delete Bill"
+            >
+              <Trash2 size={13} />
             </button>
           </div>
         </div>
@@ -660,6 +678,16 @@ export default function DeliveryBillsPage() {
                               <Receipt size={13} className="text-[#b8860b]" />
                               <span>View Slip</span>
                             </button>
+                            <button
+                              title="Delete Bill"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteModalChallan(c);
+                              }}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -671,6 +699,17 @@ export default function DeliveryBillsPage() {
           </div>
         </>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteModalChallan}
+        title="Delete Delivery Bill?"
+        message={`Are you sure you want to permanently delete delivery bill #${deleteModalChallan?.reference_number || deleteModalChallan?.challan_number}? This will permanently remove it from the system.`}
+        variant="danger"
+        confirmLabel="Yes, Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteModalChallan(null)}
+      />
     </div>
   );
 }

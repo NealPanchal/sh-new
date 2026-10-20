@@ -379,3 +379,36 @@
     size: auto;
   }
 }
+
+/* Apple Motion 60 FPS & PWA Smoothness */
+:root {
+  --apple-ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --apple-spring: cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.apple-spring {
+  transition-timing-function: var(--apple-spring);
+}
+
+.apple-blur {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.apple-card-press {
+  transition: transform 150ms var(--apple-ease), box-shadow 150ms var(--apple-ease);
+}
+
+.apple-card-press:active {
+  transform: scale(0.98);
+}
+
