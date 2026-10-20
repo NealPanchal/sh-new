@@ -16,6 +16,7 @@ import {
   Package,
   ArrowRight,
   X,
+  Receipt,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
@@ -149,7 +150,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Fast Navigation Shortcuts */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         <Link
           href="/challans/new"
           className="p-2.5 rounded-lg border border-primary-200 bg-primary-50/60 hover:bg-primary-100/70 transition-colors flex items-center gap-2"
@@ -160,6 +161,19 @@ export default function DashboardPage() {
           <div className="truncate">
             <span className="font-bold text-xs text-primary-900 block leading-tight">Create Challan</span>
             <span className="text-[10px] text-primary-700">Quick dispatch</span>
+          </div>
+        </Link>
+
+        <Link
+          href="/bills"
+          className="p-2.5 rounded-lg border border-[#b8860b]/30 bg-[#b8860b]/10 hover:bg-[#b8860b]/20 transition-colors flex items-center gap-2"
+        >
+          <div className="w-8 h-8 rounded-md bg-[#b8860b] text-white flex items-center justify-center shrink-0">
+            <Receipt size={16} />
+          </div>
+          <div className="truncate">
+            <span className="font-bold text-xs text-surface-900 block leading-tight">Delivery Bills</span>
+            <span className="text-[10px] text-[#b8860b] font-medium">Showhouse slips</span>
           </div>
         </Link>
 

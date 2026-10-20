@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   FilePlus,
   FileText,
+  Receipt,
   Users,
   Package,
   Settings,
@@ -19,6 +20,7 @@ export const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/challans/new', label: 'New Challan', icon: FilePlus },
   { href: '/challans', label: 'All Challans', icon: FileText },
+  { href: '/bills', label: 'Delivery Bills', icon: Receipt },
   { href: '/customers', label: 'Customers', icon: Users },
   { href: '/products', label: 'Products', icon: Package },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -156,8 +158,8 @@ export function MobileNav() {
     { href: '/', label: 'Home', icon: LayoutDashboard },
     { href: '/challans', label: 'Challans', icon: FileText },
     { href: '/challans/new', label: 'New', icon: Plus, isAction: true },
+    { href: '/bills', label: 'Bills', icon: Receipt },
     { href: '/customers', label: 'Customers', icon: Users },
-    { href: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (

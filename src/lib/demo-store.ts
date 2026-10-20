@@ -89,11 +89,13 @@ export function saveProfile(data: Partial<BusinessProfile>): BusinessProfile {
       id: generateId(),
       user_id: 'demo-user',
       business_name: 'SHOWHOUSE',
+      tagline: 'Decor Studio',
+      legal_name: 'Showhouse Concept & Design LLP',
       logo_url: null,
-      address: '',
-      phone: '',
-      email: null,
-      gstin: null,
+      address: 'Vishram Baug, Near Makhmali Talao, LBS Marg, Thane (W) - 400602',
+      phone: '+91 93248 69306 / 022 - 2538 7683',
+      email: 'foxshowhouse@gmail.com',
+      gstin: '27ACMF53838C1ZY',
       challan_prefix: 'SH',
       financial_year_start_month: 4,
       default_unit: 'sheets',
@@ -546,21 +548,31 @@ export function seedDemoData(): void {
   // Create demo profile
   saveProfile({
     business_name: 'SHOWHOUSE',
-    address: '123, Industrial Area, Phase-2\nPanchkula, Haryana 134109',
-    phone: '9876543210',
-    email: 'info@showhouse.in',
-    gstin: '06AABCS1234E1ZN',
+    tagline: 'Decor Studio',
+    legal_name: 'Showhouse Concept & Design LLP',
+    address: 'Vishram Baug, Near Makhmali Talao, LBS Marg, Thane (W) - 400602',
+    phone: '+91 93248 69306 / 022 - 2538 7683',
+    email: 'foxshowhouse@gmail.com',
+    gstin: '27ACMF53838C1ZY',
     challan_prefix: 'SH',
     financial_year_start_month: 4,
     default_unit: 'sheets',
-    footer_message: 'Thank you for choosing Showhouse! Quality laminates for beautiful interiors.',
-    show_rate_column: false,
-    show_amount_column: false,
+    footer_message: 'Thank you for choosing Showhouse Decor Studio!',
+    show_rate_column: true,
+    show_amount_column: true,
     show_signature_area: true,
     show_prepared_by: true,
   });
 
   // Create demo customers
+  const c0 = createCustomer({
+    business_name: 'Harshad Fadnis Sir',
+    contact_person: 'Harshad Fadnis',
+    phone: '9819098961',
+    billing_address: '314, 3rd floor, Blue Nile Commercial Complex, Thane (W)',
+    delivery_address: '314, 3rd floor, Blue Nile Commercial Complex, Thane (W)',
+  });
+
   const c1 = createCustomer({
     business_name: 'Sharma Interiors',
     contact_person: 'Rajesh Sharma',
@@ -637,6 +649,30 @@ export function seedDemoData(): void {
   });
 
   // Create demo challans
+  createChallan(
+    {
+      challan_date: '2026-03-02',
+      customer_id: c0.id,
+      customer_name: c0.business_name,
+      customer_phone: c0.phone,
+      customer_address: c0.billing_address,
+      delivery_address: c0.delivery_address,
+      reference_number: '0120',
+      notes: 'Confirm By Rushank',
+      prepared_by: 'Rushank',
+      status: 'final',
+    },
+    [
+      {
+        item_description: 'Vinyl flooring',
+        unit: 'running ft',
+        quantity: 250,
+        rate: 58,
+        amount: 16240,
+      },
+    ]
+  );
+
   createChallan(
     {
       challan_date: '2026-10-20',

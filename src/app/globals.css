@@ -346,9 +346,36 @@
 @media print {
   body {
     background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
-  .no-print {
+  header,
+  aside,
+  nav,
+  .no-print,
+  .print\:hidden {
     display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .printable-challan,
+  .printable-delivery-bill {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  @page {
+    margin: 8mm;
+    size: auto;
   }
 }

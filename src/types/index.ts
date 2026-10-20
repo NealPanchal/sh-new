@@ -9,6 +9,7 @@ export interface BusinessProfile {
   user_id: string;
   business_name: string;
   tagline?: string | null;
+  legal_name?: string | null;
   logo_url: string | null;
   address: string;
   phone: string;

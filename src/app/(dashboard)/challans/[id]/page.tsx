@@ -19,12 +19,14 @@ import {
   FileText,
   AlertCircle,
   Share2,
+  Receipt,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, formatPhone, amountToWords, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
 import { openWhatsApp, generateShareMessage, tryNativeShare } from '@/lib/whatsapp';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { DeliveryMemoBill } from '@/components/challans/delivery-memo-bill';
 
 export default function ChallanDetailPage() {
   const params = useParams();
@@ -44,6 +46,7 @@ export default function ChallanDetailPage() {
   const [mounted, setMounted] = useState(false);
   const [challan, setChallan] = useState<Challan | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'challan' | 'bill'>('challan');
 
   useEffect(() => {
     setMounted(true);
@@ -191,6 +194,15 @@ export default function ChallanDetailPage() {
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            <Link
+              href={`/challans/${challan.id}/bill`}
+              className="btn-primary py-1.5 px-3 bg-[#b8860b] hover:bg-[#a07408] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+              title="After-Delivery Bill / Memo slip"
+            >
+              <Receipt size={14} />
+              <span>Bill / Memo</span>
+            </Link>
+
             {challan.customer_phone && (
               <button
                 onClick={handleWhatsApp}
@@ -205,7 +217,7 @@ export default function ChallanDetailPage() {
             <button
               onClick={handlePrint}
               className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
-              title="Print Challan Document"
+              title="Print Document"
             >
               <Printer size={14} />
               <span>Print</span>
@@ -249,8 +261,45 @@ export default function ChallanDetailPage() {
         </div>
       </div>
 
-      {/* Visual A4 Delivery Challan Card */}
-      <div className="card p-4 sm:p-8 bg-white shadow-xs border border-surface-200 printable-challan">
+      {/* Format Toggle Tabs */}
+      <div className="flex items-center gap-2 border-b border-surface-200 pb-2">
+        <button
+          onClick={() => setViewMode('challan')}
+          className={cn(
+            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5',
+            viewMode === 'challan'
+              ? 'bg-surface-900 text-white shadow-xs'
+              : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+          )}
+        >
+          <FileText size={14} />
+          <span>Delivery Challan (A4)</span>
+        </button>
+
+        <button
+          onClick={() => setViewMode('bill')}
+          className={cn(
+            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5',
+            viewMode === 'bill'
+              ? 'bg-[#b8860b] text-white shadow-xs'
+              : 'bg-[#b8860b]/10 text-[#b8860b] hover:bg-[#b8860b]/20 border border-[#b8860b]/30'
+          )}
+        >
+          <Receipt size={14} />
+          <span>After-Delivery Bill (Showhouse Slip)</span>
+          <span className="text-[9px] bg-white text-[#b8860b] px-1.5 py-0.2 rounded-full font-extrabold uppercase">
+            Shop Format
+          </span>
+        </button>
+      </div>
+
+      {/* Conditionally render the selected view */}
+      {viewMode === 'bill' ? (
+        <div className="printable-delivery-bill">
+          <DeliveryMemoBill challan={challan} profile={profile} />
+        </div>
+      ) : (
+        <div className="card p-4 sm:p-8 bg-white shadow-xs border border-surface-200 printable-challan">
         {/* Business Header */}
         <div className="border-b-2 border-primary-500 pb-4 mb-4">
           <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
@@ -471,6 +520,7 @@ export default function ChallanDetailPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Cancel Confirmation Dialog */}
       <ConfirmDialog

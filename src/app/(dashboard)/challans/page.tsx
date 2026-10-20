@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Ban,
   ArrowRight,
+  Receipt,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
@@ -311,6 +312,16 @@ export default function ChallansPage() {
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/challans/${challan.id}/bill`);
+                      }}
+                      className="p-1.5 bg-[#b8860b]/10 text-[#b8860b] rounded-md hover:bg-[#b8860b]/20"
+                      title="View After-Delivery Bill Slip"
+                    >
+                      <Receipt size={15} />
+                    </button>
+                    <button
                       onClick={(e) => handlePrint(challan, e)}
                       className="p-1.5 bg-surface-100 text-surface-700 rounded-md hover:bg-surface-200"
                       title="Print / PDF"
@@ -407,6 +418,16 @@ export default function ChallansPage() {
                             className="p-1.5 text-surface-500 hover:text-primary-600 hover:bg-surface-100 rounded-md transition-colors"
                           >
                             <Eye size={15} />
+                          </button>
+                          <button
+                            title="View After-Delivery Bill Slip"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/challans/${challan.id}/bill`);
+                            }}
+                            className="p-1.5 text-[#b8860b] hover:bg-[#b8860b]/10 rounded-md transition-colors"
+                          >
+                            <Receipt size={15} />
                           </button>
                           <button
                             title="Print Challan"
