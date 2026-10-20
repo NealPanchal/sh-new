@@ -4,7 +4,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Challan, ChallanItem, BusinessProfile } from '@/types';
-import { formatDateIndian, formatINR, formatPhone } from '@/lib/utils';
+import { formatDateIndian, formatPhone } from '@/lib/utils';
 
 interface PDFOptions {
   challan: Challan;
@@ -12,18 +12,30 @@ interface PDFOptions {
   profile: BusinessProfile;
 }
 
+/**
+ * Format currency numbers safely for standard jsPDF fonts without Unicode encoding corruption
+ * Avoids raw unicode Rupee symbols (₹) which render as broken superscript '¹' in standard Helvetica
+ */
+function formatPdfNum(amount: number | null | undefined): string {
+  if (amount == null || isNaN(Number(amount))) return '—';
+  return Number(amount).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsPDF {
   const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+  const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
   const margin = 15;
-  const contentWidth = pageWidth - margin * 2;
+  const contentWidth = pageWidth - margin * 2; // 180mm
   let y = margin;
 
   // Colors
   const darkColor: [number, number, number] = [33, 33, 33];
   const grayColor: [number, number, number] = [100, 100, 100];
-  const lightGrayColor: [number, number, number] = [180, 180, 180];
+  const lightGrayColor: [number, number, number] = [190, 190, 190];
   const accentColor: [number, number, number] = [214, 120, 41]; // Orange accent
 
   // ---- HEADER: Business Name ----
@@ -40,8 +52,10 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
 
   const addressLines = (profile.address || '').split('\n');
   addressLines.forEach((line) => {
-    doc.text(line.trim(), margin, y + 4);
-    y += 3.5;
+    if (line.trim()) {
+      doc.text(line.trim(), margin, y + 4);
+      y += 3.5;
+    }
   });
 
   if (profile.phone) {
@@ -65,11 +79,11 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
   doc.line(margin, y, pageWidth - margin, y);
   y += 6;
 
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkColor);
   doc.text('DELIVERY CHALLAN', pageWidth / 2, y, { align: 'center' });
-  y += 8;
+  y += 7;
 
   doc.setDrawColor(...lightGrayColor);
   doc.setLineWidth(0.3);
@@ -79,38 +93,41 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
   // ---- CHALLAN INFO + CUSTOMER INFO ----
   const leftCol = margin;
   const rightCol = pageWidth / 2 + 5;
+  const colMaxTextWidth = pageWidth - margin - rightCol;
 
   // Left side: Challan details
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkColor);
   doc.text('Challan No:', leftCol, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(challan.challan_number, leftCol + 28, y);
+  doc.text(challan.challan_number, leftCol + 26, y);
 
   doc.setFont('helvetica', 'bold');
   doc.text('Date:', leftCol, y + 5);
   doc.setFont('helvetica', 'normal');
-  doc.text(formatDateIndian(challan.challan_date), leftCol + 28, y + 5);
+  doc.text(formatDateIndian(challan.challan_date), leftCol + 26, y + 5);
 
   if (challan.reference_number) {
     doc.setFont('helvetica', 'bold');
     doc.text('Ref/Order No:', leftCol, y + 10);
     doc.setFont('helvetica', 'normal');
-    doc.text(challan.reference_number, leftCol + 28, y + 10);
+    doc.text(challan.reference_number, leftCol + 26, y + 10);
   }
 
-  // Right side: Customer details
+  // Right side: Customer details (safe text wrapping so nothing overflows right edge)
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkColor);
   doc.text('Customer:', rightCol, y);
-  doc.setFont('helvetica', 'bold');
-  doc.text(challan.customer_name, rightCol + 22, y);
+
+  const customerNameLines = doc.splitTextToSize(challan.customer_name || '—', colMaxTextWidth - 20);
+  doc.text(customerNameLines, rightCol + 20, y);
+
+  let rightY = y + (customerNameLines.length * 4);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayColor);
 
-  let rightY = y + 5;
   if (challan.customer_phone) {
     doc.text(`Ph: ${formatPhone(challan.customer_phone)}`, rightCol, rightY);
     rightY += 4;
@@ -120,14 +137,17 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     rightY += 4;
   }
 
-  const customerAddr = (challan.delivery_address || challan.customer_address || '').split('\n');
-  customerAddr.forEach((line) => {
-    doc.text(line.trim(), rightCol, rightY);
-    rightY += 3.5;
+  const customerAddrRaw = (challan.delivery_address || challan.customer_address || '').split('\n');
+  customerAddrRaw.forEach((line) => {
+    if (line.trim()) {
+      const wrapped = doc.splitTextToSize(line.trim(), colMaxTextWidth);
+      doc.text(wrapped, rightCol, rightY);
+      rightY += wrapped.length * 3.5;
+    }
   });
 
-  y = Math.max(y + (challan.reference_number ? 16 : 12), rightY + 2);
-  y += 4;
+  const leftY = y + (challan.reference_number ? 16 : 12);
+  y = Math.max(leftY, rightY) + 4;
 
   // ---- ITEMS TABLE ----
   const transportCharges = Number(challan.transportation_charges) || 0;
@@ -142,18 +162,25 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     hasExtraCharges ||
     applyGst;
 
-  const headers: string[] = ['S.No', 'Item Description', 'Unit', 'Qty'];
-  const colWidths: number[] = [12, contentWidth - 44, 16, 16];
+  // Explicit Column Headers & Widths (Total strictly equals contentWidth = 180mm)
+  const headers: string[] = ['Sr. No.', 'Item Description', 'Unit', 'Qty'];
+
+  const srWidth = 14;
+  const unitWidth = 16;
+  const qtyWidth = 16;
+  const rateWidth = hasRates ? 24 : 0;
+  const amountWidth = hasAmounts ? 28 : 0;
+  const descWidth = contentWidth - (srWidth + unitWidth + qtyWidth + rateWidth + amountWidth);
+
+  const colWidths: number[] = [srWidth, descWidth, unitWidth, qtyWidth];
 
   if (hasRates) {
-    headers.push('Rate');
-    colWidths[1] -= 22;
-    colWidths.push(22);
+    headers.push('Rate (Rs.)');
+    colWidths.push(rateWidth);
   }
   if (hasAmounts) {
-    headers.push('Amount');
-    colWidths[1] -= 24;
-    colWidths.push(24);
+    headers.push('Amount (Rs.)');
+    colWidths.push(amountWidth);
   }
 
   const itemsSubtotal = items.reduce(
@@ -178,15 +205,15 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     const row: (string | number)[] = [
       idx + 1,
       desc,
-      item.unit,
+      item.unit || 'sheets',
       item.quantity,
     ];
 
     if (hasRates) {
-      row.push(lineRate ? formatINR(lineRate) : '—');
+      row.push(lineRate ? formatPdfNum(lineRate) : '—');
     }
     if (hasAmounts) {
-      row.push(lineAmount ? formatINR(lineAmount) : '—');
+      row.push(lineAmount ? formatPdfNum(lineAmount) : '—');
     }
 
     return row;
@@ -196,14 +223,14 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
   if (transportCharges > 0) {
     const row: (string | number)[] = ['•', 'Transportation / Cartage Charges', '—', '—'];
     if (hasRates) row.push('—');
-    if (hasAmounts) row.push(formatINR(transportCharges));
+    if (hasAmounts) row.push(formatPdfNum(transportCharges));
     tableData.push(row);
   }
 
   if (loadingCharges > 0) {
     const row: (string | number)[] = ['•', 'Loading / Unloading Charges', '—', '—'];
     if (hasRates) row.push('—');
-    if (hasAmounts) row.push(formatINR(loadingCharges));
+    if (hasAmounts) row.push(formatPdfNum(loadingCharges));
     tableData.push(row);
   }
 
@@ -211,50 +238,54 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     if (hasExtraCharges) {
       const subRow: (string | number)[] = ['•', 'Taxable Subtotal', '—', '—'];
       if (hasRates) subRow.push('—');
-      if (hasAmounts) subRow.push(formatINR(taxableSubtotal));
+      if (hasAmounts) subRow.push(formatPdfNum(taxableSubtotal));
       tableData.push(subRow);
     }
 
     const cgstRow: (string | number)[] = ['•', 'CGST (9%)', '—', '9%'];
     if (hasRates) cgstRow.push('—');
-    if (hasAmounts) cgstRow.push(formatINR(cgstAmount));
+    if (hasAmounts) cgstRow.push(formatPdfNum(cgstAmount));
     tableData.push(cgstRow);
 
     const sgstRow: (string | number)[] = ['•', 'SGST (9%)', '—', '9%'];
     if (hasRates) sgstRow.push('—');
-    if (hasAmounts) sgstRow.push(formatINR(sgstAmount));
+    if (hasAmounts) sgstRow.push(formatPdfNum(sgstAmount));
     tableData.push(sgstRow);
   }
 
-  const rateColIdx = headers.indexOf('Rate');
-  const amountColIdx = headers.indexOf('Amount');
+  const rateColIdx = headers.indexOf('Rate (Rs.)');
+  const amountColIdx = headers.indexOf('Amount (Rs.)');
 
   autoTable(doc, {
     startY: y,
     head: [headers],
     body: tableData as (string | number)[][],
     theme: 'grid',
+    tableWidth: contentWidth,
     headStyles: {
-      fillColor: [245, 245, 245] as [number, number, number],
+      fillColor: [248, 248, 248] as [number, number, number],
       textColor: darkColor,
       fontStyle: 'bold',
-      fontSize: 9,
-      cellPadding: 3,
-      lineColor: [200, 200, 200] as [number, number, number],
-      lineWidth: 0.3,
+      fontSize: 8.5,
+      cellPadding: 2.2,
+      valign: 'middle',
+      lineColor: [205, 205, 205] as [number, number, number],
+      lineWidth: 0.25,
     },
     bodyStyles: {
-      fontSize: 9,
+      fontSize: 8.5,
       textColor: darkColor,
-      cellPadding: 3,
+      cellPadding: 2.5,
+      valign: 'middle',
       lineColor: [220, 220, 220] as [number, number, number],
       lineWidth: 0.2,
     },
     alternateRowStyles: {
-      fillColor: [252, 252, 252] as [number, number, number],
+      fillColor: [253, 253, 253] as [number, number, number],
     },
     columnStyles: {
       0: { halign: 'center', cellWidth: colWidths[0] },
+      1: { halign: 'left', cellWidth: colWidths[1] },
       2: { halign: 'center', cellWidth: colWidths[2] },
       3: { halign: 'right', cellWidth: colWidths[3] },
       ...(rateColIdx !== -1 ? { [rateColIdx]: { halign: 'right', cellWidth: colWidths[rateColIdx] } } : {}),
@@ -263,13 +294,25 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     margin: { left: margin, right: margin },
   });
 
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
 
-  // ---- TOTAL ROW ----
-  doc.setFontSize(10);
+  // Check if we need a new page for totals, notes & signature
+  if (y > pageHeight - 65) {
+    doc.addPage();
+    y = margin + 10;
+  }
+
+  // ---- TOTAL SUMMARY BOX ----
+  // Clean bordered summary box that exactly aligns with the table margins (x: 15mm to 195mm)
+  doc.setFillColor(250, 250, 250);
+  doc.setDrawColor(210, 210, 210);
+  doc.setLineWidth(0.25);
+  doc.rect(margin, y, contentWidth, 8.5, 'FD');
+
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkColor);
-  doc.text(`Total Quantity: ${challan.total_quantity}`, margin, y + 4);
+  doc.text(`Total Quantity: ${challan.total_quantity}`, margin + 3, y + 5.5);
 
   const grandTotalAmount =
     challan.total_amount ||
@@ -277,11 +320,14 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
 
   if (grandTotalAmount > 0) {
     const label = applyGst ? 'Grand Total (Inc. 18% GST):' : 'Total Amount:';
-    doc.text(`${label} ${formatINR(grandTotalAmount)}`, pageWidth - margin, y + 4, {
+    const totalText = `${label} Rs. ${formatPdfNum(grandTotalAmount)}`;
+    // Aligns right exactly inside the box with 3mm right inset
+    doc.text(totalText, pageWidth - margin - 3, y + 5.5, {
       align: 'right',
     });
   }
-  y += 10;
+
+  y += 13;
 
   // ---- NOTES ----
   if (challan.notes) {
@@ -290,7 +336,7 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     doc.line(margin, y, pageWidth - margin, y);
     y += 5;
 
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...darkColor);
     doc.text('Notes / Delivery Instructions:', margin, y);
@@ -300,43 +346,42 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     doc.setTextColor(...grayColor);
     const noteLines = doc.splitTextToSize(challan.notes, contentWidth);
     doc.text(noteLines, margin, y);
-    y += noteLines.length * 3.5 + 3;
+    y += noteLines.length * 3.5 + 4;
   }
 
   // ---- SIGNATURE AREA ----
-  const signatureY = Math.max(y + 10, pageHeight - 60);
+  const signatureY = Math.max(y + 8, pageHeight - 50);
 
   if (profile.show_prepared_by || profile.show_signature_area) {
     doc.setDrawColor(...lightGrayColor);
     doc.setLineWidth(0.2);
-    doc.line(margin, signatureY - 5, pageWidth - margin, signatureY - 5);
+    doc.line(margin, signatureY - 4, pageWidth - margin, signatureY - 4);
   }
 
   if (profile.show_prepared_by) {
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...grayColor);
-    doc.text('Prepared By:', margin, signatureY);
-    if (challan.prepared_by) {
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...darkColor);
-      doc.text(challan.prepared_by, margin + 25, signatureY);
-    }
+    doc.text('Prepared By:', margin, signatureY + 2);
+    const creator = challan.prepared_by || challan.created_by || 'Rushank';
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...darkColor);
+    doc.text(creator, margin + 25, signatureY + 2);
   }
 
   if (profile.show_signature_area) {
     const sigBoxLeft = pageWidth - margin - 65;
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...grayColor);
-    doc.text("Receiver's Signature:", sigBoxLeft, signatureY);
+    doc.text("Receiver's Signature:", sigBoxLeft, signatureY + 2);
 
     doc.setDrawColor(...lightGrayColor);
     doc.setLineWidth(0.3);
-    doc.line(sigBoxLeft, signatureY + 15, sigBoxLeft + 60, signatureY + 15);
+    doc.line(sigBoxLeft, signatureY + 16, sigBoxLeft + 60, signatureY + 16);
 
     doc.setFontSize(7);
-    doc.text('(Name & Date)', sigBoxLeft + 15, signatureY + 20);
+    doc.text('(Name & Date)', sigBoxLeft + 16, signatureY + 20.5);
   }
 
   // ---- FOOTER ----
@@ -349,7 +394,7 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     });
   }
 
-  // Page border accent
+  // Page border accent (left vertical bar)
   doc.setDrawColor(...accentColor);
   doc.setLineWidth(1.5);
   doc.line(margin - 2, margin - 4, margin - 2, pageHeight - 8);
