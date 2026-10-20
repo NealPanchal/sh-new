@@ -21,6 +21,12 @@ import {
   Ban,
   ArrowRight,
   Receipt,
+  Building2,
+  UserCheck,
+  ChevronDown,
+  ChevronRight,
+  LayoutList,
+  Layers,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
@@ -62,31 +68,102 @@ export default function ChallansPage() {
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [companyFilter, setCompanyFilter] = useState<string>('all');
+  const [creatorFilter, setCreatorFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'company' | 'creator'>('list');
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [cancelModalChallan, setCancelModalChallan] = useState<Challan | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  const allChallans = useMemo(() => {
+    if (!mounted || isLoading) return [];
+    return getChallans();
+  }, [mounted, isLoading, getChallans]);
+
+  const uniqueCompanies = useMemo(() => {
+    const names = Array.from(new Set(allChallans.map((c) => c.customer_name).filter(Boolean)));
+    return names.sort();
+  }, [allChallans]);
+
+  const uniqueCreators = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        allChallans.map((c) => c.created_by || c.prepared_by || 'Rushank').filter(Boolean)
+      )
+    );
+    return names.sort();
+  }, [allChallans]);
+
   const challans = useMemo(() => {
     if (!mounted || isLoading) return [];
-    return getChallans({
+    let list = getChallans({
       search: search || undefined,
       status: statusFilter !== 'all' ? (statusFilter as ChallanStatus) : undefined,
     });
-  }, [mounted, isLoading, getChallans, search, statusFilter]);
+    if (companyFilter !== 'all') {
+      list = list.filter((c) => c.customer_name.toLowerCase() === companyFilter.toLowerCase());
+    }
+    if (creatorFilter !== 'all') {
+      list = list.filter((c) => {
+        const creator = (c.created_by || c.prepared_by || 'Rushank').toLowerCase();
+        return creator === creatorFilter.toLowerCase();
+      });
+    }
+    return list;
+  }, [mounted, isLoading, getChallans, search, statusFilter, companyFilter, creatorFilter]);
+
+  // Grouped by Company
+  const groupedByCompany = useMemo(() => {
+    const map = new Map<string, { company: string; items: Challan[]; totalQty: number; totalAmount: number }>();
+    challans.forEach((c) => {
+      const comp = c.customer_name || 'Unknown Company';
+      if (!map.has(comp)) {
+        map.set(comp, { company: comp, items: [], totalQty: 0, totalAmount: 0 });
+      }
+      const group = map.get(comp)!;
+      group.items.push(c);
+      group.totalQty += c.total_quantity || 0;
+      group.totalAmount += c.total_amount || 0;
+    });
+    return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+  }, [challans]);
+
+  // Grouped by Creator / Billed By
+  const groupedByCreator = useMemo(() => {
+    const map = new Map<string, { creator: string; items: Challan[]; totalQty: number; totalAmount: number }>();
+    challans.forEach((c) => {
+      const creator = c.created_by || c.prepared_by || 'Rushank';
+      if (!map.has(creator)) {
+        map.set(creator, { creator, items: [], totalQty: 0, totalAmount: 0 });
+      }
+      const group = map.get(creator)!;
+      group.items.push(c);
+      group.totalQty += c.total_quantity || 0;
+      group.totalAmount += c.total_amount || 0;
+    });
+    return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+  }, [challans]);
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   // Statistics
   const counts = useMemo(() => {
     if (!mounted || isLoading) return { all: 0, final: 0, draft: 0, cancelled: 0 };
-    const all = getChallans();
     return {
-      all: all.length,
-      final: all.filter((c) => c.status === 'final').length,
-      draft: all.filter((c) => c.status === 'draft').length,
-      cancelled: all.filter((c) => c.status === 'cancelled').length,
+      all: allChallans.length,
+      final: allChallans.filter((c) => c.status === 'final').length,
+      draft: allChallans.filter((c) => c.status === 'draft').length,
+      cancelled: allChallans.filter((c) => c.status === 'cancelled').length,
     };
-  }, [mounted, isLoading, getChallans]);
+  }, [mounted, isLoading, allChallans]);
 
   const handlePrint = (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -169,8 +246,9 @@ export default function ChallansPage() {
         </Link>
       </div>
 
-      {/* Search Bar & Status Tabs */}
-      <div className="card p-2.5 sm:p-3 space-y-2.5">
+      {/* Search Bar, Segregation Filters & View Mode Tabs */}
+      <div className="card p-2.5 sm:p-3 space-y-3">
+        {/* Search Input */}
         <div className="relative">
           <Search
             size={16}
@@ -178,7 +256,7 @@ export default function ChallansPage() {
           />
           <input
             type="text"
-            placeholder="Search by challan #, customer name, phone, item..."
+            placeholder="Search by challan #, customer / company, phone, item, creator..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input pl-9 pr-8 text-xs py-2 w-full"
@@ -193,35 +271,125 @@ export default function ChallansPage() {
           )}
         </div>
 
-        {/* Status Filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-          {[
-            { id: 'all', label: 'All', count: counts.all },
-            { id: 'final', label: 'Final', count: counts.final },
-            { id: 'draft', label: 'Drafts', count: counts.draft },
-            { id: 'cancelled', label: 'Cancelled', count: counts.cancelled },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5',
-                statusFilter === tab.id
-                  ? 'bg-primary-500 text-white font-semibold'
-                  : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
-              )}
+        {/* Segregation Filters (Company + Creator Dropdowns) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-surface-100">
+          {/* Company / Customer Segregation Filter */}
+          <div className="flex items-center gap-1.5">
+            <Building2 size={15} className="text-[#b8860b] shrink-0" />
+            <select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className="input text-xs py-1.5 flex-1 bg-surface-50/60 font-medium"
             >
-              <span>{tab.label}</span>
-              <span
+              <option value="all">🏢 All Companies / Clients ({uniqueCompanies.length})</option>
+              {uniqueCompanies.map((comp) => {
+                const count = allChallans.filter(
+                  (c) => c.customer_name.toLowerCase() === comp.toLowerCase()
+                ).length;
+                return (
+                  <option key={comp} value={comp}>
+                    {comp} ({count} challans)
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Created By / Staff Segregation Filter */}
+          <div className="flex items-center gap-1.5">
+            <UserCheck size={15} className="text-primary-600 shrink-0" />
+            <select
+              value={creatorFilter}
+              onChange={(e) => setCreatorFilter(e.target.value)}
+              className="input text-xs py-1.5 flex-1 bg-surface-50/60 font-medium"
+            >
+              <option value="all">👤 All Creators / Billed By ({uniqueCreators.length})</option>
+              {uniqueCreators.map((creator) => {
+                const count = allChallans.filter(
+                  (c) => (c.created_by || c.prepared_by || 'Rushank').toLowerCase() === creator.toLowerCase()
+                ).length;
+                return (
+                  <option key={creator} value={creator}>
+                    Billed by {creator} ({count} challans)
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
+
+        {/* View Mode Switcher & Status Filter Pills */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1 border-t border-surface-100">
+          {/* Status Filters */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            {[
+              { id: 'all', label: 'All', count: counts.all },
+              { id: 'final', label: 'Final', count: counts.final },
+              { id: 'draft', label: 'Drafts', count: counts.draft },
+              { id: 'cancelled', label: 'Cancelled', count: counts.cancelled },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
                 className={cn(
-                  'text-[10px] px-1.5 py-0.2 rounded-full font-mono',
-                  statusFilter === tab.id ? 'bg-primary-600 text-white' : 'bg-surface-200 text-surface-700'
+                  'px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5',
+                  statusFilter === tab.id
+                    ? 'bg-primary-500 text-white font-semibold'
+                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
                 )}
               >
-                {tab.count}
-              </span>
+                <span>{tab.label}</span>
+                <span
+                  className={cn(
+                    'text-[10px] px-1.5 py-0.2 rounded-full font-mono',
+                    statusFilter === tab.id ? 'bg-primary-600 text-white' : 'bg-surface-200 text-surface-700'
+                  )}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* View Mode Segregation Buttons */}
+          <div className="flex items-center gap-1 p-0.5 bg-surface-100 rounded-lg self-start sm:self-auto shrink-0">
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn(
+                'px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors',
+                viewMode === 'list'
+                  ? 'bg-white text-surface-900 shadow-2xs'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              <LayoutList size={13} />
+              <span>List</span>
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode('company')}
+              className={cn(
+                'px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors',
+                viewMode === 'company'
+                  ? 'bg-[#b8860b] text-white shadow-2xs'
+                  : 'text-surface-600 hover:text-[#b8860b]'
+              )}
+            >
+              <Building2 size={13} />
+              <span>By Company</span>
+            </button>
+            <button
+              onClick={() => setViewMode('creator')}
+              className={cn(
+                'px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors',
+                viewMode === 'creator'
+                  ? 'bg-primary-600 text-white shadow-2xs'
+                  : 'text-surface-600 hover:text-primary-600'
+              )}
+            >
+              <UserCheck size={13} />
+              <span>By Creator</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -253,6 +421,243 @@ export default function ChallansPage() {
               <span>Create Challan</span>
             </Link>
           )}
+        </div>
+      ) : viewMode === 'company' ? (
+        /* ============================================================ */
+        /* SEGREGATION VIEW: BY COMPANY / CLIENT                        */
+        /* ============================================================ */
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1 text-xs text-surface-600">
+            <span className="font-bold flex items-center gap-1.5 text-[#b8860b]">
+              <Building2 size={15} />
+              <span>Company-wise Segregation ({groupedByCompany.length} Companies)</span>
+            </span>
+            <span>Total: {challans.length} Challans</span>
+          </div>
+
+          {groupedByCompany.map((group) => {
+            const isCollapsed = Boolean(collapsedGroups[group.company]);
+            return (
+              <div
+                key={group.company}
+                className="card overflow-hidden border border-surface-200 shadow-2xs"
+              >
+                {/* Company Header Banner */}
+                <div
+                  onClick={() => toggleGroup(group.company)}
+                  className="p-3 bg-surface-100/70 hover:bg-surface-100 transition-colors flex items-center justify-between cursor-pointer border-b border-surface-200"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-[#b8860b]/15 text-[#b8860b] flex items-center justify-center font-bold text-sm shrink-0">
+                      🏢
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-bold text-sm text-surface-900 truncate">
+                          {group.company}
+                        </h2>
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white text-surface-700 border border-surface-200">
+                          {group.items.length} {group.items.length === 1 ? 'challan' : 'challans'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-surface-500 block mt-0.5">
+                        Total Quantity: <b>{group.totalQty}</b> sheets
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    {group.totalAmount > 0 && (
+                      <div className="text-right">
+                        <span className="text-[9px] uppercase tracking-wider text-surface-400 block">
+                          Company Total
+                        </span>
+                        <span className="font-mono font-bold text-sm text-surface-900">
+                          ₹{group.totalAmount.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    )}
+                    <div className="p-1 text-surface-400">
+                      {isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Company Challans */}
+                {!isCollapsed && (
+                  <div className="p-2 sm:p-3 space-y-2 bg-white">
+                    {group.items.map((challan) => (
+                      <div
+                        key={challan.id}
+                        onClick={() => router.push(`/challans/${challan.id}`)}
+                        className="p-2.5 rounded-lg border border-surface-100 hover:border-surface-300 hover:bg-surface-50/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer text-xs"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-primary-600">
+                            {challan.challan_number}
+                          </span>
+                          <span className="text-surface-400">•</span>
+                          <span className="text-surface-600">
+                            {formatDateIndian(challan.challan_date)}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-100 text-surface-700 border border-surface-200 font-semibold">
+                            By {challan.created_by || challan.prepared_by || 'Rushank'}
+                          </span>
+                          <StatusBadge status={challan.status} />
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3">
+                          <span className="text-surface-600 font-medium">
+                            {challan.total_quantity} {challan.items?.[0]?.unit || 'sheets'}
+                          </span>
+                          {challan.total_amount && challan.total_amount > 0 ? (
+                            <span className="font-mono font-bold text-surface-900 bg-surface-50 border border-surface-200 px-1.5 py-0.5 rounded text-xs">
+                              ₹{challan.total_amount.toLocaleString('en-IN')}
+                            </span>
+                          ) : null}
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => router.push(`/challans/${challan.id}/bill`)}
+                              className="p-1 text-[#b8860b] hover:bg-[#b8860b]/10 rounded"
+                              title="View Memo Bill Slip"
+                            >
+                              <Receipt size={14} />
+                            </button>
+                            <button
+                              onClick={(e) => handlePrint(challan, e)}
+                              className="p-1 text-surface-500 hover:bg-surface-100 rounded"
+                              title="Print"
+                            >
+                              <Printer size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : viewMode === 'creator' ? (
+        /* ============================================================ */
+        /* SEGREGATION VIEW: BY CREATOR / STAFF (BILLED BY)             */
+        /* ============================================================ */
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1 text-xs text-surface-600">
+            <span className="font-bold flex items-center gap-1.5 text-primary-600">
+              <UserCheck size={15} />
+              <span>Created-By / Staff Segregation ({groupedByCreator.length} Users)</span>
+            </span>
+            <span>Total: {challans.length} Challans</span>
+          </div>
+
+          {groupedByCreator.map((group) => {
+            const isCollapsed = Boolean(collapsedGroups[group.creator]);
+            return (
+              <div
+                key={group.creator}
+                className="card overflow-hidden border border-surface-200 shadow-2xs"
+              >
+                {/* Creator Header Banner */}
+                <div
+                  onClick={() => toggleGroup(group.creator)}
+                  className="p-3 bg-surface-100/70 hover:bg-surface-100 transition-colors flex items-center justify-between cursor-pointer border-b border-surface-200"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-sm shrink-0">
+                      👤
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-bold text-sm text-surface-900 truncate">
+                          Billed by: {group.creator}
+                        </h2>
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white text-surface-700 border border-surface-200">
+                          {group.items.length} {group.items.length === 1 ? 'challan' : 'challans'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-surface-500 block mt-0.5">
+                        Total Quantity: <b>{group.totalQty}</b> sheets
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    {group.totalAmount > 0 && (
+                      <div className="text-right">
+                        <span className="text-[9px] uppercase tracking-wider text-surface-400 block">
+                          Total Billed
+                        </span>
+                        <span className="font-mono font-bold text-sm text-primary-700">
+                          ₹{group.totalAmount.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    )}
+                    <div className="p-1 text-surface-400">
+                      {isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Creator Challans */}
+                {!isCollapsed && (
+                  <div className="p-2 sm:p-3 space-y-2 bg-white">
+                    {group.items.map((challan) => (
+                      <div
+                        key={challan.id}
+                        onClick={() => router.push(`/challans/${challan.id}`)}
+                        className="p-2.5 rounded-lg border border-surface-100 hover:border-surface-300 hover:bg-surface-50/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer text-xs"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-primary-600">
+                            {challan.challan_number}
+                          </span>
+                          <span className="text-surface-400">•</span>
+                          <span className="font-semibold text-surface-900">
+                            {challan.customer_name}
+                          </span>
+                          <span className="text-surface-400">•</span>
+                          <span className="text-surface-500">
+                            {formatDateIndian(challan.challan_date)}
+                          </span>
+                          <StatusBadge status={challan.status} />
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3">
+                          <span className="text-surface-600 font-medium">
+                            {challan.total_quantity} {challan.items?.[0]?.unit || 'sheets'}
+                          </span>
+                          {challan.total_amount && challan.total_amount > 0 ? (
+                            <span className="font-mono font-bold text-surface-900 bg-surface-50 border border-surface-200 px-1.5 py-0.5 rounded text-xs">
+                              ₹{challan.total_amount.toLocaleString('en-IN')}
+                            </span>
+                          ) : null}
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => router.push(`/challans/${challan.id}/bill`)}
+                              className="p-1 text-[#b8860b] hover:bg-[#b8860b]/10 rounded"
+                              title="View Memo Bill Slip"
+                            >
+                              <Receipt size={14} />
+                            </button>
+                            <button
+                              onClick={(e) => handlePrint(challan, e)}
+                              className="p-1 text-surface-500 hover:bg-surface-100 rounded"
+                              title="Print"
+                            >
+                              <Printer size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <>

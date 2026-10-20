@@ -43,6 +43,7 @@ interface AppContextType {
   getChallan: (id: string) => Challan | undefined;
   createChallan: (data: Partial<Challan>, items: Partial<ChallanItem>[]) => Challan;
   updateChallan: (id: string, data: Partial<Challan>, items?: Partial<ChallanItem>[]) => Challan | null;
+  deleteChallan: (id: string) => boolean;
   updateChallanStatus: (id: string, status: ChallanStatus) => Challan | null;
   updateShareStatus: (id: string, status: ShareStatus) => Challan | null;
   duplicateChallan: (id: string) => Challan | null;
@@ -65,6 +66,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
 
   useEffect(() => {
     store.initDemoStore();
@@ -79,6 +81,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCustomers(store.getCustomers());
     setProducts(store.getProducts());
     setIsLoading(false);
+
+    // Dynamic real-time sync with Firebase
+    import('@/lib/firebase-service').then(({ subscribeToChallans }) => {
+      const unsub = subscribeToChallans((remoteChallans) => {
+        if (remoteChallans && remoteChallans.length > 0) {
+          store.syncFromFirebase(remoteChallans);
+          setDataVersion((v) => v + 1);
+        }
+      });
+      return unsub;
+    }).catch((err) => {
+      console.warn('Firebase sync listener initialization skipped:', err);
+    });
   }, []);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -137,7 +152,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
-  const [dataVersion, setDataVersion] = useState(0);
+  const deleteChallanFn = useCallback((id: string) => {
+    const res = store.deleteChallan(id);
+    setDataVersion((v) => v + 1);
+    return res;
+  }, []);
 
   const createChallanFn = useCallback((data: Partial<Challan>, items: Partial<ChallanItem>[]) => {
     const res = store.createChallan(data, items);
@@ -192,6 +211,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getChallan: store.getChallan,
     createChallan: createChallanFn,
     updateChallan: updateChallanFn,
+    deleteChallan: deleteChallanFn,
     updateChallanStatus: updateChallanStatusFn,
     updateShareStatus: updateShareStatusFn,
     duplicateChallan: duplicateChallanFn,

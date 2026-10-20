@@ -82,6 +82,7 @@ export interface Challan {
   reference_number: string | null;
   notes: string | null;
   prepared_by: string | null;
+  created_by?: string | null;
   status: ChallanStatus;
   share_status: ShareStatus;
   total_quantity: number;
@@ -136,6 +137,7 @@ export interface ChallanFormData {
   reference_number: string;
   notes: string;
   prepared_by: string;
+  created_by?: string;
   transportation_charges?: number | string;
   loading_charges?: number | string;
   apply_gst?: boolean;

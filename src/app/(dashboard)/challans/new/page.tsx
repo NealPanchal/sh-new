@@ -64,6 +64,7 @@ function CreateChallanContent() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
+  const [createdBy, setCreatedBy] = useState('Rushank');
   const [showExtraDetails, setShowExtraDetails] = useState(false);
 
   // Items
@@ -266,6 +267,8 @@ function CreateChallanContent() {
           customer_address: deliveryAddress.trim(),
           delivery_address: deliveryAddress.trim(),
           reference_number: referenceNumber.trim(),
+          prepared_by: createdBy.trim() || 'Rushank',
+          created_by: createdBy.trim() || 'Rushank',
           status,
           total_quantity: totalQuantity,
           subtotal_amount: taxableSubtotal > 0 ? taxableSubtotal : null,
@@ -370,9 +373,9 @@ function CreateChallanContent() {
 
       {/* Customer & Date Card (Fast Entry) */}
       <div className="card p-3.5 sm:p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           {/* Customer Name Search / Input */}
-          <div className="sm:col-span-2 relative">
+          <div className="sm:col-span-6 relative">
             <label className="label text-xs">Customer Name *</label>
             <div className="relative">
               <input
@@ -436,7 +439,7 @@ function CreateChallanContent() {
           </div>
 
           {/* Challan Date */}
-          <div>
+          <div className="sm:col-span-3">
             <label className="label text-xs">Date *</label>
             <input
               type="date"
@@ -444,6 +447,35 @@ function CreateChallanContent() {
               onChange={(e) => setChallanDate(e.target.value)}
               className="input text-xs"
             />
+          </div>
+
+          {/* Billed By / Created By */}
+          <div className="sm:col-span-3">
+            <label className="label text-xs">Billed / Created By</label>
+            <input
+              type="text"
+              value={createdBy}
+              onChange={(e) => setCreatedBy(e.target.value)}
+              placeholder="e.g. Rushank"
+              className="input text-xs"
+            />
+            <div className="flex items-center gap-1 mt-1">
+              {['Rushank', 'Neal', 'Admin'].map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setCreatedBy(name)}
+                  className={cn(
+                    'text-[10px] px-1.5 py-0.5 rounded border transition-colors',
+                    createdBy.toLowerCase() === name.toLowerCase()
+                      ? 'bg-primary-50 border-primary-300 text-primary-700 font-bold'
+                      : 'border-surface-200 text-surface-500 hover:bg-surface-50'
+                  )}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

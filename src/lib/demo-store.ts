@@ -15,6 +15,15 @@ import {
   DashboardStats,
 } from '@/types';
 import { generateId, getFinancialYear, generateChallanNumber, getTodayISO } from '@/lib/utils';
+import {
+  saveChallanToFirebase,
+  deleteChallanFromFirebase,
+  saveCustomerToFirebase,
+  deleteCustomerFromFirebase,
+  saveProductToFirebase,
+  deleteProductFromFirebase,
+  saveProfileToFirebase,
+} from '@/lib/firebase-service';
 
 const STORAGE_KEY = 'showhouse_demo_data';
 
@@ -111,6 +120,11 @@ export function saveProfile(data: Partial<BusinessProfile>): BusinessProfile {
   }
   state.isSetupComplete = true;
   saveState(state);
+  if (state.profile) {
+    saveProfileToFirebase(state.profile).catch((err) =>
+      console.warn('Firebase profile sync:', err)
+    );
+  }
   return state.profile;
 }
 
@@ -157,6 +171,9 @@ export function createCustomer(data: Partial<Customer>): Customer {
   } as Customer;
   state.customers.push(customer);
   saveState(state);
+  saveCustomerToFirebase(customer).catch((err) =>
+    console.warn('Firebase saveCustomer sync:', err)
+  );
   return customer;
 }
 
@@ -169,6 +186,9 @@ export function updateCustomer(id: string, data: Partial<Customer>): Customer | 
     updated_at: new Date().toISOString(),
   };
   saveState(state);
+  saveCustomerToFirebase(state.customers[idx]).catch((err) =>
+    console.warn('Firebase updateCustomer sync:', err)
+  );
   return state.customers[idx];
 }
 
@@ -177,6 +197,9 @@ export function deleteCustomer(id: string): boolean {
   if (idx === -1) return false;
   state.customers[idx].is_active = false;
   saveState(state);
+  deleteCustomerFromFirebase(id).catch((err) =>
+    console.warn('Firebase deleteCustomer sync:', err)
+  );
   return true;
 }
 
@@ -223,6 +246,9 @@ export function createProduct(data: Partial<Product>): Product {
   } as Product;
   state.products.push(product);
   saveState(state);
+  saveProductToFirebase(product).catch((err) =>
+    console.warn('Firebase saveProduct sync:', err)
+  );
   return product;
 }
 
@@ -235,6 +261,9 @@ export function updateProduct(id: string, data: Partial<Product>): Product | nul
     updated_at: new Date().toISOString(),
   };
   saveState(state);
+  saveProductToFirebase(state.products[idx]).catch((err) =>
+    console.warn('Firebase updateProduct sync:', err)
+  );
   return state.products[idx];
 }
 
@@ -243,6 +272,9 @@ export function deleteProduct(id: string): boolean {
   if (idx === -1) return false;
   state.products[idx].is_active = false;
   saveState(state);
+  deleteProductFromFirebase(id).catch((err) =>
+    console.warn('Firebase deleteProduct sync:', err)
+  );
   return true;
 }
 
@@ -378,7 +410,8 @@ export function createChallan(
     delivery_address: data.delivery_address || null,
     reference_number: data.reference_number || null,
     notes: data.notes || null,
-    prepared_by: data.prepared_by || null,
+    prepared_by: data.prepared_by || data.created_by || 'Rushank',
+    created_by: data.created_by || data.prepared_by || 'Rushank',
     status: data.status || 'draft',
     share_status: 'not_shared',
     total_quantity: totalQuantity,
@@ -401,6 +434,9 @@ export function createChallan(
   addActivityLog(challanId, 'created', `Challan ${challanNumber} created as ${data.status || 'draft'}`);
 
   saveState(state);
+  saveChallanToFirebase(challan).catch((err) =>
+    console.warn('Firebase saveChallan sync:', err)
+  );
   return challan;
 }
 
@@ -490,7 +526,14 @@ export function updateChallan(
   addActivityLog(id, 'updated', `Challan updated`);
   saveState(state);
 
-  return getChallan(id) || null;
+  const updated = getChallan(id);
+  if (updated) {
+    saveChallanToFirebase(updated).catch((err) =>
+      console.warn('Firebase updateChallan sync:', err)
+    );
+  }
+
+  return updated || null;
 }
 
 export function updateChallanStatus(id: string, status: ChallanStatus): Challan | null {
@@ -500,6 +543,12 @@ export function updateChallanStatus(id: string, status: ChallanStatus): Challan 
   state.challans[idx].updated_at = new Date().toISOString();
   addActivityLog(id, `status_changed`, `Status changed to ${status}`);
   saveState(state);
+  const updated = getChallan(id);
+  if (updated) {
+    saveChallanToFirebase(updated).catch((err) =>
+      console.warn('Firebase statusChallan sync:', err)
+    );
+  }
   return state.challans[idx];
 }
 
@@ -510,7 +559,39 @@ export function updateShareStatus(id: string, shareStatus: ShareStatus): Challan
   state.challans[idx].updated_at = new Date().toISOString();
   addActivityLog(id, `share_${shareStatus}`, `Share status: ${shareStatus}`);
   saveState(state);
+  const updated = getChallan(id);
+  if (updated) {
+    saveChallanToFirebase(updated).catch((err) =>
+      console.warn('Firebase shareStatus sync:', err)
+    );
+  }
   return state.challans[idx];
+}
+
+export function deleteChallan(id: string): boolean {
+  const initialLen = state.challans.length;
+  state.challans = state.challans.filter((c) => c.id !== id);
+  state.challanItems = state.challanItems.filter((i) => i.challan_id !== id);
+  state.activityLog = state.activityLog.filter((l) => l.challan_id !== id);
+  saveState(state);
+  deleteChallanFromFirebase(id).catch((err) =>
+    console.warn('Firebase deleteChallan sync:', err)
+  );
+  return state.challans.length < initialLen;
+}
+
+export function syncFromFirebase(firebaseChallans: Challan[]): void {
+  if (!firebaseChallans || !Array.isArray(firebaseChallans) || firebaseChallans.length === 0) return;
+  const existingMap = new Map(state.challans.map((c) => [c.id, c]));
+  firebaseChallans.forEach((fc) => {
+    existingMap.set(fc.id, fc);
+    if (fc.items && Array.isArray(fc.items) && fc.items.length > 0) {
+      state.challanItems = state.challanItems.filter((i) => i.challan_id !== fc.id);
+      state.challanItems.push(...fc.items);
+    }
+  });
+  state.challans = Array.from(existingMap.values());
+  saveState(state);
 }
 
 export function duplicateChallan(id: string): Challan | null {

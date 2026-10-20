@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   FilePlus,
@@ -13,8 +13,11 @@ import {
   Settings,
   ChevronLeft,
   Plus,
+  LogOut,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { clearAdminSession } from '@/lib/auth';
 
 export const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -27,8 +30,16 @@ export const navItems = [
 ];
 
 export function Sidebar() {
+  const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+
+  const handleLogout = () => {
+    if (confirm('Logout from Showhouse Admin?')) {
+      clearAdminSession();
+      router.replace('/login');
+    }
+  };
 
   return (
     <aside
@@ -113,18 +124,56 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer Info */}
-      {!collapsed && (
-        <div className="px-4 py-3 border-t border-surface-100 bg-surface-50/50">
-          <p className="text-[11px] font-medium text-surface-600">Showhouse Laminates</p>
-          <p className="text-[10px] text-surface-400">TallyPrime-style Challans</p>
-        </div>
-      )}
+      {/* Footer / Admin Account & Logout */}
+      <div className="p-3 border-t border-surface-100 bg-surface-50/50">
+        {!collapsed ? (
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-surface-900 text-white flex items-center justify-center text-[11px] font-bold shrink-0">
+                A
+              </div>
+              <div className="min-w-0">
+                <span className="font-bold text-xs text-surface-900 block truncate leading-none">
+                  Admin SH
+                </span>
+                <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
+                  • Verified
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="p-1.5 text-surface-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Logout from Admin"
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center p-2 text-surface-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            title="Logout"
+          >
+            <LogOut size={16} />
+          </button>
+        )}
+      </div>
     </aside>
   );
 }
 
 export function MobileHeader() {
+  const router = useRouter();
+
+  const handleLogout = () => {
+    if (confirm('Logout from Showhouse Admin?')) {
+      clearAdminSession();
+      router.replace('/login');
+    }
+  };
+
   return (
     <header className="lg:hidden fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-xs border-b border-surface-200 z-40 h-13 px-3">
       <div className="flex items-center justify-between h-full max-w-7xl mx-auto">
@@ -140,11 +189,18 @@ export function MobileHeader() {
         <div className="flex items-center gap-2">
           <Link
             href="/challans/new"
-            className="btn-primary py-1 px-2.5 text-xs font-medium flex items-center gap-1 rounded-md shadow-xs"
+            className="btn-primary py-1 px-2 text-xs font-medium flex items-center gap-1 rounded-md shadow-xs"
           >
             <Plus size={14} />
-            <span>New Challan</span>
+            <span>New</span>
           </Link>
+          <button
+            onClick={handleLogout}
+            className="p-1.5 text-surface-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            title="Logout from Admin"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </header>
