@@ -86,6 +86,12 @@ export interface Challan {
   share_status: ShareStatus;
   total_quantity: number;
   total_amount: number | null;
+  subtotal_amount?: number | null;
+  transportation_charges?: number | null;
+  loading_charges?: number | null;
+  apply_gst?: boolean | null;
+  cgst_amount?: number | null;
+  sgst_amount?: number | null;
   created_at: string;
   updated_at: string;
   // Joined data
@@ -130,6 +136,9 @@ export interface ChallanFormData {
   reference_number: string;
   notes: string;
   prepared_by: string;
+  transportation_charges?: number | string;
+  loading_charges?: number | string;
+  apply_gst?: boolean;
   items: ChallanItemFormData[];
 }
 

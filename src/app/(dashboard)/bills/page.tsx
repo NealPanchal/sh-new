@@ -149,15 +149,17 @@ export default function DeliveryBillsPage() {
             {filteredBills.map((c) => {
               const memoNo =
                 c.reference_number || c.challan_number.split('/').pop() || '0120';
-              const totalAmt =
-                c.total_amount ||
-                (c.items || []).reduce(
-                  (sum: number, it: ChallanItem) =>
-                    sum +
-                    (Number(it.amount) ||
-                      (Number(it.rate) || 0) * (Number(it.quantity) || 0)),
-                  0
-                );
+              const itemsSub = (c.items || []).reduce(
+                (sum: number, it: ChallanItem) =>
+                  sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
+                0
+              );
+              const transport = Number(c.transportation_charges) || 0;
+              const loading = Number(c.loading_charges) || 0;
+              const taxable = c.subtotal_amount || (itemsSub + transport + loading);
+              const cgst = c.cgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
+              const sgst = c.sgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
+              const totalAmt = c.total_amount || (taxable + cgst + sgst);
 
               return (
                 <div
@@ -175,9 +177,16 @@ export default function DeliveryBillsPage() {
                         • {formatDateIndian(c.challan_date)}
                       </span>
                     </div>
-                    <span className="text-[10px] uppercase font-bold text-[#b8860b] bg-[#b8860b]/10 px-2 py-0.5 rounded">
-                      Delivery Bill
-                    </span>
+                    <div className="flex items-center gap-1">
+                      {c.apply_gst && (
+                        <span className="text-[9px] uppercase font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
+                          GST 18%
+                        </span>
+                      )}
+                      <span className="text-[10px] uppercase font-bold text-[#b8860b] bg-[#b8860b]/10 px-2 py-0.5 rounded">
+                        Delivery Bill
+                      </span>
+                    </div>
                   </div>
 
                   {/* Customer & Item */}
@@ -202,7 +211,7 @@ export default function DeliveryBillsPage() {
                   <div className="flex items-center justify-between pt-2">
                     <div>
                       <span className="text-[10px] text-surface-400 block uppercase">
-                        Grand Total
+                        {c.apply_gst ? 'Grand Total (GST)' : 'Grand Total'}
                       </span>
                       <span className="font-mono font-extrabold text-sm text-surface-900">
                         ₹{totalAmt.toLocaleString('en-IN')}
@@ -253,15 +262,17 @@ export default function DeliveryBillsPage() {
                   {filteredBills.map((c) => {
                     const memoNo =
                       c.reference_number || c.challan_number.split('/').pop() || '0120';
-                    const totalAmt =
-                      c.total_amount ||
-                      (c.items || []).reduce(
-                        (sum: number, it: ChallanItem) =>
-                          sum +
-                          (Number(it.amount) ||
-                            (Number(it.rate) || 0) * (Number(it.quantity) || 0)),
-                        0
-                      );
+                    const itemsSub = (c.items || []).reduce(
+                      (sum: number, it: ChallanItem) =>
+                        sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
+                      0
+                    );
+                    const transport = Number(c.transportation_charges) || 0;
+                    const loading = Number(c.loading_charges) || 0;
+                    const taxable = c.subtotal_amount || (itemsSub + transport + loading);
+                    const cgst = c.cgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
+                    const sgst = c.sgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
+                    const totalAmt = c.total_amount || (taxable + cgst + sgst);
 
                     return (
                       <tr
@@ -298,7 +309,14 @@ export default function DeliveryBillsPage() {
                           {c.total_quantity} {c.items?.[0]?.unit || 'sheets'}
                         </td>
                         <td className="text-right font-mono font-bold text-xs text-surface-900 whitespace-nowrap">
-                          ₹{totalAmt.toLocaleString('en-IN')}
+                          <div className="flex items-center justify-end gap-1.5">
+                            {c.apply_gst && (
+                              <span className="text-[9px] uppercase font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded font-sans">
+                                +18% GST
+                              </span>
+                            )}
+                            <span>₹{totalAmt.toLocaleString('en-IN')}</span>
+                          </div>
                         </td>
                         <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5">

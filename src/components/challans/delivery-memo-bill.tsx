@@ -26,19 +26,38 @@ export function DeliveryMemoBill({
     '0120';
 
   const items = challan.items || [];
+  const itemsSubtotal = items.reduce(
+    (sum, item) =>
+      sum +
+      (Number(item.amount) ||
+        (Number(item.rate) || 0) * (Number(item.quantity) || 0)),
+    0
+  );
+
+  const transportCharges = Number(challan.transportation_charges) || 0;
+  const loadingCharges = Number(challan.loading_charges) || 0;
+  const hasExtraCharges = transportCharges > 0 || loadingCharges > 0;
+
+  const taxableSubtotal =
+    challan.subtotal_amount || (itemsSubtotal + transportCharges + loadingCharges);
+
+  const applyGst = Boolean(challan.apply_gst);
+  const cgst = challan.cgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+  const sgst = challan.sgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+
   const calculatedGrandTotal =
     challan.total_amount ||
-    items.reduce(
-      (sum, item) =>
-        sum +
-        (Number(item.amount) ||
-          (Number(item.rate) || 0) * (Number(item.quantity) || 0)),
-      0
-    );
+    (taxableSubtotal + cgst + sgst);
+
+  // Extra rows to render inside ledger
+  const extraRowsCount =
+    (transportCharges > 0 ? 1 : 0) +
+    (loadingCharges > 0 ? 1 : 0) +
+    (applyGst ? (hasExtraCharges ? 3 : 2) : 0);
 
   // Ruled lines count to match physical memo paper (at least 9 total rows)
-  const totalRuledRows = Math.max(9, items.length + 3);
-  const emptyRowsCount = Math.max(0, totalRuledRows - items.length);
+  const totalRuledRows = Math.max(9, items.length + extraRowsCount + 2);
+  const emptyRowsCount = Math.max(0, totalRuledRows - (items.length + extraRowsCount));
 
   // Format date like on the paper slip (e.g., 2/3/26 or standard)
   const parsedDate = new Date(challan.challan_date);
@@ -218,6 +237,90 @@ export function DeliveryMemoBill({
                 </div>
               );
             })}
+
+            {/* Transportation Charges row */}
+            {transportCharges > 0 && (
+              <div className="grid grid-cols-12 min-h-[28px] items-center text-xs bg-[#fffdfa]/60">
+                <div className="col-span-6 px-2 py-1 border-r border-surface-300 font-semibold text-surface-800 italic">
+                  Transportation / Cartage Charges
+                </div>
+                <div className="col-span-2 px-1 py-1 text-center border-r border-surface-300 text-surface-400">
+                  —
+                </div>
+                <div className="col-span-2 px-1 py-1 text-center border-r border-surface-300 text-surface-400">
+                  —
+                </div>
+                <div className="col-span-2 px-2 py-1 text-right font-mono font-bold text-surface-900">
+                  {transportCharges.toLocaleString('en-IN')}
+                </div>
+              </div>
+            )}
+
+            {/* Loading / Unloading Charges row */}
+            {loadingCharges > 0 && (
+              <div className="grid grid-cols-12 min-h-[28px] items-center text-xs bg-[#fffdfa]/60">
+                <div className="col-span-6 px-2 py-1 border-r border-surface-300 font-semibold text-surface-800 italic">
+                  Loading / Unloading Charges
+                </div>
+                <div className="col-span-2 px-1 py-1 text-center border-r border-surface-300 text-surface-400">
+                  —
+                </div>
+                <div className="col-span-2 px-1 py-1 text-center border-r border-surface-300 text-surface-400">
+                  —
+                </div>
+                <div className="col-span-2 px-2 py-1 text-right font-mono font-bold text-surface-900">
+                  {loadingCharges.toLocaleString('en-IN')}
+                </div>
+              </div>
+            )}
+
+            {/* Subtotal (Taxable Value) row if GST is enabled */}
+            {applyGst && (
+              <>
+                {hasExtraCharges && (
+                  <div className="grid grid-cols-12 min-h-[26px] items-center text-[11px] bg-surface-50/50">
+                    <div className="col-span-6 px-2 py-0.5 border-r border-surface-300 font-bold text-surface-700 uppercase">
+                      Sub Total (Taxable)
+                    </div>
+                    <div className="col-span-2 border-r border-surface-300" />
+                    <div className="col-span-2 border-r border-surface-300" />
+                    <div className="col-span-2 px-2 py-0.5 text-right font-mono font-bold text-surface-800">
+                      {taxableSubtotal.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-12 min-h-[26px] items-center text-xs bg-emerald-50/25">
+                  <div className="col-span-6 px-2 py-0.5 border-r border-surface-300 font-semibold text-surface-800">
+                    CGST (9%)
+                  </div>
+                  <div className="col-span-2 px-1 py-0.5 text-center border-r border-surface-300 text-[11px] text-surface-500 font-mono">
+                    9%
+                  </div>
+                  <div className="col-span-2 px-1 py-0.5 text-center border-r border-surface-300 text-surface-400">
+                    —
+                  </div>
+                  <div className="col-span-2 px-2 py-0.5 text-right font-mono font-semibold text-emerald-800">
+                    {cgst > 0 ? cgst.toLocaleString('en-IN') : '0.00'}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-12 min-h-[26px] items-center text-xs bg-emerald-50/25">
+                  <div className="col-span-6 px-2 py-0.5 border-r border-surface-300 font-semibold text-surface-800">
+                    SGST (9%)
+                  </div>
+                  <div className="col-span-2 px-1 py-0.5 text-center border-r border-surface-300 text-[11px] text-surface-500 font-mono">
+                    9%
+                  </div>
+                  <div className="col-span-2 px-1 py-0.5 text-center border-r border-surface-300 text-surface-400">
+                    —
+                  </div>
+                  <div className="col-span-2 px-2 py-0.5 text-right font-mono font-semibold text-emerald-800">
+                    {sgst > 0 ? sgst.toLocaleString('en-IN') : '0.00'}
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Note row (e.g. Confirm By Rushank) if space or inside table */}
             {noteText && (

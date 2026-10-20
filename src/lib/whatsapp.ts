@@ -38,16 +38,44 @@ export function generateShareMessage(challan: Challan, profile: BusinessProfile)
 
   message += `*Total Qty:* ${challan.total_quantity} items\n`;
 
+  const itemsSubtotal =
+    challan.items?.reduce(
+      (sum, it) => sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
+      0
+    ) || 0;
+
+  const transport = Number(challan.transportation_charges) || 0;
+  const loading = Number(challan.loading_charges) || 0;
+
+  if (transport > 0) {
+    message += `*Transportation:* ₹${transport.toLocaleString('en-IN')}\n`;
+  }
+  if (loading > 0) {
+    message += `*Loading Charges:* ₹${loading.toLocaleString('en-IN')}\n`;
+  }
+
+  const taxableSubtotal = challan.subtotal_amount || (itemsSubtotal + transport + loading);
+
+  if (challan.apply_gst) {
+    const cgst = challan.cgst_amount ?? (taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+    const sgst = challan.sgst_amount ?? (taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+    if (transport > 0 || loading > 0) {
+      message += `*Taxable Subtotal:* ₹${taxableSubtotal.toLocaleString('en-IN')}\n`;
+    }
+    message += `*CGST (9%):* ₹${cgst.toLocaleString('en-IN')}\n`;
+    message += `*SGST (9%):* ₹${sgst.toLocaleString('en-IN')}\n`;
+  }
+
   const totalAmt =
     challan.total_amount ||
-    (challan.items &&
-      challan.items.reduce(
-        (sum, it) => sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
-        0
-      ));
+    (taxableSubtotal +
+      (challan.apply_gst
+        ? (challan.cgst_amount ?? Math.round(taxableSubtotal * 0.09 * 100) / 100) +
+          (challan.sgst_amount ?? Math.round(taxableSubtotal * 0.09 * 100) / 100)
+        : 0));
 
   if (totalAmt && totalAmt > 0) {
-    message += `*Total Amount:* ₹${totalAmt.toLocaleString('en-IN')}\n`;
+    message += `*${challan.apply_gst ? 'Grand Total (Inc. 18% GST)' : 'Total Amount'}:* ₹${totalAmt.toLocaleString('en-IN')}\n`;
   }
 
   message += `\nThank you for your business!\n— ${businessName}`;

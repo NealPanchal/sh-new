@@ -61,14 +61,26 @@ export default function ChallanDetailPage() {
     }
   }, [mounted, challanId, getChallan]);
 
-  const totalAmount = useMemo(() => {
-    if (challan?.total_amount && challan.total_amount > 0) return challan.total_amount;
+  const itemsSubtotal = useMemo(() => {
     if (!challan?.items) return 0;
     return challan.items.reduce((sum, item) => {
       const amt = Number(item.amount) || ((Number(item.quantity) || 0) * (Number(item.rate) || 0));
       return sum + amt;
     }, 0);
   }, [challan]);
+
+  const transportCharges = Number(challan?.transportation_charges) || 0;
+  const loadingCharges = Number(challan?.loading_charges) || 0;
+  const taxableSubtotal = challan?.subtotal_amount || (itemsSubtotal + transportCharges + loadingCharges);
+  const applyGst = Boolean(challan?.apply_gst);
+  const cgstAmount = challan?.cgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+  const sgstAmount = challan?.sgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+
+  const totalAmount = useMemo(() => {
+    if (challan?.total_amount && challan.total_amount > 0) return challan.total_amount;
+    if (taxableSubtotal <= 0) return 0;
+    return taxableSubtotal + cgstAmount + sgstAmount;
+  }, [challan, taxableSubtotal, cgstAmount, sgstAmount]);
 
   if (!mounted || isLoading) {
     return (
@@ -420,6 +432,38 @@ export default function ChallanDetailPage() {
               </div>
             );
           })}
+
+          {/* Mobile Additional Charges & GST */}
+          {transportCharges > 0 && (
+            <div className="p-2.5 rounded-lg border border-surface-200 bg-surface-50/80 flex justify-between items-center text-xs">
+              <span className="font-medium text-surface-700">Transportation / Cartage</span>
+              <span className="font-mono font-bold text-surface-900">+ ₹{transportCharges.toLocaleString('en-IN')}</span>
+            </div>
+          )}
+
+          {loadingCharges > 0 && (
+            <div className="p-2.5 rounded-lg border border-surface-200 bg-surface-50/80 flex justify-between items-center text-xs">
+              <span className="font-medium text-surface-700">Loading / Unloading Charges</span>
+              <span className="font-mono font-bold text-surface-900">+ ₹{loadingCharges.toLocaleString('en-IN')}</span>
+            </div>
+          )}
+
+          {applyGst && (
+            <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/30 text-xs space-y-1 font-mono">
+              <div className="flex justify-between text-surface-600">
+                <span>Taxable Subtotal:</span>
+                <span>₹{taxableSubtotal.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between text-emerald-800 font-medium">
+                <span>CGST (9%):</span>
+                <span>+ ₹{cgstAmount.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between text-emerald-800 font-medium">
+                <span>SGST (9%):</span>
+                <span>+ ₹{sgstAmount.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Desktop / Print Items Table */}
@@ -462,6 +506,78 @@ export default function ChallanDetailPage() {
                   </tr>
                 );
               })}
+
+              {/* Transportation Charges row */}
+              {transportCharges > 0 && (
+                <tr className="bg-surface-50/50 font-medium">
+                  <td className="py-2 px-2 text-surface-400 font-mono">•</td>
+                  <td className="py-2 px-2 text-surface-800 italic" colSpan={2}>
+                    Transportation / Cartage Charges
+                  </td>
+                  <td className="py-2 px-2 text-right text-surface-400">—</td>
+                  <td className="py-2 px-2 text-surface-400">—</td>
+                  {totalAmount > 0 && <td className="py-2 px-2 text-right text-surface-400">—</td>}
+                  {totalAmount > 0 && (
+                    <td className="py-2 px-2 text-right font-semibold text-surface-900 font-mono">
+                      {formatINR(transportCharges)}
+                    </td>
+                  )}
+                </tr>
+              )}
+
+              {/* Loading / Unloading Charges row */}
+              {loadingCharges > 0 && (
+                <tr className="bg-surface-50/50 font-medium">
+                  <td className="py-2 px-2 text-surface-400 font-mono">•</td>
+                  <td className="py-2 px-2 text-surface-800 italic" colSpan={2}>
+                    Loading / Unloading Charges
+                  </td>
+                  <td className="py-2 px-2 text-right text-surface-400">—</td>
+                  <td className="py-2 px-2 text-surface-400">—</td>
+                  {totalAmount > 0 && <td className="py-2 px-2 text-right text-surface-400">—</td>}
+                  {totalAmount > 0 && (
+                    <td className="py-2 px-2 text-right font-semibold text-surface-900 font-mono">
+                      {formatINR(loadingCharges)}
+                    </td>
+                  )}
+                </tr>
+              )}
+
+              {/* Subtotal & GST rows if applyGst */}
+              {applyGst && (
+                <>
+                  <tr className="border-t border-surface-200 bg-surface-50/70 font-semibold text-surface-700">
+                    <td className="py-1.5 px-2 font-mono">•</td>
+                    <td className="py-1.5 px-2 uppercase text-[11px]" colSpan={4}>
+                      Taxable Subtotal
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-surface-400">—</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold text-surface-900">
+                      {formatINR(taxableSubtotal)}
+                    </td>
+                  </tr>
+                  <tr className="bg-emerald-50/30 text-emerald-800 font-medium">
+                    <td className="py-1.5 px-2 font-mono text-emerald-600">•</td>
+                    <td className="py-1.5 px-2" colSpan={2}>CGST (9%)</td>
+                    <td className="py-1.5 px-2 text-right font-mono">9%</td>
+                    <td className="py-1.5 px-2">—</td>
+                    <td className="py-1.5 px-2 text-right text-surface-400">—</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
+                      {formatINR(cgstAmount)}
+                    </td>
+                  </tr>
+                  <tr className="bg-emerald-50/30 text-emerald-800 font-medium">
+                    <td className="py-1.5 px-2 font-mono text-emerald-600">•</td>
+                    <td className="py-1.5 px-2" colSpan={2}>SGST (9%)</td>
+                    <td className="py-1.5 px-2 text-right font-mono">9%</td>
+                    <td className="py-1.5 px-2">—</td>
+                    <td className="py-1.5 px-2 text-right text-surface-400">—</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
+                      {formatINR(sgstAmount)}
+                    </td>
+                  </tr>
+                </>
+              )}
             </tbody>
           </table>
         </div>
@@ -479,7 +595,7 @@ export default function ChallanDetailPage() {
           {totalAmount > 0 && (
             <div className="text-right">
               <span className="font-bold text-xs uppercase tracking-wider text-surface-700 block">
-                Total Amount
+                {applyGst ? 'Grand Total (Inc. 18% GST)' : 'Total Amount'}
               </span>
               <span className="font-mono font-extrabold text-lg text-primary-600">
                 ₹{totalAmount.toLocaleString('en-IN')}

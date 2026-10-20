@@ -350,6 +350,21 @@ export function createChallan(
     } as ChallanItem;
   });
 
+  const transport = Number(data.transportation_charges) || 0;
+  const loading = Number(data.loading_charges) || 0;
+  const applyGst = Boolean(data.apply_gst);
+
+  const itemsTotal = totalAmount || 0;
+  const subtotal = itemsTotal + transport + loading;
+  const cgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+  const sgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+  const finalTotal =
+    data.total_amount !== undefined && data.total_amount !== null
+      ? data.total_amount
+      : subtotal > 0
+      ? subtotal + cgst + sgst
+      : null;
+
   const challan: Challan = {
     id: challanId,
     user_id: 'demo-user',
@@ -367,7 +382,13 @@ export function createChallan(
     status: data.status || 'draft',
     share_status: 'not_shared',
     total_quantity: totalQuantity,
-    total_amount: totalAmount,
+    subtotal_amount: subtotal > 0 ? subtotal : null,
+    transportation_charges: transport > 0 ? transport : null,
+    loading_charges: loading > 0 ? loading : null,
+    apply_gst: applyGst,
+    cgst_amount: cgst > 0 ? cgst : null,
+    sgst_amount: sgst > 0 ? sgst : null,
+    total_amount: finalTotal,
     created_at: now,
     updated_at: now,
     items: challanItems,
@@ -425,9 +446,39 @@ export function updateChallan(
       } as ChallanItem;
     });
 
+    const transport =
+      data.transportation_charges !== undefined
+        ? Number(data.transportation_charges) || 0
+        : Number(state.challans[idx].transportation_charges) || 0;
+    const loading =
+      data.loading_charges !== undefined
+        ? Number(data.loading_charges) || 0
+        : Number(state.challans[idx].loading_charges) || 0;
+    const applyGst =
+      data.apply_gst !== undefined
+        ? Boolean(data.apply_gst)
+        : Boolean(state.challans[idx].apply_gst);
+
+    const itemsTotal = totalAmount !== null ? totalAmount : 0;
+    const subtotal = itemsTotal + transport + loading;
+    const cgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+    const sgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+    const finalTotal =
+      data.total_amount !== undefined && data.total_amount !== null
+        ? data.total_amount
+        : subtotal > 0
+        ? subtotal + cgst + sgst
+        : null;
+
     state.challanItems.push(...newItems);
     data.total_quantity = totalQuantity;
-    data.total_amount = totalAmount;
+    data.subtotal_amount = subtotal > 0 ? subtotal : null;
+    data.transportation_charges = transport > 0 ? transport : null;
+    data.loading_charges = loading > 0 ? loading : null;
+    data.apply_gst = applyGst;
+    data.cgst_amount = cgst > 0 ? cgst : null;
+    data.sgst_amount = sgst > 0 ? sgst : null;
+    data.total_amount = finalTotal;
   }
 
   state.challans[idx] = {

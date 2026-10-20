@@ -304,7 +304,12 @@ export default function ChallansPage() {
                       </span>
                     </span>
                     {challan.total_amount && challan.total_amount > 0 ? (
-                      <span className="font-mono text-primary-700 bg-primary-50 border border-primary-200 px-1.5 py-0.5 rounded text-[11px] font-bold">
+                      <span className="font-mono text-primary-700 bg-primary-50 border border-primary-200 px-1.5 py-0.5 rounded text-[11px] font-bold flex items-center gap-1">
+                        {challan.apply_gst && (
+                          <span className="text-[9px] uppercase font-bold text-emerald-700 bg-emerald-100/70 px-1 rounded">
+                            GST
+                          </span>
+                        )}
                         ₹{challan.total_amount.toLocaleString('en-IN')}
                       </span>
                     ) : null}
@@ -403,9 +408,18 @@ export default function ChallansPage() {
                         </span>
                       </td>
                       <td className="text-right font-mono font-bold text-xs text-surface-900 whitespace-nowrap">
-                        {challan.total_amount && challan.total_amount > 0
-                          ? `₹${challan.total_amount.toLocaleString('en-IN')}`
-                          : '—'}
+                        {challan.total_amount && challan.total_amount > 0 ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {challan.apply_gst && (
+                              <span className="text-[9px] uppercase font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded font-sans">
+                                +18% GST
+                              </span>
+                            )}
+                            <span>₹{challan.total_amount.toLocaleString('en-IN')}</span>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td>
                         <StatusBadge status={challan.status} />

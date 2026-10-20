@@ -62,6 +62,12 @@ export default function EditChallanPage() {
   const [showExtraDetails, setShowExtraDetails] = useState(false);
 
   const [items, setItems] = useState<ChallanItemFormData[]>([emptyItem()]);
+
+  // Additional Charges & GST
+  const [transportCharges, setTransportCharges] = useState('');
+  const [loadingCharges, setLoadingCharges] = useState('');
+  const [applyGst, setApplyGst] = useState(false);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState('');
@@ -83,8 +89,11 @@ export default function EditChallanPage() {
         setCustomerPhone(c.customer_phone || '');
         setDeliveryAddress(c.delivery_address || c.customer_address || '');
         setReferenceNumber(c.reference_number || '');
+        setTransportCharges(c.transportation_charges ? String(c.transportation_charges) : '');
+        setLoadingCharges(c.loading_charges ? String(c.loading_charges) : '');
+        setApplyGst(Boolean(c.apply_gst));
 
-        if (c.customer_phone || c.delivery_address || c.reference_number) {
+        if (c.customer_phone || c.delivery_address || c.reference_number || c.transportation_charges || c.loading_charges || c.apply_gst) {
           setShowExtraDetails(true);
         }
 
@@ -188,9 +197,33 @@ export default function EditChallanPage() {
     return items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   }, [items]);
 
-  const totalAmount = useMemo(() => {
+  const itemsSubtotal = useMemo(() => {
     return items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   }, [items]);
+
+  const transport = useMemo(() => Number(transportCharges) || 0, [transportCharges]);
+  const loading = useMemo(() => Number(loadingCharges) || 0, [loadingCharges]);
+
+  const taxableSubtotal = useMemo(() => {
+    return itemsSubtotal + transport + loading;
+  }, [itemsSubtotal, transport, loading]);
+
+  const cgstAmount = useMemo(() => {
+    return applyGst && taxableSubtotal > 0
+      ? Math.round(taxableSubtotal * 0.09 * 100) / 100
+      : 0;
+  }, [applyGst, taxableSubtotal]);
+
+  const sgstAmount = useMemo(() => {
+    return applyGst && taxableSubtotal > 0
+      ? Math.round(taxableSubtotal * 0.09 * 100) / 100
+      : 0;
+  }, [applyGst, taxableSubtotal]);
+
+  const totalAmount = useMemo(() => {
+    if (taxableSubtotal <= 0) return 0;
+    return taxableSubtotal + cgstAmount + sgstAmount;
+  }, [taxableSubtotal, cgstAmount, sgstAmount]);
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
@@ -229,6 +262,12 @@ export default function EditChallanPage() {
           delivery_address: deliveryAddress.trim(),
           reference_number: referenceNumber.trim(),
           total_quantity: totalQuantity,
+          transportation_charges: transport > 0 ? transport : null,
+          loading_charges: loading > 0 ? loading : null,
+          apply_gst: applyGst,
+          cgst_amount: cgstAmount > 0 ? cgstAmount : null,
+          sgst_amount: sgstAmount > 0 ? sgstAmount : null,
+          subtotal_amount: taxableSubtotal > 0 ? taxableSubtotal : null,
           total_amount: totalAmount > 0 ? totalAmount : null,
         },
         validItems.map((it) => ({
@@ -565,6 +604,118 @@ export default function EditChallanPage() {
         </button>
       </div>
 
+      {/* Additional Charges: Transportation, Loading & GST */}
+      <div className="card p-3 sm:p-4 space-y-3 bg-surface-50/70 border border-surface-200">
+        <div className="flex items-center justify-between border-b border-surface-200 pb-2">
+          <div>
+            <h3 className="text-xs font-bold text-surface-900 uppercase tracking-wider">
+              Transportation, Loading & GST
+            </h3>
+            <p className="text-[11px] text-surface-500">
+              Add separate charges and toggle optional 9% CGST + 9% SGST
+            </p>
+          </div>
+          {itemsSubtotal > 0 && (
+            <span className="text-xs font-mono font-bold text-surface-700 bg-white px-2 py-0.5 rounded border border-surface-200">
+              Items: ₹{itemsSubtotal.toLocaleString('en-IN')}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-semibold text-surface-600 block mb-1">
+              Transportation / Cartage Charges (₹)
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={transportCharges}
+              onChange={(e) => setTransportCharges(e.target.value)}
+              placeholder="e.g. 500"
+              className="input text-xs py-1.5 font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-surface-600 block mb-1">
+              Loading / Unloading Charges (₹)
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={loadingCharges}
+              onChange={(e) => setLoadingCharges(e.target.value)}
+              placeholder="e.g. 300"
+              className="input text-xs py-1.5 font-mono"
+            />
+          </div>
+        </div>
+
+        {/* GST Toggle Option */}
+        <div className="pt-2 border-t border-surface-200">
+          <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg bg-white hover:bg-surface-100/60 transition-colors border border-surface-200">
+            <input
+              type="checkbox"
+              checked={applyGst}
+              onChange={(e) => setApplyGst(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded text-primary-600 focus:ring-primary-400 cursor-pointer"
+            />
+            <div className="flex-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-surface-900">
+                  Apply GST (18%) — 9% CGST + 9% SGST
+                </span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Auto Calculated
+                </span>
+              </div>
+              <span className="text-[11px] text-surface-500 block mt-0.5">
+                Auto-calculate 9% CGST + 9% SGST on subtotal. Leave unchecked if non-tax/estimate billing.
+              </span>
+            </div>
+          </label>
+
+          {/* Live GST Calculation Breakdown if applied */}
+          {applyGst && taxableSubtotal > 0 && (
+            <div className="mt-2.5 p-3 rounded-lg bg-white border border-surface-200 text-xs space-y-1.5 font-mono">
+              <div className="flex justify-between text-surface-600">
+                <span>Items Subtotal:</span>
+                <span>₹{itemsSubtotal.toLocaleString('en-IN')}</span>
+              </div>
+              {transport > 0 && (
+                <div className="flex justify-between text-surface-600">
+                  <span>Transportation Charges:</span>
+                  <span>+ ₹{transport.toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              {loading > 0 && (
+                <div className="flex justify-between text-surface-600">
+                  <span>Loading Charges:</span>
+                  <span>+ ₹{loading.toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-semibold text-surface-800 pt-1 border-t border-surface-200">
+                <span>Taxable Value:</span>
+                <span>₹{taxableSubtotal.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between text-emerald-700 font-semibold">
+                <span>CGST (9%):</span>
+                <span>+ ₹{cgstAmount.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between text-emerald-700 font-semibold">
+                <span>SGST (9%):</span>
+                <span>+ ₹{sgstAmount.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between font-extrabold text-surface-900 pt-1.5 border-t-2 border-surface-300 text-sm">
+                <span>Final Grand Total (with 18% GST):</span>
+                <span className="text-primary-600">₹{totalAmount.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Summary Footer Bar on Mobile & Desktop */}
       <div className="card p-3.5 sm:p-4 bg-surface-900 text-white flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -579,7 +730,7 @@ export default function EditChallanPage() {
           {totalAmount > 0 && (
             <div className="pl-3 border-l border-surface-700">
               <span className="text-[10px] text-surface-400 uppercase tracking-wider block">
-                Total Amount
+                {applyGst ? 'Grand Total (Inc. 18% GST)' : 'Total Amount'}
               </span>
               <span className="text-base sm:text-lg font-bold font-mono text-white">
                 ₹{totalAmount.toLocaleString('en-IN')}
@@ -615,7 +766,7 @@ export default function EditChallanPage() {
             )}
           </div>
           <span className="text-[9px] text-surface-400 font-medium">
-            {totalAmount > 0 ? 'Live Rate Total' : 'Total Quantity'}
+            {applyGst ? 'Total (Inc. 18% GST)' : totalAmount > 0 ? 'Total Amount' : 'Total Quantity'}
           </span>
         </div>
 

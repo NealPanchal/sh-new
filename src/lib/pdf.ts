@@ -130,8 +130,17 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
   y += 4;
 
   // ---- ITEMS TABLE ----
+  const transportCharges = Number(challan.transportation_charges) || 0;
+  const loadingCharges = Number(challan.loading_charges) || 0;
+  const hasExtraCharges = transportCharges > 0 || loadingCharges > 0;
+  const applyGst = Boolean(challan.apply_gst);
+
   const hasRates = items.some((i) => (i.rate && Number(i.rate) > 0) || (i.amount && Number(i.amount) > 0));
-  const hasAmounts = hasRates || Boolean(challan.total_amount && challan.total_amount > 0);
+  const hasAmounts =
+    hasRates ||
+    Boolean(challan.total_amount && challan.total_amount > 0) ||
+    hasExtraCharges ||
+    applyGst;
 
   const headers: string[] = ['S.No', 'Item Description', 'Unit', 'Qty'];
   const colWidths: number[] = [12, contentWidth - 44, 16, 16];
@@ -147,7 +156,17 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
     colWidths.push(24);
   }
 
-  const tableData = items.map((item, idx) => {
+  const itemsSubtotal = items.reduce(
+    (sum, it) =>
+      sum +
+      (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
+    0
+  );
+  const taxableSubtotal = challan.subtotal_amount || (itemsSubtotal + transportCharges + loadingCharges);
+  const cgstAmount = challan.cgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+  const sgstAmount = challan.sgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+
+  const tableData: (string | number)[][] = items.map((item, idx) => {
     let desc = item.item_description;
     if (item.brand) desc += ` (${item.brand})`;
     if (item.colour_finish) desc += ` - ${item.colour_finish}`;
@@ -172,6 +191,40 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
 
     return row;
   });
+
+  // Additional Charges Rows in PDF table
+  if (transportCharges > 0) {
+    const row: (string | number)[] = ['•', 'Transportation / Cartage Charges', '—', '—'];
+    if (hasRates) row.push('—');
+    if (hasAmounts) row.push(formatINR(transportCharges));
+    tableData.push(row);
+  }
+
+  if (loadingCharges > 0) {
+    const row: (string | number)[] = ['•', 'Loading / Unloading Charges', '—', '—'];
+    if (hasRates) row.push('—');
+    if (hasAmounts) row.push(formatINR(loadingCharges));
+    tableData.push(row);
+  }
+
+  if (applyGst) {
+    if (hasExtraCharges) {
+      const subRow: (string | number)[] = ['•', 'Taxable Subtotal', '—', '—'];
+      if (hasRates) subRow.push('—');
+      if (hasAmounts) subRow.push(formatINR(taxableSubtotal));
+      tableData.push(subRow);
+    }
+
+    const cgstRow: (string | number)[] = ['•', 'CGST (9%)', '—', '9%'];
+    if (hasRates) cgstRow.push('—');
+    if (hasAmounts) cgstRow.push(formatINR(cgstAmount));
+    tableData.push(cgstRow);
+
+    const sgstRow: (string | number)[] = ['•', 'SGST (9%)', '—', '9%'];
+    if (hasRates) sgstRow.push('—');
+    if (hasAmounts) sgstRow.push(formatINR(sgstAmount));
+    tableData.push(sgstRow);
+  }
 
   const rateColIdx = headers.indexOf('Rate');
   const amountColIdx = headers.indexOf('Amount');
@@ -220,13 +273,11 @@ export function generateChallanPDF({ challan, items, profile }: PDFOptions): jsP
 
   const grandTotalAmount =
     challan.total_amount ||
-    items.reduce(
-      (sum, it) => sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
-      0
-    );
+    (taxableSubtotal + cgstAmount + sgstAmount);
 
   if (grandTotalAmount > 0) {
-    doc.text(`Total Amount: ${formatINR(grandTotalAmount)}`, pageWidth - margin, y + 4, {
+    const label = applyGst ? 'Grand Total (Inc. 18% GST):' : 'Total Amount:';
+    doc.text(`${label} ${formatINR(grandTotalAmount)}`, pageWidth - margin, y + 4, {
       align: 'right',
     });
   }
