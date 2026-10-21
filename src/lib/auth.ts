@@ -1,44 +1,88 @@
 /**
- * Admin Authentication for Showhouse Laminates
- * Only admin access allowed:
- * Username: adminsh
- * Password: showhouse@2026!
+ * Client-Side Authentication Adapter for Showhouse Admin Portal
+ * All actual credential checks are strictly performed server-side via /api/auth/login
  */
 
-const ADMIN_CREDENTIALS = {
-  username: 'adminsh',
-  password: 'showhouse@2026!',
-};
-
 const AUTH_STORAGE_KEY = 'showhouse_admin_authenticated';
-const AUTH_COOKIE_NAME = 'sh_admin_auth';
 
-export function verifyAdminCredentials(username: string, password: string): boolean {
-  return (
-    username.trim().toLowerCase() === ADMIN_CREDENTIALS.username &&
-    password === ADMIN_CREDENTIALS.password
-  );
+export interface LoginResult {
+  success: boolean;
+  error?: string;
+  user?: {
+    username: string;
+    role: string;
+  };
 }
 
-export function setAdminSession(): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
-      authenticated: true,
-      username: ADMIN_CREDENTIALS.username,
-      loggedInAt: new Date().toISOString(),
-    }));
-    // Also set cookie for SSR / middleware compatibility if needed
-    document.cookie = `${AUTH_COOKIE_NAME}=true; path=/; max-age=2592000; SameSite=Lax`;
+/**
+ * Perform server-side login with credentials
+ */
+export async function loginAdmin(username: string, password: string): Promise<LoginResult> {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || 'Authentication failed. Please check credentials.',
+      };
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          authenticated: true,
+          username: data.user?.username || username,
+          loggedInAt: new Date().toISOString(),
+        })
+      );
+    }
+
+    return {
+      success: true,
+      user: data.user,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: 'Network connection failed. Please check your internet or server.',
+    };
   }
 }
 
+/**
+ * Logout and clear session
+ */
+export async function logoutAdmin(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    window.location.href = '/login';
+  }
+}
+
+/**
+ * Clear local session without redirect
+ */
 export function clearAdminSession(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(AUTH_STORAGE_KEY);
-    document.cookie = `${AUTH_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
   }
 }
 
+/**
+ * Check if admin is currently authenticated
+ */
 export function isAdminAuthenticated(): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -48,5 +92,23 @@ export function isAdminAuthenticated(): boolean {
     return Boolean(session?.authenticated);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Verify active session against server
+ */
+export async function verifySessionWithServer(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/auth/session', { cache: 'no-store' });
+    if (!res.ok) {
+      clearAdminSession();
+      return false;
+    }
+    const data = await res.json();
+    return Boolean(data.authenticated);
+  } catch {
+    // If offline, trust local session flag
+    return isAdminAuthenticated();
   }
 }

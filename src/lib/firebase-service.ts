@@ -58,6 +58,7 @@ export async function saveChallanToFirebase(challan: Challan): Promise<void> {
   if (typeof window !== 'undefined') {
     fetch('/api/challans', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ challan: data }),
     }).catch(() => {});
@@ -80,6 +81,7 @@ export async function deleteChallanFromFirebase(id: string): Promise<void> {
   if (typeof window !== 'undefined') {
     fetch(`/api/challans?id=${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
     }).catch(() => {});
   }
 
@@ -229,7 +231,7 @@ export function subscribeToChallans(onUpdate: (challans: Challan[]) => void): ()
   if (typeof window !== 'undefined') {
     pollInterval = setInterval(async () => {
       try {
-        const res = await fetch('/api/challans', { cache: 'no-store' });
+        const res = await fetch('/api/challans', { cache: 'no-store', credentials: 'same-origin' });
         if (res.ok) {
           const data = await res.json();
           if (data.success && Array.isArray(data.challans)) {

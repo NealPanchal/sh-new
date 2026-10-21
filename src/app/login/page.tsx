@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, User, Eye, EyeOff, ShieldCheck, ArrowRight } from 'lucide-react';
-import { verifyAdminCredentials, setAdminSession, isAdminAuthenticated } from '@/lib/auth';
+import { loginAdmin, isAdminAuthenticated } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,7 +21,7 @@ export default function LoginPage() {
     }
   }, [router]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -36,16 +36,18 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    setTimeout(() => {
-      const isValid = verifyAdminCredentials(username, password);
-      if (isValid) {
-        setAdminSession();
+    try {
+      const res = await loginAdmin(username, password);
+      if (res.success) {
         router.replace('/');
       } else {
-        setError('Invalid admin credentials. Please check username or password.');
+        setError(res.error || 'Invalid admin credentials. Please try again.');
         setLoading(false);
       }
-    }, 300);
+    } catch {
+      setError('Authentication failed. Please check network or try again.');
+      setLoading(false);
+    }
   };
 
   if (!mounted) return null;

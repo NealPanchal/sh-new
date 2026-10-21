@@ -17,7 +17,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { clearAdminSession } from '@/lib/auth';
+import { logoutAdmin } from '@/lib/auth';
 
 export const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -34,10 +34,9 @@ export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm('Logout from Showhouse Admin?')) {
-      clearAdminSession();
-      router.replace('/login');
+      await logoutAdmin();
     }
   };
 
@@ -167,10 +166,9 @@ export function Sidebar() {
 export function MobileHeader() {
   const router = useRouter();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm('Logout from Showhouse Admin?')) {
-      clearAdminSession();
-      router.replace('/login');
+      await logoutAdmin();
     }
   };
 
