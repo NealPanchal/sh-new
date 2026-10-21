@@ -78,6 +78,23 @@ function CreateChallanContent() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  const employeeList: string[] = useMemo(() => {
+    const list: string[] =
+      profile?.employees && profile.employees.length > 0
+        ? profile.employees
+        : ['Rushank', 'Neal', 'Admin'];
+    if (createdBy && !list.includes(createdBy)) {
+      return [...list, createdBy];
+    }
+    return list;
+  }, [profile?.employees, createdBy]);
+
+  useEffect(() => {
+    if (profile?.employees && profile.employees.length > 0 && !createdBy) {
+      setCreatedBy(profile.employees[0]);
+    }
+  }, [profile?.employees, createdBy]);
   const [showCancel, setShowCancel] = useState(false);
 
   // Autocomplete UI
@@ -458,33 +475,29 @@ function CreateChallanContent() {
             />
           </div>
 
-          {/* Billed By / Created By */}
+          {/* Billed By / Created By Dropdown */}
           <div className="sm:col-span-3">
-            <label className="label text-xs">Billed / Created By</label>
-            <input
-              type="text"
+            <div className="flex items-center justify-between mb-1">
+              <label className="label text-xs mb-0">Billed / Created By</label>
+              <Link
+                href="/settings"
+                className="text-[10px] text-primary-600 hover:text-primary-700 font-medium hover:underline flex items-center gap-1"
+                title="Configure employees in settings"
+              >
+                <span>Manage</span>
+              </Link>
+            </div>
+            <select
               value={createdBy}
               onChange={(e) => setCreatedBy(e.target.value)}
-              placeholder="e.g. Rushank"
-              className="input text-xs"
-            />
-            <div className="flex items-center gap-1 mt-1">
-              {['Rushank', 'Neal', 'Admin'].map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => setCreatedBy(name)}
-                  className={cn(
-                    'text-[10px] px-1.5 py-0.5 rounded border transition-colors',
-                    createdBy.toLowerCase() === name.toLowerCase()
-                      ? 'bg-primary-50 border-primary-300 text-primary-700 font-bold'
-                      : 'border-surface-200 text-surface-500 hover:bg-surface-50'
-                  )}
-                >
-                  {name}
-                </button>
+              className="input text-xs font-semibold text-surface-800 bg-white cursor-pointer"
+            >
+              {employeeList.map((emp) => (
+                <option key={emp} value={emp}>
+                  {emp}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
         </div>
 

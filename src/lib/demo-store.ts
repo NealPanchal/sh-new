@@ -107,6 +107,9 @@ export function initDemoStore() {
 // ============================================================
 
 export function getProfile(): BusinessProfile | null {
+  if (state.profile && (!state.profile.employees || !Array.isArray(state.profile.employees))) {
+    state.profile.employees = ['Rushank', 'Neal', 'Admin'];
+  }
   return state.profile;
 }
 
@@ -117,7 +120,12 @@ export function isSetupComplete(): boolean {
 export function saveProfile(data: Partial<BusinessProfile>): BusinessProfile {
   const now = new Date().toISOString();
   if (state.profile) {
-    state.profile = { ...state.profile, ...data, updated_at: now };
+    state.profile = {
+      ...state.profile,
+      ...data,
+      employees: data.employees || state.profile.employees || ['Rushank', 'Neal', 'Admin'],
+      updated_at: now,
+    };
   } else {
     state.profile = {
       id: generateId(),
@@ -138,6 +146,7 @@ export function saveProfile(data: Partial<BusinessProfile>): BusinessProfile {
       show_amount_column: true,
       show_signature_area: true,
       show_prepared_by: true,
+      employees: data.employees || ['Rushank', 'Neal', 'Admin'],
       created_at: now,
       updated_at: now,
       ...data,

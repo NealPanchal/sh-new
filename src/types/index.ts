@@ -27,6 +27,7 @@ export interface BusinessProfile {
   bank_ifsc?: string | null;
   bank_branch?: string | null;
   terms_conditions?: string | null;
+  employees?: string[];
   show_rate_column: boolean;
   show_amount_column: boolean;
   show_signature_area: boolean;
@@ -196,6 +197,7 @@ export interface BusinessSetupFormData {
   show_amount_column: boolean;
   show_signature_area: boolean;
   show_prepared_by: boolean;
+  employees?: string[];
 }
 
 export interface DashboardStats {

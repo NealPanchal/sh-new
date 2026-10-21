@@ -14,6 +14,10 @@ import {
   Check,
   ShieldCheck,
   FileCheck,
+  Users,
+  Plus,
+  X,
+  Trash2,
 } from 'lucide-react';
 import { BusinessProfile } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -36,6 +40,10 @@ export default function SettingsPage() {
   // Sequence
   const [challanPrefix, setChallanPrefix] = useState('SH/');
   const [challanNextNumber, setChallanNextNumber] = useState(1);
+
+  // Employees / Creators (Billed By)
+  const [employees, setEmployees] = useState<string[]>(['Rushank', 'Neal', 'Admin']);
+  const [newEmployeeName, setNewEmployeeName] = useState('');
 
   // Bank & Terms
   const [bankName, setBankName] = useState('');
@@ -64,6 +72,11 @@ export default function SettingsPage() {
       setStateCode(profile.state_code || '24');
       setChallanPrefix(profile.challan_prefix || 'SH/');
       setChallanNextNumber(profile.challan_next_number || 1);
+      setEmployees(
+        profile.employees && profile.employees.length > 0
+          ? profile.employees
+          : ['Rushank', 'Neal', 'Admin']
+      );
       setBankName(profile.bank_name || '');
       setBankAccount(profile.bank_account || '');
       setBankIfsc(profile.bank_ifsc || '');
@@ -74,6 +87,30 @@ export default function SettingsPage() {
       );
     }
   }, [profile]);
+
+  const handleAddEmployee = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const name = newEmployeeName.trim();
+    if (!name) return;
+    if (employees.some((emp) => emp.toLowerCase() === name.toLowerCase())) {
+      showToast(`${name} is already in the employee list`, 'error');
+      return;
+    }
+    const updated = [...employees, name];
+    setEmployees(updated);
+    setNewEmployeeName('');
+    showToast(`Added ${name} to employee list`);
+  };
+
+  const handleRemoveEmployee = (nameToRemove: string) => {
+    if (employees.length <= 1) {
+      showToast('At least one employee must remain in the list', 'error');
+      return;
+    }
+    const updated = employees.filter((emp) => emp !== nameToRemove);
+    setEmployees(updated);
+    showToast(`Removed ${nameToRemove}`);
+  };
 
   if (!mounted || isLoading) {
     return (
@@ -98,6 +135,7 @@ export default function SettingsPage() {
         state_code: stateCode,
         challan_prefix: challanPrefix,
         challan_next_number: Number(challanNextNumber) || 1,
+        employees: employees.filter(Boolean),
         bank_name: bankName,
         bank_account: bankAccount,
         bank_ifsc: bankIfsc,
@@ -318,6 +356,80 @@ export default function SettingsPage() {
                 Automatically increments with each created challan
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* Employee / Billing Staff Management */}
+        <div className="card p-6 space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-surface-100">
+            <div className="flex items-center gap-2 text-primary-600 font-bold text-base">
+              <Users size={20} />
+              <span>Challan Creators & Staff (Billed By)</span>
+            </div>
+            <span className="text-xs bg-primary-50 text-primary-700 px-2.5 py-0.5 rounded-full font-semibold border border-primary-200">
+              {employees.length} {employees.length === 1 ? 'Staff Member' : 'Staff Members'}
+            </span>
+          </div>
+
+          <p className="text-xs text-surface-500">
+            Manage staff members and employees who create delivery challans. These employees will appear directly in the &quot;Billed / Created By&quot; dropdown selector across all challan forms.
+          </p>
+
+          {/* Current Employees Badges */}
+          <div className="space-y-2">
+            <label className="label text-xs">Current Staff / Employees</label>
+            <div className="flex flex-wrap items-center gap-2">
+              {employees.map((emp) => (
+                <div
+                  key={emp}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-200 text-xs font-semibold text-surface-800 shadow-2xs"
+                >
+                  <div className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-[10px]">
+                    👤
+                  </div>
+                  <span>{emp}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveEmployee(emp)}
+                    title={`Remove ${emp}`}
+                    className="p-0.5 text-surface-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Add New Employee Form */}
+          <div className="pt-2">
+            <label className="label text-xs">Add New Staff / Employee</label>
+            <div className="flex items-center gap-2 max-w-md">
+              <input
+                type="text"
+                value={newEmployeeName}
+                onChange={(e) => setNewEmployeeName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddEmployee();
+                  }
+                }}
+                placeholder="e.g. Ramesh Patel"
+                className="input text-xs flex-1"
+              />
+              <button
+                type="button"
+                onClick={() => handleAddEmployee()}
+                className="btn-primary text-xs py-2 px-3.5 whitespace-nowrap flex items-center gap-1.5 shrink-0"
+              >
+                <Plus size={15} />
+                <span>Add Employee</span>
+              </button>
+            </div>
+            <span className="text-[11px] text-surface-400 mt-1 block">
+              Type employee name, click &quot;Add Employee&quot;, and then click &quot;Save Settings&quot; below.
+            </span>
           </div>
         </div>
 
