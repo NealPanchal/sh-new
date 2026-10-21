@@ -21,7 +21,7 @@ import {
 export default function ChallanBillPage() {
   const params = useParams();
   const router = useRouter();
-  const { getChallan, profile, showToast } = useApp();
+  const { getChallan, profile, showToast, dataVersion, challans: liveChallans } = useApp();
 
   const challanId = params.id as string;
   const [challan, setChallan] = useState<Challan | null>(null);
@@ -40,9 +40,11 @@ export default function ChallanBillPage() {
             '0120'
         );
         setConfirmBy(found.notes || 'Confirm By Rushank');
+      } else {
+        setChallan(null);
       }
     }
-  }, [challanId, getChallan]);
+  }, [challanId, getChallan, dataVersion, liveChallans]);
 
   if (!challan) {
     return (

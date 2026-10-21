@@ -43,6 +43,8 @@ export default function ChallanDetailPage() {
     deleteChallan,
     showToast,
     isLoading,
+    challans: liveChallans,
+    dataVersion,
   } = useApp();
 
   const [mounted, setMounted] = useState(false);
@@ -58,11 +60,9 @@ export default function ChallanDetailPage() {
   useEffect(() => {
     if (mounted && challanId) {
       const found = getChallan(challanId);
-      if (found) {
-        setChallan(found);
-      }
+      setChallan(found || null);
     }
-  }, [mounted, challanId, getChallan]);
+  }, [mounted, challanId, getChallan, dataVersion, liveChallans]);
 
   const itemsSubtotal = useMemo(() => {
     if (!challan?.items) return 0;

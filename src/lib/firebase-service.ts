@@ -45,30 +45,50 @@ function sanitizeForFirestore<T extends Record<string, any>>(obj: T): T {
 }
 
 /**
- * Save / Update a challan in Firebase Firestore
+ * Save / Update a challan in Firebase Firestore & Server Database
  */
 export async function saveChallanToFirebase(challan: Challan): Promise<void> {
+  const data = sanitizeForFirestore({
+    ...challan,
+    id: challan.id,
+    updated_at: new Date().toISOString(),
+  });
+
+  // 1. Dual sync to Next.js server API
+  if (typeof window !== 'undefined') {
+    fetch('/api/challans', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challan: data }),
+    }).catch(() => {});
+  }
+
+  // 2. Sync to Cloud Firestore
   try {
     const docRef = doc(firestore, COLLECTIONS.CHALLANS, challan.id);
-    const data = sanitizeForFirestore({
-      ...challan,
-      updated_at: new Date().toISOString(),
-    });
     await setDoc(docRef, data, { merge: true });
-  } catch (err) {
-    console.warn('Firebase saveChallan failed (offline mode active):', err);
+  } catch (err: any) {
+    console.warn('Firebase saveChallan warning:', err?.message || err);
   }
 }
 
 /**
- * Delete a challan from Firebase Firestore
+ * Delete a challan from Firebase Firestore & Server Database
  */
 export async function deleteChallanFromFirebase(id: string): Promise<void> {
+  // 1. Dual sync to Next.js server API
+  if (typeof window !== 'undefined') {
+    fetch(`/api/challans?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+  }
+
+  // 2. Sync to Cloud Firestore
   try {
     const docRef = doc(firestore, COLLECTIONS.CHALLANS, id);
     await deleteDoc(docRef);
-  } catch (err) {
-    console.warn('Firebase deleteChallan failed (offline mode active):', err);
+  } catch (err: any) {
+    console.warn('Firebase deleteChallan warning:', err?.message || err);
   }
 }
 
@@ -163,28 +183,82 @@ export async function fetchChallansFromFirebase(): Promise<Challan[]> {
 }
 
 /**
- * Subscribe to real-time challans changes from Firestore
+ * Subscribe to real-time challans changes from Firestore, Server API, and BroadcastChannel
  */
 export function subscribeToChallans(onUpdate: (challans: Challan[]) => void): () => void {
+  let isFirestoreActive = false;
+
+  // 1. Cross-tab real-time BroadcastChannel (0ms delay across tabs/windows on same device)
+  let broadcastChannel: BroadcastChannel | null = null;
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    try {
+      broadcastChannel = new BroadcastChannel('showhouse_challans_sync');
+      broadcastChannel.onmessage = (event) => {
+        if (event.data?.type === 'CHALLANS_UPDATED' && Array.isArray(event.data.challans)) {
+          onUpdate(event.data.challans);
+        }
+      };
+    } catch {}
+  }
+
+  // 2. Real-time Cloud Firestore onSnapshot (Multi-Device Cloud)
+  let unsubFirestore: (() => void) | null = null;
   try {
     const colRef = collection(firestore, COLLECTIONS.CHALLANS);
-    return onSnapshot(
+    unsubFirestore = onSnapshot(
       colRef,
       (snapshot) => {
+        isFirestoreActive = true;
         const list: Challan[] = [];
         snapshot.forEach((d) => {
-          list.push(d.data() as Challan);
+          const item = d.data() as Challan;
+          list.push({ ...item, id: d.id || item.id });
         });
-        if (list.length > 0) {
-          onUpdate(list);
-        }
+        onUpdate(list);
       },
       (error) => {
-        console.warn('Firestore challans subscription error:', error);
+        console.warn('Firestore real-time subscription note:', error.message);
       }
     );
   } catch (err) {
-    console.warn('subscribeToChallans initialization failed:', err);
-    return () => {};
+    console.warn('subscribeToChallans Firestore init:', err);
+  }
+
+  // 3. Multi-device Server API sync polling (Runs every 3 seconds for 10 employees on LAN/Server)
+  let pollInterval: any = null;
+  if (typeof window !== 'undefined') {
+    pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/challans', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.challans)) {
+            // When firestore is unavailable or empty, server API provides the live list
+            if (!isFirestoreActive || data.challans.length > 0) {
+              onUpdate(data.challans);
+            }
+          }
+        }
+      } catch {}
+    }, 3000);
+  }
+
+  return () => {
+    if (unsubFirestore) unsubFirestore();
+    if (broadcastChannel) broadcastChannel.close();
+    if (pollInterval) clearInterval(pollInterval);
+  };
+}
+
+/**
+ * Broadcast local update to other tabs/windows immediately
+ */
+export function broadcastChallansUpdate(challans: Challan[]): void {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    try {
+      const bc = new BroadcastChannel('showhouse_challans_sync');
+      bc.postMessage({ type: 'CHALLANS_UPDATED', challans });
+      bc.close();
+    } catch {}
   }
 }

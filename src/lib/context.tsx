@@ -31,6 +31,8 @@ interface AppContextType {
   deleteProduct: (id: string) => boolean;
 
   // Challans
+  challans: Challan[];
+  dataVersion: number;
   getNextChallanNumber: () => string;
   getChallans: (filters?: {
     search?: string;
@@ -65,6 +67,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [challans, setChallans] = useState<Challan[]>([]);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
 
@@ -80,13 +83,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsSetupComplete(store.isSetupComplete());
     setCustomers(store.getCustomers());
     setProducts(store.getProducts());
+    setChallans(store.getChallans());
     setIsLoading(false);
 
-    // Dynamic real-time sync with Firebase
+    // Dynamic real-time sync with Firebase, Server API, and BroadcastChannel
     import('@/lib/firebase-service').then(({ subscribeToChallans }) => {
       const unsub = subscribeToChallans((remoteChallans) => {
-        if (remoteChallans && remoteChallans.length > 0) {
+        if (remoteChallans && Array.isArray(remoteChallans)) {
           store.syncFromFirebase(remoteChallans);
+          setChallans([...store.getChallans()]);
           setDataVersion((v) => v + 1);
         }
       });
@@ -154,39 +159,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteChallanFn = useCallback((id: string) => {
     const res = store.deleteChallan(id);
+    setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     return res;
   }, []);
 
   const createChallanFn = useCallback((data: Partial<Challan>, items: Partial<ChallanItem>[]) => {
     const res = store.createChallan(data, items);
+    setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     return res;
   }, []);
 
   const updateChallanFn = useCallback((id: string, data: Partial<Challan>, items?: Partial<ChallanItem>[]) => {
     const res = store.updateChallan(id, data, items);
+    setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     return res;
   }, []);
 
   const updateChallanStatusFn = useCallback((id: string, status: ChallanStatus) => {
     const res = store.updateChallanStatus(id, status);
+    setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     return res;
   }, []);
 
   const updateShareStatusFn = useCallback((id: string, status: ShareStatus) => {
     const res = store.updateShareStatus(id, status);
+    setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     return res;
   }, []);
 
   const duplicateChallanFn = useCallback((id: string) => {
     const res = store.duplicateChallan(id);
+    setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     return res;
   }, []);
+
+  const getChallansFn = useCallback(
+    (filters?: Parameters<typeof store.getChallans>[0]) => {
+      return store.getChallans(filters);
+    },
+    [dataVersion, challans]
+  );
+
+  const getDashboardStatsFn = useCallback(() => {
+    return store.getDashboardStats();
+  }, [dataVersion, challans]);
 
   const value: AppContextType = {
     isLoading,
@@ -194,6 +216,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     profile,
     customers,
     products,
+    challans,
+    dataVersion,
     saveProfile: saveProfileFn,
     refreshCustomers,
     getCustomer: store.getCustomer,
@@ -207,7 +231,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateProduct: updateProductFn,
     deleteProduct: deleteProductFn,
     getNextChallanNumber: store.getNextChallanNumber,
-    getChallans: store.getChallans,
+    getChallans: getChallansFn,
     getChallan: store.getChallan,
     createChallan: createChallanFn,
     updateChallan: updateChallanFn,
@@ -216,7 +240,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateShareStatus: updateShareStatusFn,
     duplicateChallan: duplicateChallanFn,
     getActivityLog: store.getActivityLog,
-    getDashboardStats: store.getDashboardStats,
+    getDashboardStats: getDashboardStatsFn,
     showToast,
     toast,
   };

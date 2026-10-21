@@ -26,7 +26,15 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function DeliveryBillsPage() {
   const router = useRouter();
-  const { getChallans, profile, deleteChallan, showToast, isLoading } = useApp();
+  const {
+    getChallans,
+    profile,
+    deleteChallan,
+    showToast,
+    isLoading,
+    challans: liveChallans,
+    dataVersion,
+  } = useApp();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
@@ -50,7 +58,7 @@ export default function DeliveryBillsPage() {
   const allChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
     return getChallans();
-  }, [mounted, isLoading, getChallans]);
+  }, [mounted, isLoading, getChallans, dataVersion, liveChallans]);
 
   const uniqueCompanies = useMemo(() => {
     const names = Array.from(new Set(allChallans.map((c) => c.customer_name).filter(Boolean)));
@@ -81,7 +89,7 @@ export default function DeliveryBillsPage() {
       });
     }
     return list;
-  }, [mounted, isLoading, getChallans, search, companyFilter, creatorFilter]);
+  }, [mounted, isLoading, getChallans, search, companyFilter, creatorFilter, dataVersion, liveChallans]);
 
   // Grouped by Company
   const groupedByCompany = useMemo(() => {

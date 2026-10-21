@@ -43,7 +43,16 @@ function StatusBadge({ status }: { status: ChallanStatus }) {
 }
 
 export default function DashboardPage() {
-  const { getDashboardStats, getChallans, profile, showToast, updateShareStatus, isLoading } = useApp();
+  const {
+    getDashboardStats,
+    getChallans,
+    profile,
+    showToast,
+    updateShareStatus,
+    isLoading,
+    challans: liveChallans,
+    dataVersion,
+  } = useApp();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -56,14 +65,14 @@ export default function DashboardPage() {
       return { totalChallans: 0, challansToday: 0, challansThisMonth: 0, recentChallans: [] };
     }
     return getDashboardStats();
-  }, [mounted, isLoading, getDashboardStats]);
+  }, [mounted, isLoading, getDashboardStats, dataVersion, liveChallans]);
 
   const recentChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
     return getChallans({
       search: search || undefined,
     }).slice(0, 10);
-  }, [mounted, isLoading, getChallans, search]);
+  }, [mounted, isLoading, getChallans, search, dataVersion, liveChallans]);
 
   const handlePrint = (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();

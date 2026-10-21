@@ -66,6 +66,8 @@ export default function ChallansPage() {
     duplicateChallan,
     deleteChallan,
     isLoading,
+    challans: liveChallans,
+    dataVersion,
   } = useApp();
 
   const [mounted, setMounted] = useState(false);
@@ -85,7 +87,7 @@ export default function ChallansPage() {
   const allChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
     return getChallans();
-  }, [mounted, isLoading, getChallans]);
+  }, [mounted, isLoading, getChallans, dataVersion, liveChallans]);
 
   const uniqueCompanies = useMemo(() => {
     const names = Array.from(new Set(allChallans.map((c) => c.customer_name).filter(Boolean)));
@@ -117,7 +119,7 @@ export default function ChallansPage() {
       });
     }
     return list;
-  }, [mounted, isLoading, getChallans, search, statusFilter, companyFilter, creatorFilter]);
+  }, [mounted, isLoading, getChallans, search, statusFilter, companyFilter, creatorFilter, dataVersion, liveChallans]);
 
   // Grouped by Company
   const groupedByCompany = useMemo(() => {

@@ -23,6 +23,7 @@ import {
   saveProductToFirebase,
   deleteProductFromFirebase,
   saveProfileToFirebase,
+  broadcastChallansUpdate,
 } from '@/lib/firebase-service';
 
 const STORAGE_KEY = 'showhouse_demo_data';
@@ -441,6 +442,7 @@ export function createChallan(
   saveChallanToFirebase(challan).catch((err) =>
     console.warn('Firebase saveChallan sync:', err)
   );
+  broadcastChallansUpdate(state.challans);
   return challan;
 }
 
@@ -543,6 +545,7 @@ export function updateChallan(
       console.warn('Firebase updateChallan sync:', err)
     );
   }
+  broadcastChallansUpdate(state.challans);
 
   return updated || null;
 }
@@ -560,6 +563,7 @@ export function updateChallanStatus(id: string, status: ChallanStatus): Challan 
       console.warn('Firebase statusChallan sync:', err)
     );
   }
+  broadcastChallansUpdate(state.challans);
   return state.challans[idx];
 }
 
@@ -576,6 +580,7 @@ export function updateShareStatus(id: string, shareStatus: ShareStatus): Challan
       console.warn('Firebase shareStatus sync:', err)
     );
   }
+  broadcastChallansUpdate(state.challans);
   return state.challans[idx];
 }
 
@@ -588,20 +593,37 @@ export function deleteChallan(id: string): boolean {
   deleteChallanFromFirebase(id).catch((err) =>
     console.warn('Firebase deleteChallan sync:', err)
   );
+  broadcastChallansUpdate(state.challans);
   return state.challans.length < initialLen;
 }
 
 export function syncFromFirebase(firebaseChallans: Challan[]): void {
-  if (!firebaseChallans || !Array.isArray(firebaseChallans) || firebaseChallans.length === 0) return;
-  const existingMap = new Map(state.challans.map((c) => [c.id, c]));
-  firebaseChallans.forEach((fc) => {
-    existingMap.set(fc.id, fc);
-    if (fc.items && Array.isArray(fc.items) && fc.items.length > 0) {
-      state.challanItems = state.challanItems.filter((i) => i.challan_id !== fc.id);
-      state.challanItems.push(...fc.items);
+  if (!firebaseChallans || !Array.isArray(firebaseChallans)) return;
+
+  // If remote is empty, don't wipe newly seeded local on first boot
+  if (firebaseChallans.length === 0 && state.challans.length > 0) {
+    state.challans.forEach((c) => {
+      saveChallanToFirebase(c).catch(() => {});
+    });
+    return;
+  }
+
+  // Remote Firestore / Server database is the live source of truth across all 10 employees
+  state.challans = [...firebaseChallans].sort((a, b) => {
+    const da = new Date(b.challan_date || b.created_at || 0).getTime();
+    const db = new Date(a.challan_date || a.created_at || 0).getTime();
+    return da - db;
+  });
+
+  const allItems: ChallanItem[] = [];
+  state.challans.forEach((fc) => {
+    if (fc.items && Array.isArray(fc.items)) {
+      allItems.push(...fc.items);
     }
   });
-  state.challans = Array.from(existingMap.values());
+  if (allItems.length > 0) {
+    state.challanItems = allItems;
+  }
   saveState(state);
 }
 
