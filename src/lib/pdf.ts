@@ -309,7 +309,7 @@ export function generateChallanPDF({
   doc.line(leftX, leftY - 1, margin + leftColWidth - 2, leftY - 1);
 
   // Prepared By / Contact
-  const creator = challan.created_by || challan.prepared_by || 'RUSHANK SATRA';
+  const creator = challan.created_by || challan.prepared_by || 'NEAL PANCHAL';
   doc.text(`EMAIL : info@showhousedecor.com`, leftX, leftY + 2);
   doc.setFont('helvetica', 'bold');
   doc.text(`PREPARED BY : ${creator.toUpperCase()}`, leftX, leftY + 5.2);

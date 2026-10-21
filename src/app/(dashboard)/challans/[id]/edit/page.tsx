@@ -60,7 +60,7 @@ export default function EditChallanPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
-  const [createdBy, setCreatedBy] = useState('Rushank');
+  const [createdBy, setCreatedBy] = useState('');
   const [showExtraDetails, setShowExtraDetails] = useState(false);
 
   const [items, setItems] = useState<ChallanItemFormData[]>([emptyItem()]);
@@ -81,7 +81,7 @@ export default function EditChallanPage() {
     const list: string[] =
       profile?.employees && profile.employees.length > 0
         ? profile.employees
-        : ['Rushank', 'Neal', 'Admin'];
+        : ['Neal', 'Vrushank'];
     if (createdBy && !list.includes(createdBy)) {
       return [...list, createdBy];
     }
@@ -103,7 +103,7 @@ export default function EditChallanPage() {
         setCustomerPhone(c.customer_phone || '');
         setDeliveryAddress(c.delivery_address || c.customer_address || '');
         setReferenceNumber(c.reference_number || '');
-        setCreatedBy(c.created_by || c.prepared_by || 'Rushank');
+        setCreatedBy(c.created_by || c.prepared_by || (profile?.employees && profile.employees[0]) || 'Neal');
         setTransportCharges(c.transportation_charges ? String(c.transportation_charges) : '');
         setLoadingCharges(c.loading_charges ? String(c.loading_charges) : '');
         setApplyGst(Boolean(c.apply_gst));
@@ -283,8 +283,8 @@ export default function EditChallanPage() {
           customer_address: deliveryAddress.trim(),
           delivery_address: deliveryAddress.trim(),
           reference_number: referenceNumber.trim(),
-          prepared_by: createdBy.trim() || 'Rushank',
-          created_by: createdBy.trim() || 'Rushank',
+          prepared_by: createdBy.trim() || employeeList[0] || 'Neal',
+          created_by: createdBy.trim() || employeeList[0] || 'Neal',
           total_quantity: totalQuantity,
           transportation_charges: transport > 0 ? transport : null,
           loading_charges: loading > 0 ? loading : null,
@@ -434,20 +434,20 @@ export default function EditChallanPage() {
 
           {/* Billed By / Created By Dropdown */}
           <div className="sm:col-span-3">
-            <div className="flex items-center justify-between mb-1">
-              <label className="label text-xs mb-0">Billed / Created By</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-surface-700">Billed / Created By</label>
               <Link
                 href="/settings"
-                className="text-[10px] text-primary-600 hover:text-primary-700 font-medium hover:underline flex items-center gap-1"
+                className="text-[11px] text-primary-600 hover:text-primary-700 font-medium hover:underline"
                 title="Configure employees in settings"
               >
-                <span>Manage</span>
+                Settings ↗
               </Link>
             </div>
             <select
               value={createdBy}
               onChange={(e) => setCreatedBy(e.target.value)}
-              className="input text-xs font-semibold text-surface-800 bg-white cursor-pointer"
+              className="input text-xs font-semibold text-surface-900 bg-white cursor-pointer h-9 w-full"
             >
               {employeeList.map((emp) => (
                 <option key={emp} value={emp}>

@@ -98,8 +98,28 @@ function saveState(state: DemoState): void {
 
 let state: DemoState = getDefaultState();
 
+const DUMMY_SEED_NUMBERS = new Set([
+  'SH/2026-27/0001',
+  'SH/2026-27/0002',
+  'SH/2026-27/0003',
+  'SH/2026-27/0004',
+]);
+
 export function initDemoStore() {
   state = loadState();
+
+  // Automatic purge of dummy demo seed challans that were auto-injected previously
+  const hasDummyChallans = state.challans.some((c) =>
+    DUMMY_SEED_NUMBERS.has(c.challan_number)
+  );
+
+  if (hasDummyChallans) {
+    state.challans = state.challans.filter(
+      (c) => !DUMMY_SEED_NUMBERS.has(c.challan_number)
+    );
+    DUMMY_SEED_NUMBERS.forEach((num) => recordDeletedChallan(num, num));
+    saveState(state);
+  }
 }
 
 // ============================================================
@@ -108,9 +128,23 @@ export function initDemoStore() {
 
 export function getProfile(): BusinessProfile | null {
   if (state.profile && (!state.profile.employees || !Array.isArray(state.profile.employees))) {
-    state.profile.employees = ['Rushank', 'Neal', 'Admin'];
+    state.profile.employees = ['Neal', 'Vrushank'];
   }
   return state.profile;
+}
+
+export function syncProfile(remoteProfile: BusinessProfile): void {
+  if (!remoteProfile) return;
+  state.profile = {
+    ...state.profile,
+    ...remoteProfile,
+    employees:
+      remoteProfile.employees && remoteProfile.employees.length > 0
+        ? remoteProfile.employees
+        : state.profile?.employees || ['Neal', 'Vrushank'],
+  };
+  state.isSetupComplete = true;
+  saveState(state);
 }
 
 export function isSetupComplete(): boolean {
@@ -123,7 +157,7 @@ export function saveProfile(data: Partial<BusinessProfile>): BusinessProfile {
     state.profile = {
       ...state.profile,
       ...data,
-      employees: data.employees || state.profile.employees || ['Rushank', 'Neal', 'Admin'],
+      employees: data.employees || state.profile.employees || ['Neal', 'Vrushank'],
       updated_at: now,
     };
   } else {
@@ -146,7 +180,7 @@ export function saveProfile(data: Partial<BusinessProfile>): BusinessProfile {
       show_amount_column: true,
       show_signature_area: true,
       show_prepared_by: true,
-      employees: data.employees || ['Rushank', 'Neal', 'Admin'],
+      employees: data.employees || ['Neal', 'Vrushank'],
       created_at: now,
       updated_at: now,
       ...data,
@@ -446,8 +480,8 @@ export function createChallan(
     delivery_address: data.delivery_address || null,
     reference_number: data.reference_number || null,
     notes: data.notes || null,
-    prepared_by: data.prepared_by || data.created_by || 'Rushank',
-    created_by: data.created_by || data.prepared_by || 'Rushank',
+    prepared_by: data.prepared_by || data.created_by || state.profile?.employees?.[0] || 'Neal',
+    created_by: data.created_by || data.prepared_by || state.profile?.employees?.[0] || 'Neal',
     status: data.status || 'draft',
     share_status: 'not_shared',
     total_quantity: totalQuantity,
@@ -652,7 +686,8 @@ export function syncFromFirebase(firebaseChallans: Challan[]): void {
     (c) =>
       !c.is_deleted &&
       !deletedSet.has(c.id) &&
-      (!c.challan_number || !deletedSet.has(c.challan_number))
+      (!c.challan_number || !deletedSet.has(c.challan_number)) &&
+      (!c.challan_number || !DUMMY_SEED_NUMBERS.has(c.challan_number))
   );
 
   state.challans = [...activeRemote].sort((a, b) => {

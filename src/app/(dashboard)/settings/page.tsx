@@ -42,7 +42,7 @@ export default function SettingsPage() {
   const [challanNextNumber, setChallanNextNumber] = useState(1);
 
   // Employees / Creators (Billed By)
-  const [employees, setEmployees] = useState<string[]>(['Rushank', 'Neal', 'Admin']);
+  const [employees, setEmployees] = useState<string[]>(['Neal', 'Vrushank']);
   const [newEmployeeName, setNewEmployeeName] = useState('');
 
   // Bank & Terms
@@ -75,7 +75,7 @@ export default function SettingsPage() {
       setEmployees(
         profile.employees && profile.employees.length > 0
           ? profile.employees
-          : ['Rushank', 'Neal', 'Admin']
+          : ['Neal', 'Vrushank']
       );
       setBankName(profile.bank_name || '');
       setBankAccount(profile.bank_account || '');

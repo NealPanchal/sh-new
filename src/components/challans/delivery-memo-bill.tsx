@@ -70,7 +70,12 @@ export function DeliveryMemoBill({
       ).slice(-2)}`
     : challan.challan_date;
 
-  const noteText = confirmBy || challan.notes || 'Confirm By Rushank';
+  const noteText =
+    confirmBy ||
+    challan.notes ||
+    (challan.created_by || challan.prepared_by
+      ? `Confirm By ${challan.created_by || challan.prepared_by}`
+      : '');
 
   return (
     <div className="w-full max-w-[680px] mx-auto bg-white border border-surface-300 shadow-md print:shadow-none print:border-none rounded-sm overflow-hidden text-surface-900 font-sans print:p-0">

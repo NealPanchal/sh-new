@@ -68,7 +68,7 @@ export default function DeliveryBillsPage() {
   const uniqueCreators = useMemo(() => {
     const names = Array.from(
       new Set(
-        allChallans.map((c) => c.created_by || c.prepared_by || 'Rushank').filter(Boolean)
+        allChallans.map((c) => c.created_by || c.prepared_by || 'Unassigned').filter(Boolean)
       )
     );
     return names.sort();
@@ -84,7 +84,7 @@ export default function DeliveryBillsPage() {
     }
     if (creatorFilter !== 'all') {
       list = list.filter((c) => {
-        const creator = (c.created_by || c.prepared_by || 'Rushank').toLowerCase();
+        const creator = (c.created_by || c.prepared_by || 'Unassigned').toLowerCase();
         return creator === creatorFilter.toLowerCase();
       });
     }
@@ -111,7 +111,7 @@ export default function DeliveryBillsPage() {
   const groupedByCreator = useMemo(() => {
     const map = new Map<string, { creator: string; items: Challan[]; totalQty: number; totalAmount: number }>();
     filteredBills.forEach((c) => {
-      const creator = c.created_by || c.prepared_by || 'Rushank';
+      const creator = c.created_by || c.prepared_by || 'Unassigned';
       if (!map.has(creator)) {
         map.set(creator, { creator, items: [], totalQty: 0, totalAmount: 0 });
       }
@@ -175,7 +175,7 @@ export default function DeliveryBillsPage() {
     const sgst = c.sgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
     const addl9 = c.additional_9_amount ?? (c.apply_additional_9 && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
     const totalAmt = c.total_amount || (taxable + cgst + sgst + addl9);
-    const creator = c.created_by || c.prepared_by || 'Rushank';
+    const creator = c.created_by || c.prepared_by || '';
 
     return (
       <div
@@ -367,7 +367,7 @@ export default function DeliveryBillsPage() {
               <option value="all">👤 All Creators / Billed By ({uniqueCreators.length})</option>
               {uniqueCreators.map((creator) => {
                 const count = allChallans.filter(
-                  (c) => (c.created_by || c.prepared_by || 'Rushank').toLowerCase() === creator.toLowerCase()
+                  (c) => (c.created_by || c.prepared_by || 'Unassigned').toLowerCase() === creator.toLowerCase()
                 ).length;
                 return (
                   <option key={creator} value={creator}>
@@ -623,7 +623,7 @@ export default function DeliveryBillsPage() {
                     const sgst = c.sgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
                     const addl9 = c.additional_9_amount ?? (c.apply_additional_9 && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
                     const totalAmt = c.total_amount || (taxable + cgst + sgst + addl9);
-                    const creator = c.created_by || c.prepared_by || 'Rushank';
+                    const creator = c.created_by || c.prepared_by || '';
 
                     return (
                       <tr

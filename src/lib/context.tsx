@@ -74,17 +74,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     store.initDemoStore();
 
-    // Seed demo data if empty
-    if (!store.isSetupComplete()) {
-      store.seedDemoData();
-    }
-
     setProfile(store.getProfile());
     setIsSetupComplete(store.isSetupComplete());
     setCustomers(store.getCustomers());
     setProducts(store.getProducts());
     setChallans(store.getChallans());
     setIsLoading(false);
+
+    // Fetch and subscribe to profile / employees from Firebase Firestore & Server API
+    import('@/lib/firebase-service').then(({ fetchProfileFromFirebase, subscribeToProfile }) => {
+      fetchProfileFromFirebase().then((remoteProfile) => {
+        if (remoteProfile) {
+          store.syncProfile(remoteProfile);
+          setProfile(store.getProfile());
+        }
+      });
+
+      subscribeToProfile((remoteProfile) => {
+        if (remoteProfile) {
+          store.syncProfile(remoteProfile);
+          setProfile(store.getProfile());
+        }
+      });
+    }).catch(() => {});
 
     // Dynamic real-time sync with Firebase, Server API, and BroadcastChannel
     import('@/lib/firebase-service').then(({ subscribeToChallans }) => {

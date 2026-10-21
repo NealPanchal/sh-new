@@ -97,7 +97,7 @@ export default function ChallansPage() {
   const uniqueCreators = useMemo(() => {
     const names = Array.from(
       new Set(
-        allChallans.map((c) => c.created_by || c.prepared_by || 'Rushank').filter(Boolean)
+        allChallans.map((c) => c.created_by || c.prepared_by || 'Unassigned').filter(Boolean)
       )
     );
     return names.sort();
@@ -114,7 +114,7 @@ export default function ChallansPage() {
     }
     if (creatorFilter !== 'all') {
       list = list.filter((c) => {
-        const creator = (c.created_by || c.prepared_by || 'Rushank').toLowerCase();
+        const creator = (c.created_by || c.prepared_by || 'Unassigned').toLowerCase();
         return creator === creatorFilter.toLowerCase();
       });
     }
@@ -141,7 +141,7 @@ export default function ChallansPage() {
   const groupedByCreator = useMemo(() => {
     const map = new Map<string, { creator: string; items: Challan[]; totalQty: number; totalAmount: number }>();
     challans.forEach((c) => {
-      const creator = c.created_by || c.prepared_by || 'Rushank';
+      const creator = c.created_by || c.prepared_by || 'Unassigned';
       if (!map.has(creator)) {
         map.set(creator, { creator, items: [], totalQty: 0, totalAmount: 0 });
       }
@@ -321,7 +321,7 @@ export default function ChallansPage() {
               <option value="all">👤 All Creators / Billed By ({uniqueCreators.length})</option>
               {uniqueCreators.map((creator) => {
                 const count = allChallans.filter(
-                  (c) => (c.created_by || c.prepared_by || 'Rushank').toLowerCase() === creator.toLowerCase()
+                  (c) => (c.created_by || c.prepared_by || 'Unassigned').toLowerCase() === creator.toLowerCase()
                 ).length;
                 return (
                   <option key={creator} value={creator}>

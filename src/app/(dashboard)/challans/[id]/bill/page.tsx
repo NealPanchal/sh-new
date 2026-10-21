@@ -39,7 +39,12 @@ export default function ChallanBillPage() {
             found.challan_number.split('/').pop() ||
             '0120'
         );
-        setConfirmBy(found.notes || 'Confirm By Rushank');
+        setConfirmBy(
+          found.notes ||
+            (found.created_by || found.prepared_by
+              ? `Confirm By ${found.created_by || found.prepared_by}`
+              : '')
+        );
       } else {
         setChallan(null);
       }
@@ -211,7 +216,7 @@ export default function ChallanBillPage() {
                 type="text"
                 value={confirmBy}
                 onChange={(e) => setConfirmBy(e.target.value)}
-                placeholder="e.g. Confirm By Rushank"
+                placeholder="e.g. Confirm By Neal"
                 className="input text-xs py-1.5"
               />
             </div>

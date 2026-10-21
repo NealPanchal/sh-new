@@ -106,7 +106,7 @@ export function SwipeableChallanCard({
     router.push(`/challans/${challan.id}`);
   };
 
-  const creator = challan.created_by || challan.prepared_by || 'Rushank';
+  const creator = challan.created_by || challan.prepared_by || '';
 
   return (
     <div className="relative overflow-hidden rounded-xl touch-pan-y select-none group">
@@ -171,9 +171,11 @@ export function SwipeableChallanCard({
             <span className="text-[11px] text-surface-400">
               • {formatDateIndian(challan.challan_date)}
             </span>
-            <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-surface-100 text-surface-600 border border-surface-200">
-              👤 {creator}
-            </span>
+            {creator && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-surface-100 text-surface-600 border border-surface-200">
+                👤 {creator}
+              </span>
+            )}
           </div>
 
           <span

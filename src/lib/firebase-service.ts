@@ -7,6 +7,7 @@ import {
   collection,
   doc,
   setDoc,
+  getDoc,
   deleteDoc,
   getDocs,
   onSnapshot,
@@ -168,19 +169,89 @@ export async function deleteProductFromFirebase(id: string): Promise<void> {
 }
 
 /**
- * Save Business Profile in Firebase Firestore
+ * Save Business Profile in Firebase Firestore & Server Database
  */
 export async function saveProfileToFirebase(profile: BusinessProfile): Promise<void> {
+  const data = sanitizeForFirestore({
+    ...profile,
+    updated_at: new Date().toISOString(),
+  });
+
+  // 1. Dual sync to Next.js server API
+  if (typeof window !== 'undefined') {
+    fetch('/api/settings', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: data }),
+    }).catch(() => {});
+  }
+
+  // 2. Sync to Cloud Firestore
   try {
     const docRef = doc(firestore, COLLECTIONS.SETTINGS, 'business_profile');
-    const data = sanitizeForFirestore({
-      ...profile,
-      updated_at: new Date().toISOString(),
-    });
     await setDoc(docRef, data, { merge: true });
   } catch (err) {
     console.warn('Firebase saveProfile failed:', err);
   }
+}
+
+/**
+ * Fetch business profile from Firebase Firestore or Server API
+ */
+export async function fetchProfileFromFirebase(): Promise<BusinessProfile | null> {
+  // Try Firestore first
+  try {
+    const docRef = doc(firestore, COLLECTIONS.SETTINGS, 'business_profile');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as BusinessProfile;
+    }
+  } catch (err) {
+    console.warn('Firebase fetchProfile warning:', err);
+  }
+
+  // Fallback to server API
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/settings', { cache: 'no-store', credentials: 'same-origin' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.profile) {
+          return data.profile as BusinessProfile;
+        }
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
+ * Real-time subscription to Business Profile updates
+ */
+export function subscribeToProfile(onUpdate: (profile: BusinessProfile) => void): () => void {
+  let unsubFirestore: (() => void) | null = null;
+  try {
+    const docRef = doc(firestore, COLLECTIONS.SETTINGS, 'business_profile');
+    unsubFirestore = onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          onUpdate(snapshot.data() as BusinessProfile);
+        }
+      },
+      (error) => {
+        console.warn('Profile onSnapshot note:', error.message);
+      }
+    );
+  } catch (err) {
+    console.warn('subscribeToProfile init error:', err);
+  }
+
+  return () => {
+    if (unsubFirestore) unsubFirestore();
+  };
 }
 
 /**
