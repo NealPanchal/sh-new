@@ -165,7 +165,8 @@ export default function DeliveryBillsPage() {
     const taxable = c.subtotal_amount || (itemsSub + transport + loading);
     const cgst = c.cgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
     const sgst = c.sgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
-    const totalAmt = c.total_amount || (taxable + cgst + sgst);
+    const addl9 = c.additional_9_amount ?? (c.apply_additional_9 && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
+    const totalAmt = c.total_amount || (taxable + cgst + sgst + addl9);
     const creator = c.created_by || c.prepared_by || 'Rushank';
 
     return (
@@ -191,6 +192,11 @@ export default function DeliveryBillsPage() {
             {c.apply_gst && (
               <span className="text-[9px] uppercase font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
                 GST 18%
+              </span>
+            )}
+            {c.apply_additional_9 && (
+              <span className="text-[9px] uppercase font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                +9%
               </span>
             )}
             <span className="text-[10px] uppercase font-bold text-[#b8860b] bg-[#b8860b]/10 px-2 py-0.5 rounded">
@@ -607,7 +613,8 @@ export default function DeliveryBillsPage() {
                     const taxable = c.subtotal_amount || (itemsSub + transport + loading);
                     const cgst = c.cgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
                     const sgst = c.sgst_amount ?? (c.apply_gst && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
-                    const totalAmt = c.total_amount || (taxable + cgst + sgst);
+                    const addl9 = c.additional_9_amount ?? (c.apply_additional_9 && taxable > 0 ? Math.round(taxable * 0.09 * 100) / 100 : 0);
+                    const totalAmt = c.total_amount || (taxable + cgst + sgst + addl9);
                     const creator = c.created_by || c.prepared_by || 'Rushank';
 
                     return (
@@ -654,6 +661,11 @@ export default function DeliveryBillsPage() {
                             {c.apply_gst && (
                               <span className="text-[9px] uppercase font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded font-sans">
                                 +18% GST
+                              </span>
+                            )}
+                            {c.apply_additional_9 && (
+                              <span className="text-[9px] uppercase font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-sans">
+                                +9% Addl
                               </span>
                             )}
                             <span>₹{totalAmt.toLocaleString('en-IN')}</span>

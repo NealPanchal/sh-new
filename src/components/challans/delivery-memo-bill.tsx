@@ -42,18 +42,21 @@ export function DeliveryMemoBill({
     challan.subtotal_amount || (itemsSubtotal + transportCharges + loadingCharges);
 
   const applyGst = Boolean(challan.apply_gst);
+  const applyAdditional9 = Boolean(challan.apply_additional_9);
   const cgst = challan.cgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
   const sgst = challan.sgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+  const additional9 = challan.additional_9_amount ?? (applyAdditional9 && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
 
   const calculatedGrandTotal =
     challan.total_amount ||
-    (taxableSubtotal + cgst + sgst);
+    (taxableSubtotal + cgst + sgst + additional9);
 
   // Extra rows to render inside ledger
   const extraRowsCount =
     (transportCharges > 0 ? 1 : 0) +
     (loadingCharges > 0 ? 1 : 0) +
-    (applyGst ? (hasExtraCharges ? 3 : 2) : 0);
+    (applyGst ? (hasExtraCharges ? 3 : 2) : 0) +
+    (applyAdditional9 ? 1 : 0);
 
   // Ruled lines count to match physical memo paper (at least 9 total rows)
   const totalRuledRows = Math.max(9, items.length + extraRowsCount + 2);
@@ -320,6 +323,24 @@ export function DeliveryMemoBill({
                   </div>
                 </div>
               </>
+            )}
+
+            {/* Additional 9% Tax row */}
+            {applyAdditional9 && (
+              <div className="grid grid-cols-12 min-h-[26px] items-center text-xs bg-amber-50/30">
+                <div className="col-span-6 px-2 py-0.5 border-r border-surface-300 font-semibold text-surface-800">
+                  Additional Tax (9%)
+                </div>
+                <div className="col-span-2 px-1 py-0.5 text-center border-r border-surface-300 text-[11px] text-surface-500 font-mono">
+                  9%
+                </div>
+                <div className="col-span-2 px-1 py-0.5 text-center border-r border-surface-300 text-surface-400">
+                  —
+                </div>
+                <div className="col-span-2 px-2 py-0.5 text-right font-mono font-semibold text-amber-900">
+                  {additional9 > 0 ? additional9.toLocaleString('en-IN') : '0.00'}
+                </div>
+              </div>
             )}
 
             {/* Note row (e.g. Confirm By Rushank) if space or inside table */}

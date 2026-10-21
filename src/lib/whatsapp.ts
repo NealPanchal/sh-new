@@ -66,16 +66,31 @@ export function generateShareMessage(challan: Challan, profile: BusinessProfile)
     message += `*SGST (9%):* ₹${sgst.toLocaleString('en-IN')}\n`;
   }
 
+  if (challan.apply_additional_9) {
+    const addl9 = challan.additional_9_amount ?? (taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+    message += `*Additional Tax (9%):* ₹${addl9.toLocaleString('en-IN')}\n`;
+  }
+
   const totalAmt =
     challan.total_amount ||
     (taxableSubtotal +
       (challan.apply_gst
         ? (challan.cgst_amount ?? Math.round(taxableSubtotal * 0.09 * 100) / 100) +
           (challan.sgst_amount ?? Math.round(taxableSubtotal * 0.09 * 100) / 100)
+        : 0) +
+      (challan.apply_additional_9
+        ? (challan.additional_9_amount ?? Math.round(taxableSubtotal * 0.09 * 100) / 100)
         : 0));
 
   if (totalAmt && totalAmt > 0) {
-    message += `*${challan.apply_gst ? 'Grand Total (Inc. 18% GST)' : 'Total Amount'}:* ₹${totalAmt.toLocaleString('en-IN')}\n`;
+    const taxLabel = challan.apply_gst && challan.apply_additional_9
+      ? 'Grand Total (Inc. 18% GST + 9% Addl)'
+      : challan.apply_gst
+      ? 'Grand Total (Inc. 18% GST)'
+      : challan.apply_additional_9
+      ? 'Grand Total (Inc. 9% Addl)'
+      : 'Total Amount';
+    message += `*${taxLabel}:* ₹${totalAmt.toLocaleString('en-IN')}\n`;
   }
 
   message += `\nThank you for your business!\n— ${businessName}`;

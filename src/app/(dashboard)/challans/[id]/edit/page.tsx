@@ -68,6 +68,7 @@ export default function EditChallanPage() {
   const [transportCharges, setTransportCharges] = useState('');
   const [loadingCharges, setLoadingCharges] = useState('');
   const [applyGst, setApplyGst] = useState(false);
+  const [applyAdditional9, setApplyAdditional9] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
@@ -94,8 +95,9 @@ export default function EditChallanPage() {
         setTransportCharges(c.transportation_charges ? String(c.transportation_charges) : '');
         setLoadingCharges(c.loading_charges ? String(c.loading_charges) : '');
         setApplyGst(Boolean(c.apply_gst));
+        setApplyAdditional9(Boolean(c.apply_additional_9));
 
-        if (c.customer_phone || c.delivery_address || c.reference_number || c.transportation_charges || c.loading_charges || c.apply_gst || c.created_by) {
+        if (c.customer_phone || c.delivery_address || c.reference_number || c.transportation_charges || c.loading_charges || c.apply_gst || c.apply_additional_9 || c.created_by) {
           setShowExtraDetails(true);
         }
 
@@ -222,10 +224,16 @@ export default function EditChallanPage() {
       : 0;
   }, [applyGst, taxableSubtotal]);
 
+  const additional9Amount = useMemo(() => {
+    return applyAdditional9 && taxableSubtotal > 0
+      ? Math.round(taxableSubtotal * 0.09 * 100) / 100
+      : 0;
+  }, [applyAdditional9, taxableSubtotal]);
+
   const totalAmount = useMemo(() => {
     if (taxableSubtotal <= 0) return 0;
-    return taxableSubtotal + cgstAmount + sgstAmount;
-  }, [taxableSubtotal, cgstAmount, sgstAmount]);
+    return taxableSubtotal + cgstAmount + sgstAmount + additional9Amount;
+  }, [taxableSubtotal, cgstAmount, sgstAmount, additional9Amount]);
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
@@ -271,6 +279,8 @@ export default function EditChallanPage() {
           apply_gst: applyGst,
           cgst_amount: cgstAmount > 0 ? cgstAmount : null,
           sgst_amount: sgstAmount > 0 ? sgstAmount : null,
+          apply_additional_9: applyAdditional9,
+          additional_9_amount: additional9Amount > 0 ? additional9Amount : null,
           subtotal_amount: taxableSubtotal > 0 ? taxableSubtotal : null,
           total_amount: totalAmount > 0 ? totalAmount : null,
         },
@@ -707,9 +717,34 @@ export default function EditChallanPage() {
               </span>
             </div>
           </label>
+        </div>
 
-          {/* Live GST Calculation Breakdown if applied */}
-          {applyGst && taxableSubtotal > 0 && (
+        {/* Additional 9% Toggle Option (Right after GST) */}
+        <div className="pt-1">
+          <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-amber-50/40 transition-colors border border-amber-200/80 bg-amber-50/20">
+            <input
+              type="checkbox"
+              checked={applyAdditional9}
+              onChange={(e) => setApplyAdditional9(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded text-amber-600 focus:ring-amber-400 cursor-pointer"
+            />
+            <div className="flex-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-surface-900">
+                  Additional 9% Tax
+                </span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                  +9% Extra
+                </span>
+              </div>
+              <span className="text-[11px] text-surface-600 block mt-0.5">
+                Auto-calculate extra 9% tax on taxable subtotal. Toggle on to include in calculation.
+              </span>
+            </div>
+          </label>
+
+          {/* Live Tax Calculation Breakdown if either GST or Additional 9% is applied */}
+          {(applyGst || applyAdditional9) && taxableSubtotal > 0 && (
             <div className="mt-2.5 p-3 rounded-lg bg-white border border-surface-200 text-xs space-y-1.5 font-mono">
               <div className="flex justify-between text-surface-600">
                 <span>Items Subtotal:</span>
@@ -731,16 +766,28 @@ export default function EditChallanPage() {
                 <span>Taxable Value:</span>
                 <span>₹{taxableSubtotal.toLocaleString('en-IN')}</span>
               </div>
-              <div className="flex justify-between text-emerald-700 font-semibold">
-                <span>CGST (9%):</span>
-                <span>+ ₹{cgstAmount.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between text-emerald-700 font-semibold">
-                <span>SGST (9%):</span>
-                <span>+ ₹{sgstAmount.toLocaleString('en-IN')}</span>
-              </div>
+              {applyGst && (
+                <>
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>CGST (9%):</span>
+                    <span>+ ₹{cgstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>SGST (9%):</span>
+                    <span>+ ₹{sgstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </>
+              )}
+              {applyAdditional9 && (
+                <div className="flex justify-between text-amber-700 font-semibold">
+                  <span>Additional 9% Tax:</span>
+                  <span>+ ₹{additional9Amount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
               <div className="flex justify-between font-extrabold text-surface-900 pt-1.5 border-t-2 border-surface-300 text-sm">
-                <span>Final Grand Total (with 18% GST):</span>
+                <span>
+                  Final Grand Total {applyGst && applyAdditional9 ? '(with 18% GST + 9% Addl)' : applyGst ? '(with 18% GST)' : '(with 9% Addl)'}:
+                </span>
                 <span className="text-primary-600">₹{totalAmount.toLocaleString('en-IN')}</span>
               </div>
             </div>
@@ -762,7 +809,7 @@ export default function EditChallanPage() {
           {totalAmount > 0 && (
             <div className="pl-3 border-l border-surface-700">
               <span className="text-[10px] text-surface-400 uppercase tracking-wider block">
-                {applyGst ? 'Grand Total (Inc. 18% GST)' : 'Total Amount'}
+                Total Amount {applyGst || applyAdditional9 ? '(Incl. Tax)' : ''}
               </span>
               <span className="text-base sm:text-lg font-bold font-mono text-white">
                 ₹{totalAmount.toLocaleString('en-IN')}

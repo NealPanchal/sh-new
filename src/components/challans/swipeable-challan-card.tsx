@@ -224,6 +224,11 @@ export function SwipeableChallanCard({
                     GST
                   </span>
                 )}
+                {challan.apply_additional_9 && (
+                  <span className="text-[9px] uppercase font-bold text-amber-800 bg-amber-100/70 px-1 rounded">
+                    +9%
+                  </span>
+                )}
                 ₹{challan.total_amount.toLocaleString('en-IN')}
               </span>
             ) : null}

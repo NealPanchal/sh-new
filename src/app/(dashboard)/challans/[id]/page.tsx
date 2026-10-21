@@ -76,14 +76,16 @@ export default function ChallanDetailPage() {
   const loadingCharges = Number(challan?.loading_charges) || 0;
   const taxableSubtotal = challan?.subtotal_amount || (itemsSubtotal + transportCharges + loadingCharges);
   const applyGst = Boolean(challan?.apply_gst);
+  const applyAdditional9 = Boolean(challan?.apply_additional_9);
   const cgstAmount = challan?.cgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
   const sgstAmount = challan?.sgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
+  const additional9Amount = challan?.additional_9_amount ?? (applyAdditional9 && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09 * 100) / 100 : 0);
 
   const totalAmount = useMemo(() => {
     if (challan?.total_amount && challan.total_amount > 0) return challan.total_amount;
     if (taxableSubtotal <= 0) return 0;
-    return taxableSubtotal + cgstAmount + sgstAmount;
-  }, [challan, taxableSubtotal, cgstAmount, sgstAmount]);
+    return taxableSubtotal + cgstAmount + sgstAmount + additional9Amount;
+  }, [challan, taxableSubtotal, cgstAmount, sgstAmount, additional9Amount]);
 
   if (!mounted || isLoading) {
     return (
@@ -466,20 +468,30 @@ export default function ChallanDetailPage() {
             </div>
           )}
 
-          {applyGst && (
-            <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/30 text-xs space-y-1 font-mono">
+          {(applyGst || applyAdditional9) && (
+            <div className="p-2.5 rounded-lg border border-surface-200 bg-surface-50 text-xs space-y-1 font-mono">
               <div className="flex justify-between text-surface-600">
                 <span>Taxable Subtotal:</span>
                 <span>₹{taxableSubtotal.toLocaleString('en-IN')}</span>
               </div>
-              <div className="flex justify-between text-emerald-800 font-medium">
-                <span>CGST (9%):</span>
-                <span>+ ₹{cgstAmount.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between text-emerald-800 font-medium">
-                <span>SGST (9%):</span>
-                <span>+ ₹{sgstAmount.toLocaleString('en-IN')}</span>
-              </div>
+              {applyGst && (
+                <>
+                  <div className="flex justify-between text-emerald-800 font-medium">
+                    <span>CGST (9%):</span>
+                    <span>+ ₹{cgstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-800 font-medium">
+                    <span>SGST (9%):</span>
+                    <span>+ ₹{sgstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </>
+              )}
+              {applyAdditional9 && (
+                <div className="flex justify-between text-amber-800 font-medium">
+                  <span>Additional 9% Tax:</span>
+                  <span>+ ₹{additional9Amount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -561,8 +573,8 @@ export default function ChallanDetailPage() {
                 </tr>
               )}
 
-              {/* Subtotal & GST rows if applyGst */}
-              {applyGst && (
+              {/* Subtotal, GST & Additional 9% rows */}
+              {(applyGst || applyAdditional9) && (
                 <>
                   <tr className="border-t border-surface-200 bg-surface-50/70 font-semibold text-surface-700">
                     <td className="py-1.5 px-2 font-mono">•</td>
@@ -574,26 +586,42 @@ export default function ChallanDetailPage() {
                       {formatINR(taxableSubtotal)}
                     </td>
                   </tr>
-                  <tr className="bg-emerald-50/30 text-emerald-800 font-medium">
-                    <td className="py-1.5 px-2 font-mono text-emerald-600">•</td>
-                    <td className="py-1.5 px-2" colSpan={2}>CGST (9%)</td>
-                    <td className="py-1.5 px-2 text-right font-mono">9%</td>
-                    <td className="py-1.5 px-2">—</td>
-                    <td className="py-1.5 px-2 text-right text-surface-400">—</td>
-                    <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
-                      {formatINR(cgstAmount)}
-                    </td>
-                  </tr>
-                  <tr className="bg-emerald-50/30 text-emerald-800 font-medium">
-                    <td className="py-1.5 px-2 font-mono text-emerald-600">•</td>
-                    <td className="py-1.5 px-2" colSpan={2}>SGST (9%)</td>
-                    <td className="py-1.5 px-2 text-right font-mono">9%</td>
-                    <td className="py-1.5 px-2">—</td>
-                    <td className="py-1.5 px-2 text-right text-surface-400">—</td>
-                    <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
-                      {formatINR(sgstAmount)}
-                    </td>
-                  </tr>
+                  {applyGst && (
+                    <>
+                      <tr className="bg-emerald-50/30 text-emerald-800 font-medium">
+                        <td className="py-1.5 px-2 font-mono text-emerald-600">•</td>
+                        <td className="py-1.5 px-2" colSpan={2}>CGST (9%)</td>
+                        <td className="py-1.5 px-2 text-right font-mono">9%</td>
+                        <td className="py-1.5 px-2">—</td>
+                        <td className="py-1.5 px-2 text-right text-surface-400">—</td>
+                        <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
+                          {formatINR(cgstAmount)}
+                        </td>
+                      </tr>
+                      <tr className="bg-emerald-50/30 text-emerald-800 font-medium">
+                        <td className="py-1.5 px-2 font-mono text-emerald-600">•</td>
+                        <td className="py-1.5 px-2" colSpan={2}>SGST (9%)</td>
+                        <td className="py-1.5 px-2 text-right font-mono">9%</td>
+                        <td className="py-1.5 px-2">—</td>
+                        <td className="py-1.5 px-2 text-right text-surface-400">—</td>
+                        <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
+                          {formatINR(sgstAmount)}
+                        </td>
+                      </tr>
+                    </>
+                  )}
+                  {applyAdditional9 && (
+                    <tr className="bg-amber-50/40 text-amber-900 font-medium">
+                      <td className="py-1.5 px-2 font-mono text-amber-600">•</td>
+                      <td className="py-1.5 px-2" colSpan={2}>Additional Tax (9%)</td>
+                      <td className="py-1.5 px-2 text-right font-mono">9%</td>
+                      <td className="py-1.5 px-2">—</td>
+                      <td className="py-1.5 px-2 text-right text-surface-400">—</td>
+                      <td className="py-1.5 px-2 text-right font-mono font-bold text-amber-900">
+                        {formatINR(additional9Amount)}
+                      </td>
+                    </tr>
+                  )}
                 </>
               )}
             </tbody>

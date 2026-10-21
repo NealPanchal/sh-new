@@ -664,6 +664,11 @@ export default function ChallansPage() {
                                 +18% GST
                               </span>
                             )}
+                            {challan.apply_additional_9 && (
+                              <span className="text-[9px] uppercase font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-sans">
+                                +9% Addl
+                              </span>
+                            )}
                             <span>₹{challan.total_amount.toLocaleString('en-IN')}</span>
                           </div>
                         ) : (

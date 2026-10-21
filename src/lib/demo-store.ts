@@ -385,16 +385,18 @@ export function createChallan(
   const transport = Number(data.transportation_charges) || 0;
   const loading = Number(data.loading_charges) || 0;
   const applyGst = Boolean(data.apply_gst);
+  const applyAdditional9 = Boolean(data.apply_additional_9);
 
   const itemsTotal = totalAmount || 0;
   const subtotal = itemsTotal + transport + loading;
   const cgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const sgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+  const additional9 = applyAdditional9 && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const finalTotal =
     data.total_amount !== undefined && data.total_amount !== null
       ? data.total_amount
       : subtotal > 0
-      ? subtotal + cgst + sgst
+      ? subtotal + cgst + sgst + additional9
       : null;
 
   const challan: Challan = {
@@ -421,6 +423,8 @@ export function createChallan(
     apply_gst: applyGst,
     cgst_amount: cgst > 0 ? cgst : null,
     sgst_amount: sgst > 0 ? sgst : null,
+    apply_additional_9: applyAdditional9,
+    additional_9_amount: additional9 > 0 ? additional9 : null,
     total_amount: finalTotal,
     created_at: now,
     updated_at: now,
@@ -494,16 +498,21 @@ export function updateChallan(
       data.apply_gst !== undefined
         ? Boolean(data.apply_gst)
         : Boolean(state.challans[idx].apply_gst);
+    const applyAdditional9 =
+      data.apply_additional_9 !== undefined
+        ? Boolean(data.apply_additional_9)
+        : Boolean(state.challans[idx].apply_additional_9);
 
     const itemsTotal = totalAmount !== null ? totalAmount : 0;
     const subtotal = itemsTotal + transport + loading;
     const cgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
     const sgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+    const additional9 = applyAdditional9 && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
     const finalTotal =
       data.total_amount !== undefined && data.total_amount !== null
         ? data.total_amount
         : subtotal > 0
-        ? subtotal + cgst + sgst
+        ? subtotal + cgst + sgst + additional9
         : null;
 
     state.challanItems.push(...newItems);
@@ -514,6 +523,8 @@ export function updateChallan(
     data.apply_gst = applyGst;
     data.cgst_amount = cgst > 0 ? cgst : null;
     data.sgst_amount = sgst > 0 ? sgst : null;
+    data.apply_additional_9 = applyAdditional9;
+    data.additional_9_amount = additional9 > 0 ? additional9 : null;
     data.total_amount = finalTotal;
   }
 

@@ -93,6 +93,8 @@ export interface Challan {
   apply_gst?: boolean | null;
   cgst_amount?: number | null;
   sgst_amount?: number | null;
+  apply_additional_9?: boolean | null;
+  additional_9_amount?: number | null;
   created_at: string;
   updated_at: string;
   // Joined data
@@ -141,6 +143,8 @@ export interface ChallanFormData {
   transportation_charges?: number | string;
   loading_charges?: number | string;
   apply_gst?: boolean;
+  apply_additional_9?: boolean;
+  additional_9_amount?: number | null;
   items: ChallanItemFormData[];
 }
 

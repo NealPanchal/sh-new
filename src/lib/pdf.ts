@@ -168,6 +168,7 @@ export function generateChallanPDF({
   const loadingCharges = Number(challan.loading_charges) || 0;
   const hasExtraCharges = transportCharges > 0 || loadingCharges > 0;
   const applyGst = Boolean(challan.apply_gst);
+  const applyAdditional9 = Boolean(challan.apply_additional_9);
 
   const itemsSubtotal = items.reduce(
     (sum, it) =>
@@ -178,7 +179,8 @@ export function generateChallanPDF({
   const taxableSubtotal = challan.subtotal_amount || (itemsSubtotal + transportCharges + loadingCharges);
   const cgstAmount = challan.cgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09) : 0);
   const sgstAmount = challan.sgst_amount ?? (applyGst && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09) : 0);
-  const grandTotal = challan.total_amount || (taxableSubtotal + cgstAmount + sgstAmount);
+  const additional9Amount = challan.additional_9_amount ?? (applyAdditional9 && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09) : 0);
+  const grandTotal = challan.total_amount || (taxableSubtotal + cgstAmount + sgstAmount + additional9Amount);
 
   // Table Headers strictly matching Image 2
   const headers = ['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR'];
@@ -362,6 +364,10 @@ export function generateChallanPDF({
   if (applyGst) {
     renderTotalRow('CGST 9%', formatAmountNum(cgstAmount));
     renderTotalRow('SGST 9%', formatAmountNum(sgstAmount));
+  }
+
+  if (applyAdditional9) {
+    renderTotalRow('ADDITIONAL 9%', formatAmountNum(additional9Amount));
   }
 
   renderTotalRow('GRAND TOTAL', formatAmountNum(grandTotal), true);
