@@ -27,6 +27,30 @@ import {
 } from '@/lib/firebase-service';
 
 const STORAGE_KEY = 'showhouse_demo_data';
+const DELETED_CHALLANS_KEY = 'showhouse_deleted_challans';
+const DEMO_SEEDED_KEY = 'showhouse_demo_seeded_v1';
+
+export function getDeletedChallanIdentifiers(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(DELETED_CHALLANS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function recordDeletedChallan(id: string, challanNumber?: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getDeletedChallanIdentifiers();
+    if (id) set.add(id);
+    if (challanNumber) set.add(challanNumber);
+    localStorage.setItem(DELETED_CHALLANS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
 
 interface DemoState {
   profile: BusinessProfile | null;
@@ -586,11 +610,23 @@ export function updateShareStatus(id: string, shareStatus: ShareStatus): Challan
 
 export function deleteChallan(id: string): boolean {
   const initialLen = state.challans.length;
-  state.challans = state.challans.filter((c) => c.id !== id);
-  state.challanItems = state.challanItems.filter((i) => i.challan_id !== id);
+  const target = state.challans.find((c) => c.id === id);
+  const targetNumber = target?.challan_number;
+
+  // Record into persistent deleted identifiers set
+  recordDeletedChallan(id, targetNumber);
+
+  // Remove from in-memory state by both id and challan_number
+  state.challans = state.challans.filter(
+    (c) => c.id !== id && (!targetNumber || c.challan_number !== targetNumber)
+  );
+  state.challanItems = state.challanItems.filter(
+    (i) => i.challan_id !== id && (!target?.id || i.challan_id !== target.id)
+  );
   state.activityLog = state.activityLog.filter((l) => l.challan_id !== id);
   saveState(state);
-  deleteChallanFromFirebase(id).catch((err) =>
+
+  deleteChallanFromFirebase(id, targetNumber).catch((err) =>
     console.warn('Firebase deleteChallan sync:', err)
   );
   broadcastChallansUpdate(state.challans);
@@ -600,16 +636,17 @@ export function deleteChallan(id: string): boolean {
 export function syncFromFirebase(firebaseChallans: Challan[]): void {
   if (!firebaseChallans || !Array.isArray(firebaseChallans)) return;
 
-  // If remote is empty, don't wipe newly seeded local on first boot
-  if (firebaseChallans.length === 0 && state.challans.length > 0) {
-    state.challans.forEach((c) => {
-      saveChallanToFirebase(c).catch(() => {});
-    });
-    return;
-  }
+  const deletedSet = getDeletedChallanIdentifiers();
 
-  // Remote Firestore / Server database is the live source of truth across all 10 employees
-  state.challans = [...firebaseChallans].sort((a, b) => {
+  // Filter out any challans that have been deleted locally or marked is_deleted
+  const activeRemote = firebaseChallans.filter(
+    (c) =>
+      !c.is_deleted &&
+      !deletedSet.has(c.id) &&
+      (!c.challan_number || !deletedSet.has(c.challan_number))
+  );
+
+  state.challans = [...activeRemote].sort((a, b) => {
     const da = new Date(b.challan_date || b.created_at || 0).getTime();
     const db = new Date(a.challan_date || a.created_at || 0).getTime();
     return da - db;
@@ -621,9 +658,7 @@ export function syncFromFirebase(firebaseChallans: Challan[]): void {
       allItems.push(...fc.items);
     }
   });
-  if (allItems.length > 0) {
-    state.challanItems = allItems;
-  }
+  state.challanItems = allItems;
   saveState(state);
 }
 
@@ -708,7 +743,14 @@ export function getDashboardStats(): DashboardStats {
 // ============================================================
 
 export function seedDemoData(): void {
+  if (typeof window !== 'undefined' && localStorage.getItem(DEMO_SEEDED_KEY)) {
+    return; // Already seeded once, do not resurrect deleted demo challans
+  }
   if (state.customers.length > 0) return; // Already seeded
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(DEMO_SEEDED_KEY, 'true');
+  }
 
   // Create demo profile
   saveProfile({

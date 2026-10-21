@@ -95,6 +95,8 @@ export interface Challan {
   sgst_amount?: number | null;
   apply_additional_9?: boolean | null;
   additional_9_amount?: number | null;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
   created_at: string;
   updated_at: string;
   // Joined data

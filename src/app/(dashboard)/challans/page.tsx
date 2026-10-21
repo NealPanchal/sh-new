@@ -225,9 +225,10 @@ export default function ChallansPage() {
   const confirmDelete = () => {
     if (!deleteModalChallan) return;
     const num = deleteModalChallan.challan_number;
-    deleteChallan(deleteModalChallan.id);
-    showToast(`Challan ${num} permanently deleted`, 'success');
+    const id = deleteModalChallan.id;
     setDeleteModalChallan(null);
+    deleteChallan(id);
+    showToast(`Challan ${num} permanently deleted`, 'success');
   };
 
   if (!mounted || isLoading) {

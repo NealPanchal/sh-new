@@ -76,10 +76,14 @@ export async function saveChallanToFirebase(challan: Challan): Promise<void> {
 /**
  * Delete a challan from Firebase Firestore & Server Database
  */
-export async function deleteChallanFromFirebase(id: string): Promise<void> {
+export async function deleteChallanFromFirebase(id: string, challanNumber?: string | null): Promise<void> {
   // 1. Dual sync to Next.js server API
   if (typeof window !== 'undefined') {
-    fetch(`/api/challans?id=${encodeURIComponent(id)}`, {
+    const params = new URLSearchParams();
+    if (id) params.set('id', id);
+    if (challanNumber) params.set('challan_number', challanNumber);
+    params.set('permanent', 'true');
+    fetch(`/api/challans?${params.toString()}`, {
       method: 'DELETE',
       credentials: 'same-origin',
     }).catch(() => {});
@@ -87,8 +91,21 @@ export async function deleteChallanFromFirebase(id: string): Promise<void> {
 
   // 2. Sync to Cloud Firestore
   try {
-    const docRef = doc(firestore, COLLECTIONS.CHALLANS, id);
-    await deleteDoc(docRef);
+    if (id) {
+      const docRef = doc(firestore, COLLECTIONS.CHALLANS, id);
+      await deleteDoc(docRef);
+    }
+    // Also delete any document matching challan_number
+    if (challanNumber) {
+      const q = query(
+        collection(firestore, COLLECTIONS.CHALLANS),
+        where('challan_number', '==', challanNumber)
+      );
+      const snaps = await getDocs(q);
+      for (const d of snaps.docs) {
+        await deleteDoc(d.ref);
+      }
+    }
   } catch (err: any) {
     console.warn('Firebase deleteChallan warning:', err?.message || err);
   }

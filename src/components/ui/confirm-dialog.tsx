@@ -29,7 +29,7 @@ export function ConfirmDialog({
   const buttonClass = variant === 'danger' ? 'btn-danger' : 'btn-primary';
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal-overlay !z-[9999]" onClick={onCancel}>
       <div
         className="modal-content p-6 animate-slide-up max-w-md"
         onClick={(e) => e.stopPropagation()}

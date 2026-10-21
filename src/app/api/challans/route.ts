@@ -208,18 +208,26 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
+    const challanNumber = searchParams.get('challan_number');
     const permanent = searchParams.get('permanent') === 'true';
 
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Missing challan id parameter' }, { status: 400 });
+    if (!id && !challanNumber) {
+      return NextResponse.json(
+        { success: false, error: 'Missing challan identifier (id or challan_number required)' },
+        { status: 400 }
+      );
     }
 
     const challans = readDb();
-    const targetIdx = challans.findIndex((c) => c.id === id);
+    const targetIdx = challans.findIndex(
+      (c) => (id && c.id === id) || (challanNumber && c.challan_number === challanNumber)
+    );
 
     if (targetIdx === -1) {
       return NextResponse.json({ success: true, deleted: false, message: 'Challan not found' });
     }
+
+    const deletedItem = challans[targetIdx];
 
     if (permanent) {
       challans.splice(targetIdx, 1);
@@ -237,7 +245,8 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({
       success: true,
       deleted: true,
-      id,
+      id: deletedItem.id,
+      challan_number: deletedItem.challan_number,
       permanent,
     });
   } catch (err: any) {
