@@ -23,7 +23,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   business_name: 'SHOWHOUSE',
   tagline: 'Decor Studio',
   legal_name: 'Showhouse Concept & Design LLP',
-  logo_url: null,
+  logo_url: '/logo.png',
   address: 'Vishram Baug, Near Makhmali Talao, LBS Marg, Thane (W) - 400602',
   phone: '+91 93248 69306 / 022 - 2538 7683',
   email: 'foxshowhouse@gmail.com',

@@ -227,9 +227,36 @@ export default function SettingsPage() {
       <form onSubmit={handleSave} className="space-y-6">
         {/* Business Profile */}
         <div className="card p-6 space-y-4">
-          <div className="flex items-center gap-2 text-primary-600 font-bold text-base pb-2 border-b border-surface-100">
-            <Building2 size={20} />
-            <span>Showhouse Profile</span>
+          <div className="flex items-center justify-between pb-2 border-b border-surface-100">
+            <div className="flex items-center gap-2 text-primary-600 font-bold text-base">
+              <Building2 size={20} />
+              <span>Showhouse Profile</span>
+            </div>
+            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+              Verified Brand
+            </span>
+          </div>
+
+          {/* Official Logo Display */}
+          <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 flex flex-col sm:flex-row items-center gap-4">
+            <div className="w-20 h-20 bg-white rounded-xl border border-surface-200 p-2 shadow-2xs shrink-0 flex items-center justify-center">
+              <img
+                src="/logo.png"
+                alt="Showhouse Decor Studio Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <div className="space-y-1 text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <span className="text-sm font-bold text-surface-900">Official Brand Logo</span>
+                <span className="text-[10px] font-semibold px-2 py-0.2 rounded bg-amber-100/70 text-amber-800 border border-amber-300/50">
+                  Active
+                </span>
+              </div>
+              <p className="text-xs text-surface-500">
+                Applied automatically across delivery bills, memo pads, navigation, app icons, and PDF exports.
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

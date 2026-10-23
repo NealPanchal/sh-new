@@ -62,10 +62,12 @@ export default function LoginPage() {
       <div className="w-full max-w-sm sm:max-w-md bg-surface-900 border border-surface-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 text-white">
         {/* Brand Logo & Header */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-[#b8860b] to-primary-500 p-0.5 shadow-lg shadow-primary-500/15 mb-3 flex items-center justify-center">
-            <div className="w-full h-full bg-surface-950 rounded-[14px] flex items-center justify-center text-primary-400 font-serif font-black text-2xl tracking-tighter">
-              SH
-            </div>
+          <div className="w-20 h-20 mx-auto rounded-2xl bg-white p-2.5 shadow-xl shadow-amber-500/10 border border-amber-200/40 mb-3.5 flex items-center justify-center">
+            <img
+              src="/logo-emblem.png"
+              alt="Showhouse Decor Studio"
+              className="w-full h-full object-contain"
+            />
           </div>
 
           <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white font-serif">

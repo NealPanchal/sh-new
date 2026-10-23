@@ -110,13 +110,25 @@ export default function DashboardPage() {
     <div className="space-y-3.5 pb-20 sm:pb-8 max-w-6xl mx-auto">
       {/* Top Banner / Shop Info */}
       <div className="flex items-center justify-between gap-3 pb-1">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-surface-900 tracking-tight">
-            {profile?.business_name || 'SHOWHOUSE'}
-          </h1>
-          <p className="text-xs text-surface-500 mt-0.5">
-            Laminates Delivery Challan System
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-white border border-[#b8860b]/30 p-1.5 shadow-2xs shrink-0 flex items-center justify-center">
+            <img
+              src="/logo-emblem.png"
+              alt="Showhouse"
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-surface-900 tracking-tight flex items-center gap-2">
+              <span>{profile?.business_name || 'SHOWHOUSE'}</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-[#b8860b] border border-amber-200/60 uppercase tracking-widest hidden sm:inline-block">
+                Decor Studio
+              </span>
+            </h1>
+            <p className="text-xs text-surface-500 mt-0.5">
+              Laminates Delivery Challan System
+            </p>
+          </div>
         </div>
 
         <Link

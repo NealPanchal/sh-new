@@ -50,24 +50,36 @@ export function Sidebar() {
       {/* Brand Header */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-surface-100">
         {!collapsed && (
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-surface-900 flex items-center justify-center font-bold text-white text-sm shadow-xs">
-              <span className="text-primary-500">S</span>H
+          <Link href="/" className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-[#b8860b]/30 bg-white p-0.5 flex items-center justify-center shadow-2xs">
+              <img
+                src="/logo-emblem.png"
+                alt="Showhouse"
+                className="w-full h-full object-contain"
+              />
             </div>
-            <div className="flex flex-col">
-              <span className="font-extrabold text-base text-surface-900 tracking-tight leading-none">
-                SHOW<span className="text-primary-500">HOUSE</span>
+            <div className="flex flex-col min-w-0">
+              <span className="font-extrabold text-[15px] text-surface-900 tracking-tight leading-none truncate">
+                SHOW<span className="text-[#b8860b]">HOUSE</span>
               </span>
-              <span className="text-[10px] text-surface-400 font-medium tracking-wider uppercase mt-0.5">
-                Challan Manager
+              <span className="text-[10px] text-[#b8860b] font-semibold tracking-wider uppercase mt-0.5 truncate">
+                Decor Studio
               </span>
             </div>
           </Link>
         )}
         {collapsed && (
-          <div className="w-8 h-8 rounded-lg bg-surface-900 flex items-center justify-center mx-auto font-bold text-sm">
-            <span className="text-primary-500">S</span>
-          </div>
+          <Link
+            href="/"
+            className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-[#b8860b]/30 bg-white p-0.5 flex items-center justify-center shadow-2xs mx-auto"
+            title="Showhouse Decor Studio"
+          >
+            <img
+              src="/logo-emblem.png"
+              alt="Showhouse"
+              className="w-full h-full object-contain"
+            />
+          </Link>
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -176,12 +188,21 @@ export function MobileHeader() {
     <header className="lg:hidden fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-xs border-b border-surface-200 z-40 h-13 px-3">
       <div className="flex items-center justify-between h-full max-w-7xl mx-auto">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-surface-900 flex items-center justify-center font-bold text-xs text-white">
-            <span className="text-primary-500">S</span>H
+          <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-[#b8860b]/30 bg-white p-0.5 flex items-center justify-center shadow-2xs">
+            <img
+              src="/logo-emblem.png"
+              alt="Showhouse"
+              className="w-full h-full object-contain"
+            />
           </div>
-          <span className="font-extrabold text-sm text-surface-900 tracking-tight">
-            SHOW<span className="text-primary-500">HOUSE</span>
-          </span>
+          <div className="flex flex-col">
+            <span className="font-extrabold text-sm text-surface-900 tracking-tight leading-none">
+              SHOW<span className="text-[#b8860b]">HOUSE</span>
+            </span>
+            <span className="text-[9px] text-[#b8860b] font-semibold tracking-wider uppercase mt-0.5">
+              Decor Studio
+            </span>
+          </div>
         </Link>
 
         <div className="flex items-center gap-2">

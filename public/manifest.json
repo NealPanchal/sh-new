@@ -1,11 +1,11 @@
 {
-  "name": "Showhouse Laminates — Challan Manager",
+  "name": "Showhouse Decor Studio — Challan Manager",
   "short_name": "Showhouse",
-  "description": "Digital Delivery Challan Management System for Showhouse Laminates",
+  "description": "Digital Delivery Challan & Bill Management System for Showhouse Decor Studio",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#d67829",
+  "theme_color": "#b8860b",
   "orientation": "portrait-primary",
   "icons": [
     {

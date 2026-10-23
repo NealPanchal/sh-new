@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Challan, ChallanItem, BusinessProfile } from '@/types';
 import { formatDateIndian, formatPhone } from '@/lib/utils';
+import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 
 interface PDFOptions {
   challan: Challan;
@@ -62,22 +63,24 @@ export function generateChallanPDF({
   // ----------------------------------------------------
 
   // Left Brand: Gold Logo + SHOWHOUSE Decor Studio
-  // Draw elegant gold ribbon logo emblem
-  doc.setDrawColor(...goldColor);
-  doc.setLineWidth(1.2);
-  doc.ellipse(margin + 10, y + 6, 8, 4.5);
-  doc.ellipse(margin + 12, y + 8, 7, 4);
+  try {
+    doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', margin, y - 2, 16, 16);
+  } catch {
+    doc.setDrawColor(...goldColor);
+    doc.setLineWidth(1.2);
+    doc.ellipse(margin + 8, y + 6, 7, 4);
+  }
 
   // Logo text
   doc.setFont('times', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(...goldColor);
-  doc.text('SHOWHOUSE', margin + 22, y + 6);
+  doc.text('SHOWHOUSE', margin + 18, y + 6);
 
   doc.setFont('times', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(...goldColor);
-  doc.text('Decor Studio', margin + 22, y + 10.5);
+  doc.text('Decor Studio', margin + 18, y + 10.5);
 
   // Right Header: Rounded Pill Box ("PROFORMA INVOICE" / "DELIVERY CHALLAN")
   const titleText = documentType || 'PROFORMA INVOICE';
@@ -215,12 +218,19 @@ export function generateChallanPDF({
   }
 
   // Draw Faint Watermark before or in table
-  doc.setFont('times', 'bold');
-  doc.setFontSize(36);
-  doc.setTextColor(245, 238, 215); // Very faint gold watermark
-  doc.text('SHOWHOUSE', pageWidth / 2, y + 40, { align: 'center' });
-  doc.setFontSize(14);
-  doc.text('Decor Studio', pageWidth / 2, y + 48, { align: 'center' });
+  try {
+    (doc as any).saveGraphicsState();
+    (doc as any).setGState(new (doc as any).GState({ opacity: 0.06 }));
+    doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', pageWidth / 2 - 25, y + 15, 50, 50);
+    (doc as any).restoreGraphicsState();
+  } catch {
+    doc.setFont('times', 'bold');
+    doc.setFontSize(36);
+    doc.setTextColor(245, 238, 215); // Very faint gold watermark
+    doc.text('SHOWHOUSE', pageWidth / 2, y + 40, { align: 'center' });
+    doc.setFontSize(14);
+    doc.text('Decor Studio', pageWidth / 2, y + 48, { align: 'center' });
+  }
 
   autoTable(doc, {
     startY: y,

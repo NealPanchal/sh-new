@@ -86,17 +86,12 @@ export function DeliveryMemoBill({
           {/* Left Brand */}
           <div className="flex items-start gap-2.5">
             {/* Logo Emblem Icon */}
-            <div className="w-9 h-9 shrink-0 flex items-center justify-center text-[#b8860b]">
-              <svg viewBox="0 0 40 40" className="w-9 h-9" fill="none">
-                <circle cx="20" cy="20" r="18" stroke="#b8860b" strokeWidth="1.5" strokeDasharray="3 2" />
-                <path
-                  d="M14 26 C12 20, 18 14, 25 14 C27 14, 28 15, 27 17 C25 21, 15 23, 23 27 C26 28, 27 26, 27 24"
-                  stroke="#b8860b"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <circle cx="26" cy="14" r="1.5" fill="#b8860b" />
-              </svg>
+            <div className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 flex items-center justify-center">
+              <img
+                src="/logo-emblem.png"
+                alt="Showhouse Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
 
             <div>
@@ -195,7 +190,16 @@ export function DeliveryMemoBill({
         </div>
 
         {/* Ruled Ledger Table */}
-        <div className="border-t-2 border-b-2 border-surface-800 text-xs">
+        <div className="border-t-2 border-b-2 border-surface-800 text-xs relative overflow-hidden">
+          {/* Subtle Logo Watermark in Memo Table */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
+            <img
+              src="/logo-emblem-transparent.png"
+              alt=""
+              className="w-48 h-48 object-contain opacity-[0.045]"
+            />
+          </div>
+
           {/* Header */}
           <div className="grid grid-cols-12 border-b border-surface-400 font-bold text-surface-800 uppercase text-[10px] tracking-wider py-1.5 bg-surface-50/70">
             <div className="col-span-6 px-2 border-r border-surface-300">
