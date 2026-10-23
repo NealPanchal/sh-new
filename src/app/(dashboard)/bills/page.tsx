@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/lib/context';
 import { Challan, ChallanItem } from '@/types';
 import { formatDateIndian, formatPhone, cn } from '@/lib/utils';
-import { openWhatsApp } from '@/lib/whatsapp';
+import { openWhatsApp, shareChallanViaWhatsApp } from '@/lib/whatsapp';
 import {
   Receipt,
   Search,
@@ -130,35 +130,21 @@ export default function DeliveryBillsPage() {
     }));
   };
 
-  const handleWhatsApp = (c: Challan, e: React.MouseEvent) => {
+  const handleWhatsApp = async (c: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!profile || !c.customer_phone) {
+    if (!profile) return;
+    if (!c.customer_phone) {
       showToast('No customer phone recorded', 'error');
       return;
     }
 
-    const memoNo =
-      c.reference_number || c.challan_number.split('/').pop() || '0120';
-    const businessName = profile.business_name || 'Showhouse';
-    const totalAmt =
-      c.total_amount ||
-      (c.items || []).reduce(
-        (sum: number, it: ChallanItem) =>
-          sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
-        0
-      );
-
-    const message =
-      `Hello ${c.customer_name},\n\n` +
-      `Here is your *${businessName} Decor Studio Delivery Bill / Memo*.\n\n` +
-      `*Memo No:* ${memoNo}\n` +
-      `*Date:* ${c.challan_date}\n` +
-      `*Total Amount:* ₹${totalAmt.toLocaleString('en-IN')}\n\n` +
-      `Thank you for choosing Showhouse Decor Studio!\n` +
-      `— Thane (W) | +91 93248 69306`;
-
-    openWhatsApp(c.customer_phone, message);
-    showToast(`Opening WhatsApp for ${c.customer_name}`);
+    await shareChallanViaWhatsApp({
+      challan: c,
+      items: c.items || [],
+      profile,
+      isBillMemo: true,
+      onToast: showToast,
+    });
   };
 
   const renderBillCard = (c: Challan) => {

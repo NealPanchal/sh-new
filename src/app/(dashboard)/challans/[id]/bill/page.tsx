@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useApp } from '@/lib/context';
 import { Challan } from '@/types';
 import { DeliveryMemoBill } from '@/components/challans/delivery-memo-bill';
-import { openWhatsApp } from '@/lib/whatsapp';
+import { openWhatsApp, shareChallanViaWhatsApp } from '@/lib/whatsapp';
 import { printChallanPDF, downloadChallanPDF } from '@/lib/pdf';
 import {
   ArrowLeft,
@@ -76,43 +76,21 @@ export default function ChallanBillPage() {
     showToast(`Downloading Bill / Memo PDF`);
   };
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = async () => {
     if (!profile || !challan.customer_phone) {
       showToast('No customer phone recorded', 'error');
       return;
     }
 
-    const businessName = profile.business_name || 'Showhouse';
-    const itemsList = (challan.items || [])
-      .map(
-        (it, idx) =>
-          `${idx + 1}. ${it.item_description} - ${it.quantity} ${it.unit} @ ₹${
-            it.rate || '—'
-          } = ₹${it.amount ? Number(it.amount).toLocaleString('en-IN') : '—'}`
-      )
-      .join('\n');
-
-    const totalAmt =
-      challan.total_amount ||
-      (challan.items || []).reduce(
-        (sum, it) => sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
-        0
-      );
-
-    const message =
-      `Hello ${challan.customer_name},\n\n` +
-      `Here is your *${businessName} Decor Studio Delivery Bill / Memo*.\n\n` +
-      `*Memo No:* ${memoNo}\n` +
-      `*Date:* ${challan.challan_date}\n\n` +
-      `*Particulars:*\n${itemsList}\n\n` +
-      `*GRAND TOTAL:* ₹${totalAmt.toLocaleString('en-IN')}\n\n` +
-      `*Note:* ${confirmBy}\n\n` +
-      `Thank you for your business!\n` +
-      `— ${businessName} Decor Studio\n` +
-      `Thane (W) | +91 93248 69306`;
-
-    openWhatsApp(challan.customer_phone, message);
-    showToast(`Opening WhatsApp for ${challan.customer_name}`);
+    await shareChallanViaWhatsApp({
+      challan,
+      items: challan.items || [],
+      profile,
+      isBillMemo: true,
+      memoNo,
+      confirmBy,
+      onToast: showToast,
+    });
   };
 
   return (

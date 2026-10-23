@@ -21,7 +21,7 @@ import {
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
 import { printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp } from '@/lib/whatsapp';
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
   const badgeClasses: Record<ChallanStatus, string> = {
@@ -85,17 +85,20 @@ export default function DashboardPage() {
     showToast(`Print opened for ${challan.challan_number}`);
   };
 
-  const handleWhatsApp = (challan: Challan, e: React.MouseEvent) => {
+  const handleWhatsApp = async (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!profile) return;
     if (!challan.customer_phone) {
       showToast('No customer phone recorded', 'error');
       return;
     }
-    const msg = generateShareMessage(challan, profile);
-    openWhatsApp(challan.customer_phone, msg);
+    await shareChallanViaWhatsApp({
+      challan,
+      items: challan.items || [],
+      profile,
+      onToast: showToast,
+    });
     updateShareStatus(challan.id, 'share_initiated');
-    showToast(`Opening WhatsApp for ${challan.customer_name}`);
   };
 
   if (!mounted || isLoading) {

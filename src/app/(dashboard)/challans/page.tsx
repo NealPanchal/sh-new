@@ -33,7 +33,7 @@ import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp } from '@/lib/whatsapp';
 import { SwipeableChallanCard } from '@/components/challans/swipeable-challan-card';
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
@@ -193,17 +193,20 @@ export default function ChallansPage() {
     showToast(`PDF downloaded for ${challan.challan_number}`);
   };
 
-  const handleWhatsApp = (challan: Challan, e: React.MouseEvent) => {
+  const handleWhatsApp = async (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!profile) return;
     if (!challan.customer_phone) {
       showToast('Customer phone number not available', 'error');
       return;
     }
-    const msg = generateShareMessage(challan, profile);
-    openWhatsApp(challan.customer_phone, msg);
+    await shareChallanViaWhatsApp({
+      challan,
+      items: challan.items || [],
+      profile,
+      onToast: showToast,
+    });
     updateShareStatus(challan.id, 'share_initiated');
-    showToast(`Opening WhatsApp for ${challan.customer_name}`);
   };
 
   const handleDuplicate = (id: string, e: React.MouseEvent) => {

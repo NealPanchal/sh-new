@@ -26,7 +26,7 @@ import { UNIT_OPTIONS } from '@/lib/validations';
 import { ChallanItemFormData, UnitType, Customer, Product } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp } from '@/lib/whatsapp';
 
 const emptyItem = (): ChallanItemFormData => ({
   product_id: '',
@@ -323,8 +323,12 @@ function CreateChallanContent() {
       }
 
       if (action === 'whatsapp' && profile && customerPhone) {
-        const msg = generateShareMessage(challan, profile);
-        openWhatsApp(customerPhone, msg);
+        await shareChallanViaWhatsApp({
+          challan,
+          items: challan.items || [],
+          profile,
+          onToast: showToast,
+        });
         updateShareStatus(challan.id, 'share_initiated');
       }
 

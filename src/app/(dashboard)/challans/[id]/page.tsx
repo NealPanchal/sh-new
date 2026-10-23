@@ -25,7 +25,7 @@ import {
 import { formatDateIndian, formatINR, formatPhone, amountToWords, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage, tryNativeShare } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, tryNativeShare, shareChallanViaWhatsApp } from '@/lib/whatsapp';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DeliveryMemoBill } from '@/components/challans/delivery-memo-bill';
 
@@ -138,22 +138,16 @@ export default function ChallanDetailPage() {
       return;
     }
 
-    // Try native share if on mobile device, else wa.me
-    const shared = await tryNativeShare({
+    await shareChallanViaWhatsApp({
       challan,
       items: challan.items || [],
       profile,
+      onToast: showToast,
     });
-
-    if (!shared) {
-      const msg = generateShareMessage(challan, profile);
-      openWhatsApp(challan.customer_phone, msg);
-    }
 
     updateShareStatus(challan.id, 'user_marked_sent');
     const refreshed = getChallan(challan.id);
     if (refreshed) setChallan(refreshed);
-    showToast('Challan shared with customer');
   };
 
   const handleDuplicate = () => {
