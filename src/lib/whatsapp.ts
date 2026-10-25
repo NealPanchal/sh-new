@@ -32,10 +32,6 @@ export function generateShareMessage(
     message += `🔖 *Ref / Order No:* ${challan.reference_number}\n`;
   }
 
-  if (viewUrl) {
-    message += `\n📥 *View & Download Official PDF:* \n${viewUrl}\n`;
-  }
-
   if (challan.items && challan.items.length > 0) {
     message += `\n*Particulars:*\n`;
     challan.items.forEach((item, idx) => {
@@ -143,10 +139,6 @@ export function generateBillShareMessage(
     `Here is your *${businessName} Decor Studio Delivery Bill / Memo*.\n` +
     `*Memo No:* ${memoNo}\n` +
     `*Date:* ${formatDateIndian(challan.challan_date)}\n`;
-
-  if (viewUrl) {
-    msg += `\n📥 *View & Download Official PDF:* \n${viewUrl}\n`;
-  }
 
   if (challan.items && challan.items.length > 0) {
     msg += `\n*Particulars:*\n`;
@@ -302,44 +294,65 @@ export async function shareChallanViaWhatsApp(options: ShareWhatsAppOptions): Pr
   const fileDocNum = (challan.reference_number || challan.challan_number).replace(/[\/\\]/g, '-');
   const fileName = `Showhouse_${fileDocNum}.pdf`;
 
-  // 1. Generate live web view link for customer
-  let viewUrl = '';
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
-  }
-
+  // Clean, professional WhatsApp message WITHOUT ANY WEBSITE LINK
   const message =
     options.customMessage ||
     (options.isBillMemo
-      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy, viewUrl)
-      : generateShareMessage(challan, profile, viewUrl));
+      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy)
+      : generateShareMessage(challan, profile));
 
-  // 2. Open WhatsApp IMMEDIATELY using the direct user interaction gesture!
-  openWhatsApp(targetPhone, message);
-
-  // 3. Deferred download on desktop only so mobile browser does not abort the WhatsApp redirect
-  const isMobile =
+  // 1. Mobile devices: share the downloaded PDF file directly into WhatsApp!
+  if (
     typeof navigator !== 'undefined' &&
-    (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+    typeof navigator.share === 'function' &&
+    typeof navigator.canShare === 'function'
+  ) {
+    try {
+      const blob = getChallanPDFBlob({
+        challan,
+        items,
+        profile,
+        documentType: options.documentType,
+      });
+      const file = new File([blob], fileName, { type: 'application/pdf' });
 
-  if (!isMobile && options.autoDownloadPDF !== false) {
-    setTimeout(() => {
-      try {
-        downloadChallanPDF({
-          challan,
-          items,
-          profile,
-          documentType: options.documentType,
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `Showhouse - ${challan.challan_number}`,
+          text: message,
+          files: [file],
         });
-      } catch (err) {
-        console.warn('Deferred PDF auto-download note:', err);
+        options.onToast?.(`Challan PDF shared successfully!`, 'success');
+        return { success: true, method: 'whatsapp_direct' };
       }
-    }, 400);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        // User cancelled native share drawer
+        return { success: false, method: 'whatsapp_direct' };
+      }
+      console.warn('Native PDF share error:', err);
+    }
   }
 
+  // 2. Desktop / fallback: automatically download the PDF file directly!
+  if (options.autoDownloadPDF !== false) {
+    try {
+      downloadChallanPDF({
+        challan,
+        items,
+        profile,
+        documentType: options.documentType,
+      });
+    } catch (err) {
+      console.warn('PDF auto-download note:', err);
+    }
+  }
+
+  // 3. Open WhatsApp to customer's chat with clean text summary (no website link)
+  openWhatsApp(targetPhone, message);
+
   options.onToast?.(
-    `WhatsApp opened for ${challan.customer_name}!`,
+    `PDF downloaded! Attach ${fileName} in WhatsApp chat.`,
     'success'
   );
 
@@ -405,11 +418,7 @@ export async function copyShareMessage(
   challan: Challan,
   profile: BusinessProfile
 ): Promise<boolean> {
-  let viewUrl = '';
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
-  }
-  const message = generateShareMessage(challan, profile, viewUrl);
+  const message = generateShareMessage(challan, profile);
   try {
     await navigator.clipboard.writeText(message);
     return true;
