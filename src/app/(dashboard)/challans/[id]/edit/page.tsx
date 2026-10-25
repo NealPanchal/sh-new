@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { UNIT_OPTIONS } from '@/lib/validations';
 import { ChallanItemFormData, UnitType, Customer, Product } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { resolveCustomerPhone } from '@/lib/whatsapp';
 
 const emptyItem = (): ChallanItemFormData => ({
   product_id: '',
@@ -45,10 +46,12 @@ export default function EditChallanPage() {
     profile,
     showToast,
     isLoading,
+    challans: liveChallans,
   } = useApp();
 
   const [mounted, setMounted] = useState(false);
   const [challanLoaded, setChallanLoaded] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [challanNumber, setChallanNumber] = useState('');
 
   // Form state
@@ -88,49 +91,105 @@ export default function EditChallanPage() {
     return list;
   }, [profile?.employees, createdBy]);
 
+  const populateChallan = (c: any) => {
+    setChallanNumber(c.challan_number);
+    setChallanDate(c.challan_date);
+    setSelectedCustomerId(c.customer_id || '');
+    setCustomerName(c.customer_name);
+    const resolved = c.customer_phone || resolveCustomerPhone(c, customers, liveChallans);
+    setCustomerPhone(resolved || '');
+    setDeliveryAddress(c.delivery_address || c.customer_address || '');
+    setReferenceNumber(c.reference_number || '');
+    setCreatedBy(c.created_by || c.prepared_by || (profile?.employees && profile.employees[0]) || 'Neal');
+    setTransportCharges(c.transportation_charges ? String(c.transportation_charges) : '');
+    setLoadingCharges(c.loading_charges ? String(c.loading_charges) : '');
+    setApplyGst(Boolean(c.apply_gst));
+    setApplyAdditional9(Boolean(c.apply_additional_9));
+
+    if (c.customer_phone || c.delivery_address || c.reference_number || c.transportation_charges || c.loading_charges || c.apply_gst || c.apply_additional_9 || c.created_by) {
+      setShowExtraDetails(true);
+    }
+
+    if (c.items && c.items.length > 0) {
+      setItems(
+        c.items.map((it: any) => ({
+          product_id: it.product_id || '',
+          item_description: it.item_description,
+          brand: it.brand || '',
+          colour_finish: it.colour_finish || '',
+          size: it.size || '',
+          unit: it.unit,
+          quantity: it.quantity,
+          rate: it.rate ? String(it.rate) : '',
+          amount: it.amount ? String(it.amount) : '',
+        }))
+      );
+    }
+    setChallanLoaded(true);
+    setPageLoading(false);
+  };
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (mounted && challanId) {
-      const c = getChallan(challanId);
-      if (c) {
-        setChallanNumber(c.challan_number);
-        setChallanDate(c.challan_date);
-        setSelectedCustomerId(c.customer_id || '');
-        setCustomerName(c.customer_name);
-        setCustomerPhone(c.customer_phone || '');
-        setDeliveryAddress(c.delivery_address || c.customer_address || '');
-        setReferenceNumber(c.reference_number || '');
-        setCreatedBy(c.created_by || c.prepared_by || (profile?.employees && profile.employees[0]) || 'Neal');
-        setTransportCharges(c.transportation_charges ? String(c.transportation_charges) : '');
-        setLoadingCharges(c.loading_charges ? String(c.loading_charges) : '');
-        setApplyGst(Boolean(c.apply_gst));
-        setApplyAdditional9(Boolean(c.apply_additional_9));
+    let isCancelled = false;
 
-        if (c.customer_phone || c.delivery_address || c.reference_number || c.transportation_charges || c.loading_charges || c.apply_gst || c.apply_additional_9 || c.created_by) {
-          setShowExtraDetails(true);
+    async function loadChallan() {
+      // 1. Local check
+      const local = getChallan(challanId);
+      if (local) {
+        if (!isCancelled) {
+          populateChallan(local);
         }
+        return;
+      }
 
-        if (c.items && c.items.length > 0) {
-          setItems(
-            c.items.map((it) => ({
-              product_id: it.product_id || '',
-              item_description: it.item_description,
-              brand: it.brand || '',
-              colour_finish: it.colour_finish || '',
-              size: it.size || '',
-              unit: it.unit,
-              quantity: it.quantity,
-              rate: it.rate ? String(it.rate) : '',
-              amount: it.amount ? String(it.amount) : '',
-            }))
-          );
+      // 2. Direct Firestore fallback
+      try {
+        const { fetchSingleChallanFromFirebase } = await import('@/lib/firebase-service');
+        const remote = await fetchSingleChallanFromFirebase(challanId);
+        if (remote && !isCancelled) {
+          const { syncFromFirebase } = await import('@/lib/demo-store');
+          syncFromFirebase([remote]);
+          populateChallan(remote);
+          return;
         }
-        setChallanLoaded(true);
+      } catch (err) {
+        console.warn('Edit page direct Firestore fetch note:', err);
+      }
+
+      // 3. Server API fallback
+      try {
+        const res = await fetch(`/api/challans?id=${encodeURIComponent(challanId)}`, {
+          credentials: 'same-origin',
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.challan && !isCancelled) {
+            const { syncFromFirebase } = await import('@/lib/demo-store');
+            syncFromFirebase([json.challan]);
+            populateChallan(json.challan);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Edit page server API fetch note:', err);
+      }
+
+      if (!isCancelled) {
+        setPageLoading(false);
       }
     }
+
+    if (mounted && challanId) {
+      loadChallan();
+    }
+
+    return () => {
+      isCancelled = true;
+    };
   }, [mounted, challanId, getChallan]);
 
   const filteredCustomers = useMemo(() => {
@@ -261,7 +320,7 @@ export default function EditChallanPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) {
       showToast('Please fix the errors in the form', 'error');
       return;
@@ -273,13 +332,22 @@ export default function EditChallanPage() {
         (it) => it.item_description.trim() && Number(it.quantity) > 0
       );
 
-      const updated = updateChallan(
+      let finalPhone = customerPhone.trim();
+      if (!finalPhone && customerName.trim()) {
+        finalPhone = resolveCustomerPhone(
+          { customer_id: selectedCustomerId, customer_name: customerName.trim(), customer_phone: '' } as any,
+          customers,
+          liveChallans
+        );
+      }
+
+      const updated = await updateChallan(
         challanId,
         {
           challan_date: challanDate,
           customer_id: selectedCustomerId || undefined,
           customer_name: customerName.trim(),
-          customer_phone: customerPhone.trim(),
+          customer_phone: finalPhone,
           customer_address: deliveryAddress.trim(),
           delivery_address: deliveryAddress.trim(),
           reference_number: referenceNumber.trim(),
@@ -322,10 +390,11 @@ export default function EditChallanPage() {
     }
   };
 
-  if (!mounted || isLoading) {
+  if (!mounted || isLoading || (pageLoading && !challanLoaded)) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+      <div className="flex flex-col items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mb-2" />
+        <p className="text-xs text-surface-500">Loading challan details...</p>
       </div>
     );
   }

@@ -59,10 +59,13 @@ export function formatPhone(phone: string): string {
  * Get phone number for WhatsApp (without + prefix, with country code)
  */
 export function getWhatsAppNumber(phone: string): string {
-  const cleaned = phone.replace(/\D/g, '');
-  if (cleaned.length === 10) return `91${cleaned}`;
-  if (cleaned.startsWith('91') && cleaned.length === 12) return cleaned;
-  return cleaned;
+  if (!phone) return '';
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('0')) digits = digits.slice(1);
+  if (digits.startsWith('91') && digits.length === 12) return digits;
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.startsWith('910') && digits.length === 13) return `91${digits.slice(3)}`;
+  return digits;
 }
 
 /**

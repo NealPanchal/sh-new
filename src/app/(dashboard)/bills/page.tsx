@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/lib/context';
 import { Challan, ChallanItem } from '@/types';
 import { formatDateIndian, formatPhone, cn } from '@/lib/utils';
-import { openWhatsApp, shareChallanViaWhatsApp } from '@/lib/whatsapp';
+import { openWhatsApp, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
 import {
   Receipt,
   Search,
@@ -29,6 +29,8 @@ export default function DeliveryBillsPage() {
   const {
     getChallans,
     profile,
+    customers,
+    updateChallan,
     deleteChallan,
     showToast,
     isLoading,
@@ -133,18 +135,24 @@ export default function DeliveryBillsPage() {
   const handleWhatsApp = async (c: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!profile) return;
-    if (!c.customer_phone) {
-      showToast('No customer phone recorded', 'error');
+    const targetPhone = resolveCustomerPhone(c, customers, allChallans);
+    if (!targetPhone) {
+      showToast('No customer phone recorded for ' + c.customer_name, 'error');
       return;
     }
 
     await shareChallanViaWhatsApp({
       challan: c,
+      phoneOverride: targetPhone,
       items: c.items || [],
       profile,
       isBillMemo: true,
       onToast: showToast,
     });
+
+    if (!c.customer_phone?.trim()) {
+      updateChallan(c.id, { customer_phone: targetPhone });
+    }
   };
 
   const renderBillCard = (c: Challan) => {

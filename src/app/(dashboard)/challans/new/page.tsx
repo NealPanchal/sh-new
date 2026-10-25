@@ -26,7 +26,7 @@ import { UNIT_OPTIONS } from '@/lib/validations';
 import { ChallanItemFormData, UnitType, Customer, Product } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
 
 const emptyItem = (): ChallanItemFormData => ({
   product_id: '',
@@ -48,12 +48,14 @@ function CreateChallanContent() {
     customers,
     products,
     getCustomer,
+    peekNextChallanNumber,
     getNextChallanNumber,
     createChallan,
     createCustomer,
     profile,
     showToast,
     updateShareStatus,
+    challans: liveChallans,
   } = useApp();
 
   // Core Form State (Speed & Simplicity)
@@ -102,11 +104,11 @@ function CreateChallanContent() {
   useEffect(() => {
     setChallanDate(getTodayISO());
     try {
-      setChallanNumberPreview(getNextChallanNumber());
+      setChallanNumberPreview(peekNextChallanNumber());
     } catch {
       setChallanNumberPreview('SH/CH-0001');
     }
-  }, [getNextChallanNumber]);
+  }, [peekNextChallanNumber, liveChallans]);
 
   // Pre-select customer if passed in URL
   useEffect(() => {
@@ -278,12 +280,22 @@ function CreateChallanContent() {
         (it) => it.item_description.trim() && Number(it.quantity) > 0
       );
 
-      const challan = createChallan(
+      // Auto-resolve customer phone if not typed
+      let finalPhone = customerPhone.trim();
+      if (!finalPhone && customerName.trim()) {
+        finalPhone = resolveCustomerPhone(
+          { customer_id: finalCustomerId || '', customer_name: customerName.trim(), customer_phone: '' } as any,
+          customers,
+          liveChallans
+        );
+      }
+
+      const challan = await createChallan(
         {
           challan_date: challanDate,
-          customer_id: finalCustomerId || undefined,
+          customer_id: finalCustomerId || '',
           customer_name: customerName.trim(),
-          customer_phone: customerPhone.trim(),
+          customer_phone: finalPhone,
           customer_address: deliveryAddress.trim(),
           delivery_address: deliveryAddress.trim(),
           reference_number: referenceNumber.trim(),
@@ -322,14 +334,20 @@ function CreateChallanContent() {
         });
       }
 
-      if (action === 'whatsapp' && profile && customerPhone) {
-        await shareChallanViaWhatsApp({
-          challan,
-          items: challan.items || [],
-          profile,
-          onToast: showToast,
-        });
-        updateShareStatus(challan.id, 'share_initiated');
+      if (action === 'whatsapp' && profile) {
+        const phoneToUse = finalPhone || (challan.customer_phone || '').trim();
+        if (phoneToUse) {
+          await shareChallanViaWhatsApp({
+            challan,
+            phoneOverride: phoneToUse,
+            items: challan.items || [],
+            profile,
+            onToast: showToast,
+          });
+          updateShareStatus(challan.id, 'share_initiated');
+        } else {
+          showToast('Challan saved, but no customer phone was found for WhatsApp', 'info');
+        }
       }
 
       showToast(`Challan ${challan.challan_number} saved successfully!`);
@@ -385,6 +403,18 @@ function CreateChallanContent() {
             <Printer size={14} />
             <span>Save & Print</span>
           </button>
+          {customerPhone && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => handleSave('final', 'whatsapp')}
+              className="btn-primary py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+              title="Save & Share WhatsApp"
+            >
+              <Send size={14} />
+              <span>Save & WhatsApp</span>
+            </button>
+          )}
           <button
             type="button"
             disabled={saving}

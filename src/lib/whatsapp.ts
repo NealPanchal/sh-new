@@ -1,12 +1,11 @@
 /**
- * WhatsApp sharing module for Delivery Challans
- * Uses wa.me links and Web Share API where supported.
+ * WhatsApp sharing module for Showhouse Delivery Challans & Memo Bills
+ * Shares directly to customer's WhatsApp phone number along with PDF download & live document link
  */
 
-import { Challan, BusinessProfile } from '@/types';
+import { Challan, BusinessProfile, ChallanItem } from '@/types';
 import { getWhatsAppNumber, formatDateIndian } from '@/lib/utils';
-import { getChallanPDFBlob } from '@/lib/pdf';
-import { ChallanItem } from '@/types';
+import { downloadChallanPDF, getChallanPDFBlob } from '@/lib/pdf';
 
 interface ShareOptions {
   challan: Challan;
@@ -15,28 +14,40 @@ interface ShareOptions {
 }
 
 /**
- * Generate WhatsApp share message
+ * Generate WhatsApp share message for Delivery Challan
  */
-export function generateShareMessage(challan: Challan, profile: BusinessProfile): string {
+export function generateShareMessage(
+  challan: Challan,
+  profile: BusinessProfile,
+  viewUrl?: string
+): string {
   const businessName = profile.business_name || 'Showhouse';
   let message =
     `Hello ${challan.customer_name},\n\n` +
-    `Please find your ${businessName} Delivery Challan *${challan.challan_number}*, ` +
-    `dated ${formatDateIndian(challan.challan_date)}.\n\n`;
+    `Please find your *${businessName} Delivery Challan* details below:\n` +
+    `📄 *Challan No:* ${challan.challan_number}\n` +
+    `📅 *Date:* ${formatDateIndian(challan.challan_date)}\n`;
+
+  if (challan.reference_number) {
+    message += `🔖 *Ref / Order No:* ${challan.reference_number}\n`;
+  }
+
+  if (viewUrl) {
+    message += `\n📥 *View & Download Official PDF:* \n${viewUrl}\n`;
+  }
 
   if (challan.items && challan.items.length > 0) {
-    message += `*Items Delivered:*\n`;
+    message += `\n*Particulars:*\n`;
     challan.items.forEach((item, idx) => {
       const lineRate = item.rate ? Number(item.rate) : null;
       const lineAmt = item.amount ? Number(item.amount) : (lineRate ? lineRate * item.quantity : null);
       const rateInfo = lineRate ? ` @ ₹${lineRate.toLocaleString('en-IN')}` : '';
       const amtInfo = lineAmt ? ` = ₹${lineAmt.toLocaleString('en-IN')}` : '';
-      message += `${idx + 1}. ${item.item_description} - ${item.quantity} ${item.unit}${rateInfo}${amtInfo}\n`;
+      message += `${idx + 1}. ${item.item_description} (${item.quantity} ${item.unit})${rateInfo}${amtInfo}\n`;
     });
-    message += `\n`;
   }
 
-  message += `*Total Qty:* ${challan.total_quantity} items\n`;
+  message += `\n*Total Qty:* ${challan.total_quantity} items\n`;
 
   const itemsSubtotal =
     challan.items?.reduce(
@@ -90,21 +101,11 @@ export function generateShareMessage(challan: Challan, profile: BusinessProfile)
       : challan.apply_additional_9
       ? 'Grand Total (Inc. 9% Addl)'
       : 'Total Amount';
-    message += `*${taxLabel}:* ₹${totalAmt.toLocaleString('en-IN')}\n`;
+    message += `*${taxLabel}:* ₹${Number(totalAmt).toLocaleString('en-IN')}\n`;
   }
 
-  message += `\nThank you for your business!\n— ${businessName}`;
+  message += `\nThank you for your business!\n— ${businessName} Decor Studio`;
   return message;
-}
-
-/**
- * Open WhatsApp with the customer's phone and pre-filled message
- */
-export function openWhatsApp(phone: string, message: string): void {
-  const waNumber = getWhatsAppNumber(phone);
-  const encodedMessage = encodeURIComponent(message);
-  const url = `https://wa.me/${waNumber}?text=${encodedMessage}`;
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 /**
@@ -114,7 +115,8 @@ export function generateBillShareMessage(
   challan: Challan,
   profile: BusinessProfile,
   memoNoOverride?: string,
-  confirmByOverride?: string
+  confirmByOverride?: string,
+  viewUrl?: string
 ): string {
   const businessName = profile.business_name || 'Showhouse';
   const memoNo =
@@ -139,9 +141,12 @@ export function generateBillShareMessage(
   let msg =
     `Hello ${challan.customer_name},\n\n` +
     `Here is your *${businessName} Decor Studio Delivery Bill / Memo*.\n` +
-    `📄 *Official PDF attached*\n\n` +
     `*Memo No:* ${memoNo}\n` +
     `*Date:* ${formatDateIndian(challan.challan_date)}\n`;
+
+  if (viewUrl) {
+    msg += `\n📥 *View & Download Official PDF:* \n${viewUrl}\n`;
+  }
 
   if (challan.items && challan.items.length > 0) {
     msg += `\n*Particulars:*\n`;
@@ -165,45 +170,191 @@ export function generateBillShareMessage(
   return msg;
 }
 
+/**
+ * Automatically resolve customer phone number:
+ * 1. Checks challan.customer_phone
+ * 2. Checks customer table by id or exact/fuzzy name
+ * 3. Checks other challans by customer name
+ */
+export function resolveCustomerPhone(
+  challan: Challan,
+  customers?: any[],
+  allChallans?: Challan[]
+): string {
+  if (challan.customer_phone && challan.customer_phone.trim()) {
+    return challan.customer_phone.trim();
+  }
+  if (challan.customer_id && customers && customers.length > 0) {
+    const c = customers.find((cust: any) => cust.id === challan.customer_id);
+    if (c?.phone && c.phone.trim()) return c.phone.trim();
+  }
+  if (challan.customer_name && customers && customers.length > 0) {
+    const cName = challan.customer_name.toLowerCase().trim();
+    // Exact match
+    let c = customers.find(
+      (cust: any) =>
+        (cust.business_name && cust.business_name.toLowerCase().trim() === cName) ||
+        (cust.name && cust.name.toLowerCase().trim() === cName) ||
+        (cust.contact_person && cust.contact_person.toLowerCase().trim() === cName)
+    );
+    if (c?.phone && c.phone.trim()) return c.phone.trim();
+
+    // Partial/fuzzy match
+    c = customers.find(
+      (cust: any) =>
+        cust.phone &&
+        cust.phone.trim() &&
+        ((cust.business_name &&
+          (cName.includes(cust.business_name.toLowerCase().trim()) ||
+            cust.business_name.toLowerCase().trim().includes(cName))) ||
+          (cust.contact_person &&
+            (cName.includes(cust.contact_person.toLowerCase().trim()) ||
+              cust.contact_person.toLowerCase().trim().includes(cName))))
+    );
+    if (c?.phone && c.phone.trim()) return c.phone.trim();
+  }
+  if (challan.customer_name && allChallans && allChallans.length > 0) {
+    const cName = challan.customer_name.toLowerCase().trim();
+    const other = allChallans.find(
+      (c) =>
+        c.customer_name &&
+        (c.customer_name.toLowerCase().trim() === cName ||
+          cName.includes(c.customer_name.toLowerCase().trim()) ||
+          c.customer_name.toLowerCase().trim().includes(cName)) &&
+        c.customer_phone &&
+        c.customer_phone.trim()
+    );
+    if (other?.customer_phone && other.customer_phone.trim()) {
+      return other.customer_phone.trim();
+    }
+  }
+  return '';
+}
+
+/**
+ * Open WhatsApp with the customer's phone and pre-filled message
+ * Works seamlessly on Mobile (native WhatsApp app via wa.me) and Desktop (WhatsApp Web / App)
+ */
+export function openWhatsApp(phone: string, message: string): boolean {
+  const waNumber = getWhatsAppNumber(phone);
+  if (!waNumber) return false;
+  const encodedMessage = encodeURIComponent(message);
+  // Universal WhatsApp deep-link recognized by all devices
+  const url = `https://wa.me/${waNumber}?text=${encodedMessage}`;
+
+  if (typeof window !== 'undefined') {
+    const isMobile =
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (isMobile) {
+      window.location.href = url;
+      return true;
+    } else {
+      // Desktop: Attempt standard window.open first
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      // If popup blocker blocked the new window, navigate current tab as foolproof fallback
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        window.location.href = url;
+      } else {
+        try {
+          win.focus();
+        } catch {}
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface ShareWhatsAppOptions {
   challan: Challan;
   items?: ChallanItem[];
   profile: BusinessProfile;
   customMessage?: string;
+  phoneOverride?: string;
   documentType?: 'PROFORMA INVOICE' | 'DELIVERY CHALLAN';
   isBillMemo?: boolean;
   memoNo?: string;
   confirmBy?: string;
+  autoDownloadPDF?: boolean;
   onToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 /**
  * Universal WhatsApp sharing function:
- * - On Mobile (or supported browsers): Shares BOTH the PDF file and text caption directly via native Web Share API
- * - On Desktop: Auto-downloads the official PDF and opens WhatsApp Web with the pre-filled text
+ * 1. Directly opens WhatsApp to the customer's phone number without popup blocker delay
+ * 2. Safely handles PDF download so it never aborts mobile app redirection
  */
 export async function shareChallanViaWhatsApp(options: ShareWhatsAppOptions): Promise<{
   success: boolean;
-  method: 'native' | 'download_and_web';
+  method: 'whatsapp_direct';
 }> {
   const { challan, profile } = options;
   const items = options.items || challan.items || [];
-  const message =
-    options.customMessage ||
-    (options.isBillMemo
-      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy)
-      : generateShareMessage(challan, profile));
+  const targetPhone = (options.phoneOverride || challan.customer_phone || '').trim();
 
-  if (!challan.customer_phone) {
-    options.onToast?.('Customer phone number not available', 'error');
-    return { success: false, method: 'download_and_web' };
+  if (!targetPhone) {
+    options.onToast?.('Customer phone number not available to share on WhatsApp', 'error');
+    return { success: false, method: 'whatsapp_direct' };
   }
 
   const fileDocNum = (challan.reference_number || challan.challan_number).replace(/[\/\\]/g, '-');
   const fileName = `Showhouse_${fileDocNum}.pdf`;
 
-  // 1. Try Native Web Share API (Mobile / supported desktop browsers)
-  // This sends the actual PDF file AND the text caption directly into WhatsApp!
+  // 1. Generate live web view link for customer
+  let viewUrl = '';
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
+  }
+
+  const message =
+    options.customMessage ||
+    (options.isBillMemo
+      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy, viewUrl)
+      : generateShareMessage(challan, profile, viewUrl));
+
+  // 2. Open WhatsApp IMMEDIATELY using the direct user interaction gesture!
+  openWhatsApp(targetPhone, message);
+
+  // 3. Deferred download on desktop only so mobile browser does not abort the WhatsApp redirect
+  const isMobile =
+    typeof navigator !== 'undefined' &&
+    (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+  if (!isMobile && options.autoDownloadPDF !== false) {
+    setTimeout(() => {
+      try {
+        downloadChallanPDF({
+          challan,
+          items,
+          profile,
+          documentType: options.documentType,
+        });
+      } catch (err) {
+        console.warn('Deferred PDF auto-download note:', err);
+      }
+    }, 400);
+  }
+
+  options.onToast?.(
+    `WhatsApp opened for ${challan.customer_name}!`,
+    'success'
+  );
+
+  return { success: true, method: 'whatsapp_direct' };
+}
+
+/**
+ * Native file sharing (for sharing raw PDF file directly via OS share drawer on mobile)
+ */
+export async function sharePDFFileNative(options: ShareWhatsAppOptions): Promise<boolean> {
+  const { challan, profile } = options;
+  const items = options.items || challan.items || [];
+  const fileDocNum = (challan.reference_number || challan.challan_number).replace(/[\/\\]/g, '-');
+  const fileName = `Showhouse_${fileDocNum}.pdf`;
+
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
       const blob = getChallanPDFBlob({
@@ -214,68 +365,37 @@ export async function shareChallanViaWhatsApp(options: ShareWhatsAppOptions): Pr
       });
       const file = new File([blob], fileName, { type: 'application/pdf' });
 
-      let canShareFiles = false;
-      if (typeof navigator.canShare === 'function') {
-        try {
-          canShareFiles = navigator.canShare({ files: [file] });
-        } catch {
-          canShareFiles = false;
-        }
-      }
-
-      if (canShareFiles) {
+      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        const message = generateShareMessage(challan, profile);
         await navigator.share({
           title: `Showhouse - ${challan.challan_number}`,
           text: message,
           files: [file],
         });
-        options.onToast?.(`Challan PDF & WhatsApp message shared!`, 'success');
-        return { success: true, method: 'native' };
+        options.onToast?.(`Challan PDF shared successfully!`, 'success');
+        return true;
       }
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        // User cancelled native share sheet
-        return { success: false, method: 'native' };
+      if (err?.name !== 'AbortError') {
+        console.warn('Native share failed:', err);
       }
-      console.warn('Native share with PDF failed or not supported, falling back to download + web:', err);
     }
   }
 
-  // 2. Desktop Fallback (WhatsApp Web)
-  // Automatically download the official PDF directly to user's computer
-  try {
-    const { downloadChallanPDF } = await import('@/lib/pdf');
-    downloadChallanPDF({
-      challan,
-      items,
-      profile,
-      documentType: options.documentType,
-    });
-  } catch (err) {
-    console.error('Failed to download PDF:', err);
-  }
-
-  // Open WhatsApp chat with pre-filled message
-  openWhatsApp(challan.customer_phone, message);
-
-  options.onToast?.(
-    `📄 PDF downloaded (${fileName}) & WhatsApp opened! Attach the PDF in the chat to send both.`,
-    'success'
-  );
-
-  return { success: true, method: 'download_and_web' };
+  // Fallback to regular WhatsApp share
+  await shareChallanViaWhatsApp(options);
+  return true;
 }
 
 /**
  * Try native Web Share API with PDF file
  */
 export async function tryNativeShare(options: ShareOptions): Promise<boolean> {
-  const result = await shareChallanViaWhatsApp({
+  return sharePDFFileNative({
     challan: options.challan,
     items: options.items,
     profile: options.profile,
   });
-  return result.success && result.method === 'native';
 }
 
 /**
@@ -285,12 +405,15 @@ export async function copyShareMessage(
   challan: Challan,
   profile: BusinessProfile
 ): Promise<boolean> {
-  const message = generateShareMessage(challan, profile);
+  let viewUrl = '';
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
+  }
+  const message = generateShareMessage(challan, profile, viewUrl);
   try {
     await navigator.clipboard.writeText(message);
     return true;
   } catch {
-    // Fallback
     const textArea = document.createElement('textarea');
     textArea.value = message;
     document.body.appendChild(textArea);

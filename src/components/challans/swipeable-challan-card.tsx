@@ -15,6 +15,7 @@ import {
 
 interface SwipeableChallanCardProps {
   challan: Challan;
+  resolvedPhone?: string;
   onDelete: (challan: Challan) => void;
   onPrint: (challan: Challan, e: React.MouseEvent) => void;
   onWhatsApp: (challan: Challan, e: React.MouseEvent) => void;
@@ -22,6 +23,7 @@ interface SwipeableChallanCardProps {
 
 export function SwipeableChallanCard({
   challan,
+  resolvedPhone,
   onDelete,
   onPrint,
   onWhatsApp,
@@ -262,15 +264,30 @@ export function SwipeableChallanCard({
             </button>
 
             {/* WhatsApp */}
-            {challan.customer_phone && (
-              <button
-                onClick={(e) => onWhatsApp(challan, e)}
-                className="p-1.5 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 active:scale-95 transition-all"
-                title="WhatsApp Share"
-              >
-                <Send size={14} />
-              </button>
-            )}
+            {(() => {
+              const phone = (resolvedPhone || challan.customer_phone || '').trim();
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onWhatsApp(challan, e);
+                  }}
+                  className={cn(
+                    'p-1.5 rounded-lg active:scale-95 transition-all',
+                    phone
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                  )}
+                  title={
+                    phone
+                      ? `Share WhatsApp (${phone})`
+                      : 'Enter Customer Phone & Share WhatsApp'
+                  }
+                >
+                  <Send size={14} />
+                </button>
+              );
+            })()}
 
             {/* Edit */}
             <button

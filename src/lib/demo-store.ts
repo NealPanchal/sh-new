@@ -30,24 +30,30 @@ const STORAGE_KEY = 'showhouse_demo_data';
 const DELETED_CHALLANS_KEY = 'showhouse_deleted_challans';
 const DEMO_SEEDED_KEY = 'showhouse_demo_seeded_v1';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(str: string): boolean {
+  return typeof str === 'string' && UUID_REGEX.test(str);
+}
+
 export function getDeletedChallanIdentifiers(): Set<string> {
   if (typeof window === 'undefined') return new Set();
   try {
     const raw = localStorage.getItem(DELETED_CHALLANS_KEY);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return new Set(arr);
+      if (Array.isArray(arr)) {
+        return new Set(arr.filter((item: string) => isUuid(item)));
+      }
     }
   } catch {}
   return new Set();
 }
 
-export function recordDeletedChallan(id: string, challanNumber?: string | null): void {
-  if (typeof window === 'undefined') return;
+export function recordDeletedChallan(id: string): void {
+  if (typeof window === 'undefined' || !isUuid(id)) return;
   try {
     const set = getDeletedChallanIdentifiers();
-    if (id) set.add(id);
-    if (challanNumber) set.add(challanNumber);
+    set.add(id);
     localStorage.setItem(DELETED_CHALLANS_KEY, JSON.stringify(Array.from(set)));
   } catch {}
 }
@@ -98,27 +104,23 @@ function saveState(state: DemoState): void {
 
 let state: DemoState = getDefaultState();
 
-const DUMMY_SEED_NUMBERS = new Set([
-  'SH/2026-27/0001',
-  'SH/2026-27/0002',
-  'SH/2026-27/0003',
-  'SH/2026-27/0004',
-]);
-
 export function initDemoStore() {
   state = loadState();
 
-  // Automatic purge of dummy demo seed challans that were auto-injected previously
-  const hasDummyChallans = state.challans.some((c) =>
-    DUMMY_SEED_NUMBERS.has(c.challan_number)
-  );
-
-  if (hasDummyChallans) {
-    state.challans = state.challans.filter(
-      (c) => !DUMMY_SEED_NUMBERS.has(c.challan_number)
-    );
-    DUMMY_SEED_NUMBERS.forEach((num) => recordDeletedChallan(num, num));
-    saveState(state);
+  // Clean up any non-UUID entries (such as human challan numbers) from showhouse_deleted_challans in localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(DELETED_CHALLANS_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          const cleaned = arr.filter((item: string) => isUuid(item));
+          if (cleaned.length !== arr.length) {
+            localStorage.setItem(DELETED_CHALLANS_KEY, JSON.stringify(cleaned));
+          }
+        }
+      }
+    } catch {}
   }
 }
 
@@ -271,6 +273,28 @@ export function deleteCustomer(id: string): boolean {
   return true;
 }
 
+export function syncCustomersFromFirebase(remoteCustomers: Customer[]): void {
+  if (!remoteCustomers || !Array.isArray(remoteCustomers) || remoteCustomers.length === 0) return;
+  const map = new Map<string, Customer>();
+  state.customers.forEach((c) => map.set(c.id, c));
+  remoteCustomers.forEach((rc) => {
+    const existing = map.get(rc.id);
+    if (!existing) {
+      map.set(rc.id, rc);
+    } else {
+      const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
+      const tRemote = new Date(rc.updated_at || rc.created_at || 0).getTime();
+      if (tRemote >= tLocal) {
+        map.set(rc.id, rc);
+      }
+    }
+  });
+  state.customers = Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  saveState(state);
+}
+
 // ============================================================
 // Products
 // ============================================================
@@ -346,18 +370,98 @@ export function deleteProduct(id: string): boolean {
   return true;
 }
 
+export function syncProductsFromFirebase(remoteProducts: Product[]): void {
+  if (!remoteProducts || !Array.isArray(remoteProducts) || remoteProducts.length === 0) return;
+  const map = new Map<string, Product>();
+  state.products.forEach((p) => map.set(p.id, p));
+  remoteProducts.forEach((rp) => {
+    const existing = map.get(rp.id);
+    if (!existing) {
+      map.set(rp.id, rp);
+    } else {
+      const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
+      const tRemote = new Date(rp.updated_at || rp.created_at || 0).getTime();
+      if (tRemote >= tLocal) {
+        map.set(rp.id, rp);
+      }
+    }
+  });
+  state.products = Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  saveState(state);
+}
+
 // ============================================================
 // Challans
 // ============================================================
+
+export function peekNextChallanNumber(): string {
+  const profile = state.profile;
+  const prefix = profile?.challan_prefix || 'SH';
+  const startMonth = profile?.financial_year_start_month || 4;
+  const fy = getFinancialYear(new Date(), startMonth);
+
+  let maxSeq = 0;
+  const prefixFyPattern = new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i');
+
+  for (const c of state.challans) {
+    if (c.challan_number) {
+      const m = c.challan_number.match(prefixFyPattern);
+      if (m && m[1]) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    }
+  }
+
+  if (state.challanSequence > maxSeq) {
+    maxSeq = state.challanSequence;
+  }
+
+  let nextSeq = maxSeq + 1;
+  while (state.challans.some((c) => c.challan_number === generateChallanNumber(prefix, fy, nextSeq) && !c.is_deleted)) {
+    nextSeq++;
+  }
+
+  return generateChallanNumber(prefix, fy, nextSeq);
+}
 
 export function getNextChallanNumber(): string {
   const profile = state.profile;
   const prefix = profile?.challan_prefix || 'SH';
   const startMonth = profile?.financial_year_start_month || 4;
   const fy = getFinancialYear(new Date(), startMonth);
-  state.challanSequence += 1;
+
+  let maxSeq = 0;
+  const prefixFyPattern = new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i');
+
+  for (const c of state.challans) {
+    if (c.challan_number) {
+      const m = c.challan_number.match(prefixFyPattern);
+      if (m && m[1]) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    }
+  }
+
+  if (state.challanSequence > maxSeq) {
+    maxSeq = state.challanSequence;
+  }
+
+  let nextSeq = maxSeq + 1;
+  while (state.challans.some((c) => c.challan_number === generateChallanNumber(prefix, fy, nextSeq) && !c.is_deleted)) {
+    nextSeq++;
+  }
+
+  state.challanSequence = nextSeq;
   saveState(state);
-  return generateChallanNumber(prefix, fy, state.challanSequence);
+  return generateChallanNumber(prefix, fy, nextSeq);
 }
 
 export function getChallans(filters?: {
@@ -368,17 +472,26 @@ export function getChallans(filters?: {
   toDate?: string;
   customerId?: string;
 }): Challan[] {
-  let challans = state.challans.filter((c) => c.status !== 'void');
+  let challans = state.challans.filter((c) => c.status !== 'void' && !c.is_deleted);
 
   if (filters) {
     if (filters.search) {
-      const q = filters.search.toLowerCase();
-      challans = challans.filter(
-        (c) =>
-          c.challan_number.toLowerCase().includes(q) ||
-          c.customer_name.toLowerCase().includes(q) ||
-          c.customer_phone.includes(q)
-      );
+      const q = filters.search.toLowerCase().trim();
+      if (q) {
+        challans = challans.filter(
+          (c) =>
+            (c.challan_number && c.challan_number.toLowerCase().includes(q)) ||
+            (c.customer_name && c.customer_name.toLowerCase().includes(q)) ||
+            (c.customer_phone && c.customer_phone.toLowerCase().includes(q)) ||
+            (c.reference_number && c.reference_number.toLowerCase().includes(q)) ||
+            (c.created_by && c.created_by.toLowerCase().includes(q)) ||
+            (c.prepared_by && c.prepared_by.toLowerCase().includes(q)) ||
+            (c.items &&
+              c.items.some(
+                (it) => it.item_description && it.item_description.toLowerCase().includes(q)
+              ))
+        );
+      }
     }
     if (filters.status) {
       challans = challans.filter((c) => c.status === filters.status);
@@ -387,29 +500,49 @@ export function getChallans(filters?: {
       challans = challans.filter((c) => c.share_status === filters.shareStatus);
     }
     if (filters.fromDate) {
-      challans = challans.filter((c) => c.challan_date >= filters.fromDate!);
+      challans = challans.filter((c) => (c.challan_date || '') >= filters.fromDate!);
     }
     if (filters.toDate) {
-      challans = challans.filter((c) => c.challan_date <= filters.toDate!);
+      challans = challans.filter((c) => (c.challan_date || '') <= filters.toDate!);
     }
     if (filters.customerId) {
       challans = challans.filter((c) => c.customer_id === filters.customerId);
     }
   }
 
-  return challans.sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  // Ensure items are populated for every returned challan
+  return challans
+    .map((c) => {
+      if (!c.items || c.items.length === 0) {
+        const items = state.challanItems
+          .filter((i) => i.challan_id === c.id)
+          .sort((a, b) => (a.serial_number || 0) - (b.serial_number || 0));
+        if (items.length > 0) {
+          return { ...c, items };
+        }
+      }
+      return c;
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.created_at || b.challan_date || 0).getTime() -
+        new Date(a.created_at || a.challan_date || 0).getTime()
+    );
 }
 
 export function getChallan(id: string): Challan | undefined {
-  const challan = state.challans.find((c) => c.id === id);
+  if (!id) return undefined;
+  const challan = state.challans.find((c) => c.id === id || c.challan_number === id);
   if (challan) {
-    challan.items = state.challanItems
-      .filter((i) => i.challan_id === id)
-      .sort((a, b) => a.serial_number - b.serial_number);
+    const items = state.challanItems
+      .filter((i) => i.challan_id === challan.id)
+      .sort((a, b) => (a.serial_number || 0) - (b.serial_number || 0));
+    return {
+      ...challan,
+      items: items.length > 0 ? items : challan.items || [],
+    };
   }
-  return challan;
+  return undefined;
 }
 
 export function createChallan(
@@ -417,8 +550,31 @@ export function createChallan(
   items: Partial<ChallanItem>[]
 ): Challan {
   const now = new Date().toISOString();
-  const challanId = generateId();
-  const challanNumber = data.challan_number || getNextChallanNumber();
+  const challanId = data.id || generateId();
+
+  // Assign or validate unique challan number
+  let challanNumber = data.challan_number;
+  const isDuplicateNumber =
+    challanNumber &&
+    state.challans.some(
+      (c) => c.challan_number === challanNumber && c.id !== challanId && !c.is_deleted
+    );
+
+  if (!challanNumber || isDuplicateNumber) {
+    challanNumber = getNextChallanNumber();
+  }
+
+  // If a specific challan_number was provided, make sure state.challanSequence tracks it
+  const prefix = state.profile?.challan_prefix || 'SH';
+  const startMonth = state.profile?.financial_year_start_month || 4;
+  const fy = getFinancialYear(new Date(), startMonth);
+  const m = challanNumber.match(new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i'));
+  if (m && m[1]) {
+    const parsed = parseInt(m[1], 10);
+    if (!isNaN(parsed) && parsed > state.challanSequence) {
+      state.challanSequence = parsed;
+    }
+  }
 
   // Calculate totals
   let totalQuantity = 0;
@@ -434,7 +590,7 @@ export function createChallan(
     }
 
     return {
-      id: generateId(),
+      id: item.id || generateId(),
       challan_id: challanId,
       serial_number: idx + 1,
       product_id: item.product_id || null,
@@ -473,17 +629,17 @@ export function createChallan(
     challan_number: challanNumber,
     challan_date: data.challan_date || getTodayISO(),
     customer_id: data.customer_id || '',
-    customer_name: data.customer_name || '',
+    customer_name: data.customer_name || 'Walk-in Customer',
     customer_phone: data.customer_phone || '',
     customer_address: data.customer_address || '',
     customer_gstin: data.customer_gstin || null,
-    delivery_address: data.delivery_address || null,
+    delivery_address: data.delivery_address || data.customer_address || '',
     reference_number: data.reference_number || null,
     notes: data.notes || null,
     prepared_by: data.prepared_by || data.created_by || state.profile?.employees?.[0] || 'Neal',
     created_by: data.created_by || data.prepared_by || state.profile?.employees?.[0] || 'Neal',
     status: data.status || 'draft',
-    share_status: 'not_shared',
+    share_status: data.share_status || 'not_shared',
     total_quantity: totalQuantity,
     subtotal_amount: subtotal > 0 ? subtotal : null,
     transportation_charges: transport > 0 ? transport : null,
@@ -494,12 +650,21 @@ export function createChallan(
     apply_additional_9: applyAdditional9,
     additional_9_amount: additional9 > 0 ? additional9 : null,
     total_amount: finalTotal,
-    created_at: now,
+    created_at: data.created_at || now,
     updated_at: now,
     items: challanItems,
   } as Challan;
 
-  state.challans.push(challan);
+  // Insert or update in state.challans
+  const existingIdx = state.challans.findIndex((c) => c.id === challanId);
+  if (existingIdx >= 0) {
+    state.challans[existingIdx] = challan;
+  } else {
+    state.challans.push(challan);
+  }
+
+  // Update state.challanItems
+  state.challanItems = state.challanItems.filter((i) => i.challan_id !== challanId);
   state.challanItems.push(...challanItems);
 
   // Log activity
@@ -653,23 +818,17 @@ export function updateShareStatus(id: string, shareStatus: ShareStatus): Challan
 
 export function deleteChallan(id: string): boolean {
   const initialLen = state.challans.length;
-  const target = state.challans.find((c) => c.id === id);
-  const targetNumber = target?.challan_number;
 
-  // Record into persistent deleted identifiers set
-  recordDeletedChallan(id, targetNumber);
+  // Record strictly document UUID into persistent deleted identifiers set
+  recordDeletedChallan(id);
 
-  // Remove from in-memory state by both id and challan_number
-  state.challans = state.challans.filter(
-    (c) => c.id !== id && (!targetNumber || c.challan_number !== targetNumber)
-  );
-  state.challanItems = state.challanItems.filter(
-    (i) => i.challan_id !== id && (!target?.id || i.challan_id !== target.id)
-  );
+  // Remove from in-memory state
+  state.challans = state.challans.filter((c) => c.id !== id);
+  state.challanItems = state.challanItems.filter((i) => i.challan_id !== id);
   state.activityLog = state.activityLog.filter((l) => l.challan_id !== id);
   saveState(state);
 
-  deleteChallanFromFirebase(id, targetNumber).catch((err) =>
+  deleteChallanFromFirebase(id).catch((err) =>
     console.warn('Firebase deleteChallan sync:', err)
   );
   broadcastChallansUpdate(state.challans);
@@ -683,14 +842,40 @@ export function syncFromFirebase(firebaseChallans: Challan[]): void {
 
   // Filter out any challans that have been deleted locally or marked is_deleted
   const activeRemote = firebaseChallans.filter(
-    (c) =>
-      !c.is_deleted &&
-      !deletedSet.has(c.id) &&
-      (!c.challan_number || !deletedSet.has(c.challan_number)) &&
-      (!c.challan_number || !DUMMY_SEED_NUMBERS.has(c.challan_number))
+    (c) => !c.is_deleted && !deletedSet.has(c.id)
   );
 
-  state.challans = [...activeRemote].sort((a, b) => {
+  // If remote is empty and we have local challans, DO NOT wipe local challans!
+  if (activeRemote.length === 0 && state.challans.length > 0) {
+    return;
+  }
+
+  // Merge local and remote safely
+  const map = new Map<string, Challan>();
+
+  // 1. Keep existing local non-deleted challans
+  state.challans.forEach((c) => {
+    if (!c.is_deleted && !deletedSet.has(c.id)) {
+      map.set(c.id, c);
+    }
+  });
+
+  // 2. Overlay remote challans (take newer if conflict)
+  activeRemote.forEach((rc) => {
+    const existing = map.get(rc.id);
+    if (!existing) {
+      map.set(rc.id, rc);
+    } else {
+      const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
+      const tRemote = new Date(rc.updated_at || rc.created_at || 0).getTime();
+      if (tRemote >= tLocal) {
+        map.set(rc.id, rc);
+      }
+    }
+  });
+
+  const merged = Array.from(map.values());
+  state.challans = merged.sort((a, b) => {
     const da = new Date(b.challan_date || b.created_at || 0).getTime();
     const db = new Date(a.challan_date || a.created_at || 0).getTime();
     return da - db;
@@ -702,7 +887,29 @@ export function syncFromFirebase(firebaseChallans: Challan[]): void {
       allItems.push(...fc.items);
     }
   });
-  state.challanItems = allItems;
+  if (allItems.length > 0) {
+    state.challanItems = allItems;
+  }
+
+  // Update sequence to the maximum of existing challans
+  const prefix = state.profile?.challan_prefix || 'SH';
+  const startMonth = state.profile?.financial_year_start_month || 4;
+  const fy = getFinancialYear(new Date(), startMonth);
+  const prefixFyPattern = new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i');
+  let maxSeq = state.challanSequence || 0;
+  for (const c of state.challans) {
+    if (c.challan_number) {
+      const m = c.challan_number.match(prefixFyPattern);
+      if (m && m[1]) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    }
+  }
+  state.challanSequence = maxSeq;
+
   saveState(state);
 }
 
@@ -1030,9 +1237,37 @@ export function getCustomerChallans(customerId: string): Challan[] {
 // ============================================================
 // Reset demo data
 // ============================================================
-export function resetDemoData(): void {
-  state = getDefaultState();
+export function importBackupData(parsed: {
+  profile?: BusinessProfile;
+  customers?: Customer[];
+  products?: Product[];
+  challans?: Challan[];
+}): void {
+  if (parsed.profile) {
+    state.profile = parsed.profile;
+    saveProfileToFirebase(parsed.profile).catch(() => {});
+  }
+  if (Array.isArray(parsed.customers) && parsed.customers.length > 0) {
+    state.customers = parsed.customers;
+  }
+  if (Array.isArray(parsed.products) && parsed.products.length > 0) {
+    state.products = parsed.products;
+  }
+  if (Array.isArray(parsed.challans) && parsed.challans.length > 0) {
+    state.challans = parsed.challans;
+    const allItems: ChallanItem[] = [];
+    parsed.challans.forEach((c) => {
+      if (c.items && Array.isArray(c.items)) {
+        allItems.push(...c.items);
+      }
+      // Save each challan to the server database
+      saveChallanToFirebase(c).catch(() => {});
+    });
+    state.challanItems = allItems;
+  }
+  state.isSetupComplete = true;
   saveState(state);
+  broadcastChallansUpdate(state.challans);
 }
 
 export function clearAllData(): void {

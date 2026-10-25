@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     // 3. Generate Signed Session Token
     const token = createSignedSessionToken(username.trim().toLowerCase());
 
-    const isProd = process.env.NODE_ENV === 'production';
+    const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
     const response = NextResponse.json({
       success: true,
       user: {
@@ -64,12 +64,12 @@ export async function POST(req: NextRequest) {
       token, // Also return for client convenience / service worker
     });
 
-    // 4. Set HttpOnly, Secure, SameSite Cookie
+    // 4. Set HttpOnly, Secure (on HTTPS), SameSite Cookie
     response.cookies.set({
       name: AUTH_COOKIE_NAME,
       value: token,
       httpOnly: true,
-      secure: isProd,
+      secure: isHttps,
       sameSite: 'lax',
       path: '/',
       maxAge: 30 * 24 * 60 * 60, // 30 days

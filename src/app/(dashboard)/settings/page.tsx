@@ -178,14 +178,9 @@ export default function SettingsPage() {
     reader.onload = (event) => {
       try {
         const parsed = JSON.parse(event.target?.result as string);
-        if (parsed.customers && parsed.products && parsed.challans) {
-          localStorage.setItem('showhouse_customers', JSON.stringify(parsed.customers));
-          localStorage.setItem('showhouse_products', JSON.stringify(parsed.products));
-          localStorage.setItem('showhouse_challans', JSON.stringify(parsed.challans));
-          if (parsed.profile) {
-            localStorage.setItem('showhouse_profile', JSON.stringify(parsed.profile));
-          }
-          showToast('Data imported successfully. Reloading...');
+        if (parsed.customers || parsed.challans || parsed.profile || parsed.products) {
+          store.importBackupData(parsed);
+          showToast('Data imported successfully and synced to database! Reloading...');
           setTimeout(() => window.location.reload(), 1000);
         } else {
           showToast('Invalid backup file format', 'error');

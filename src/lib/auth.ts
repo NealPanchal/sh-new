@@ -4,6 +4,7 @@
  */
 
 const AUTH_STORAGE_KEY = 'showhouse_admin_authenticated';
+const AUTH_TOKEN_KEY = 'showhouse_admin_token';
 
 export interface LoginResult {
   success: boolean;
@@ -35,6 +36,9 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
     }
 
     if (typeof window !== 'undefined') {
+      if (data.token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+      }
       localStorage.setItem(
         AUTH_STORAGE_KEY,
         JSON.stringify({
@@ -62,11 +66,16 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
  */
 export async function logoutAdmin(): Promise<void> {
   try {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    const token = getClientAuthToken();
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
   } catch {}
 
   if (typeof window !== 'undefined') {
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(AUTH_TOKEN_KEY);
     window.location.href = '/login';
   }
 }
@@ -77,6 +86,19 @@ export async function logoutAdmin(): Promise<void> {
 export function clearAdminSession(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+/**
+ * Get the current client auth token for API calls
+ */
+export function getClientAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || null;
+  } catch {
+    return null;
   }
 }
 
@@ -100,12 +122,19 @@ export function isAdminAuthenticated(): boolean {
  */
 export async function verifySessionWithServer(): Promise<boolean> {
   try {
-    const res = await fetch('/api/auth/session', { cache: 'no-store' });
+    const token = getClientAuthToken();
+    const res = await fetch('/api/auth/session', {
+      cache: 'no-store',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     if (!res.ok) {
       clearAdminSession();
       return false;
     }
     const data = await res.json();
+    if (data.authenticated && data.token && typeof window !== 'undefined') {
+      localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    }
     return Boolean(data.authenticated);
   } catch {
     // If offline, trust local session flag

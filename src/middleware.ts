@@ -91,8 +91,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Bypass public authentication APIs
-  if (pathname.startsWith('/api/auth/')) {
+  // 2. Bypass public authentication APIs & public customer view routes
+  if (
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/api/public/') ||
+    pathname.startsWith('/view/')
+  ) {
     return NextResponse.next();
   }
 

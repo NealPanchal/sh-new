@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
 import { Challan, Customer, Product, BusinessProfile } from '@/types';
+import { getClientAuthToken } from '@/lib/auth';
 
 const COLLECTIONS = {
   CHALLANS: 'challans',
@@ -55,14 +56,29 @@ export async function saveChallanToFirebase(challan: Challan): Promise<void> {
     updated_at: new Date().toISOString(),
   });
 
-  // 1. Dual sync to Next.js server API
+  // 1. Dual sync to Next.js server Database API (data/challans.json)
   if (typeof window !== 'undefined') {
-    fetch('/api/challans', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ challan: data }),
-    }).catch(() => {});
+    try {
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/challans', {
+        method: 'POST',
+        credentials: 'same-origin',
+        keepalive: true,
+        headers,
+        body: JSON.stringify({ challan: data }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        console.error('Server DB save error:', res.status, errJson);
+      }
+    } catch (err) {
+      console.warn('Server DB sync network error:', err);
+    }
   }
 
   // 2. Sync to Cloud Firestore
@@ -75,38 +91,31 @@ export async function saveChallanToFirebase(challan: Challan): Promise<void> {
 }
 
 /**
- * Delete a challan from Firebase Firestore & Server Database
+ * Delete a challan from Firebase Firestore & Server Database strictly by Document UUID
  */
-export async function deleteChallanFromFirebase(id: string, challanNumber?: string | null): Promise<void> {
+export async function deleteChallanFromFirebase(id: string): Promise<void> {
+  if (!id) return;
+
   // 1. Dual sync to Next.js server API
   if (typeof window !== 'undefined') {
-    const params = new URLSearchParams();
-    if (id) params.set('id', id);
-    if (challanNumber) params.set('challan_number', challanNumber);
-    params.set('permanent', 'true');
+    const token = getClientAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const params = new URLSearchParams({ id, permanent: 'true' });
     fetch(`/api/challans?${params.toString()}`, {
       method: 'DELETE',
       credentials: 'same-origin',
+      headers,
     }).catch(() => {});
   }
 
-  // 2. Sync to Cloud Firestore
+  // 2. Sync to Cloud Firestore: delete strictly this single document by doc ID
   try {
-    if (id) {
-      const docRef = doc(firestore, COLLECTIONS.CHALLANS, id);
-      await deleteDoc(docRef);
-    }
-    // Also delete any document matching challan_number
-    if (challanNumber) {
-      const q = query(
-        collection(firestore, COLLECTIONS.CHALLANS),
-        where('challan_number', '==', challanNumber)
-      );
-      const snaps = await getDocs(q);
-      for (const d of snaps.docs) {
-        await deleteDoc(d.ref);
-      }
-    }
+    const docRef = doc(firestore, COLLECTIONS.CHALLANS, id);
+    await deleteDoc(docRef);
   } catch (err: any) {
     console.warn('Firebase deleteChallan warning:', err?.message || err);
   }
@@ -179,10 +188,14 @@ export async function saveProfileToFirebase(profile: BusinessProfile): Promise<v
 
   // 1. Dual sync to Next.js server API
   if (typeof window !== 'undefined') {
+    const token = getClientAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     fetch('/api/settings', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ profile: data }),
     }).catch(() => {});
   }
@@ -214,7 +227,15 @@ export async function fetchProfileFromFirebase(): Promise<BusinessProfile | null
   // Fallback to server API
   if (typeof window !== 'undefined') {
     try {
-      const res = await fetch('/api/settings', { cache: 'no-store', credentials: 'same-origin' });
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/settings', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers,
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.profile) {
@@ -263,7 +284,8 @@ export async function fetchChallansFromFirebase(): Promise<Challan[]> {
     const snap = await getDocs(colRef);
     const list: Challan[] = [];
     snap.forEach((d) => {
-      list.push(d.data() as Challan);
+      const data = d.data() as Challan;
+      list.push({ ...data, id: d.id || data.id, items: data.items || [] });
     });
     return list;
   } catch (err) {
@@ -273,18 +295,168 @@ export async function fetchChallansFromFirebase(): Promise<Challan[]> {
 }
 
 /**
+ * Fetch a single challan directly from Firebase Firestore by ID or Challan Number
+ */
+export async function fetchSingleChallanFromFirebase(id: string): Promise<Challan | null> {
+  if (!id) return null;
+  try {
+    // 1. Direct document ID lookup
+    const docRef = doc(firestore, COLLECTIONS.CHALLANS, id);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as Challan;
+      return { ...data, id: snap.id || data.id, items: data.items || [] };
+    }
+
+    // 2. Query by challan_number
+    const q = query(
+      collection(firestore, COLLECTIONS.CHALLANS),
+      where('challan_number', '==', id)
+    );
+    const querySnap = await getDocs(q);
+    if (!querySnap.empty) {
+      const d = querySnap.docs[0];
+      const data = d.data() as Challan;
+      return { ...data, id: d.id || data.id, items: data.items || [] };
+    }
+  } catch (err) {
+    console.warn('Firebase fetchSingleChallan warning:', err);
+  }
+  return null;
+}
+
+/**
+ * Fetch all customers from Firebase Firestore
+ */
+export async function fetchCustomersFromFirebase(): Promise<Customer[]> {
+  try {
+    const colRef = collection(firestore, COLLECTIONS.CUSTOMERS);
+    const snap = await getDocs(colRef);
+    const list: Customer[] = [];
+    snap.forEach((d) => {
+      const data = d.data() as Customer;
+      list.push({ ...data, id: d.id || data.id });
+    });
+    return list;
+  } catch (err) {
+    console.warn('Firebase fetchCustomers failed:', err);
+    return [];
+  }
+}
+
+/**
+ * Real-time subscription to Customer changes in Firestore
+ */
+export function subscribeToCustomers(onUpdate: (customers: Customer[]) => void): () => void {
+  try {
+    const colRef = collection(firestore, COLLECTIONS.CUSTOMERS);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: Customer[] = [];
+        snapshot.forEach((d) => {
+          const item = d.data() as Customer;
+          list.push({ ...item, id: d.id || item.id });
+        });
+        if (list.length > 0) {
+          onUpdate(list);
+        }
+      },
+      (error) => {
+        console.warn('Firestore customers onSnapshot note:', error.message);
+      }
+    );
+  } catch (err) {
+    console.warn('subscribeToCustomers init error:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Fetch all products from Firebase Firestore
+ */
+export async function fetchProductsFromFirebase(): Promise<Product[]> {
+  try {
+    const colRef = collection(firestore, COLLECTIONS.PRODUCTS);
+    const snap = await getDocs(colRef);
+    const list: Product[] = [];
+    snap.forEach((d) => {
+      const data = d.data() as Product;
+      list.push({ ...data, id: d.id || data.id });
+    });
+    return list;
+  } catch (err) {
+    console.warn('Firebase fetchProducts failed:', err);
+    return [];
+  }
+}
+
+/**
+ * Real-time subscription to Product changes in Firestore
+ */
+export function subscribeToProducts(onUpdate: (products: Product[]) => void): () => void {
+  try {
+    const colRef = collection(firestore, COLLECTIONS.PRODUCTS);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: Product[] = [];
+        snapshot.forEach((d) => {
+          const item = d.data() as Product;
+          list.push({ ...item, id: d.id || item.id });
+        });
+        if (list.length > 0) {
+          onUpdate(list);
+        }
+      },
+      (error) => {
+        console.warn('Firestore products onSnapshot note:', error.message);
+      }
+    );
+  } catch (err) {
+    console.warn('subscribeToProducts init error:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Fetch all challans directly from Next.js server Database API (data/challans.json)
+ */
+export async function fetchChallansFromServer(): Promise<Challan[]> {
+  if (typeof window === 'undefined') return [];
+  try {
+    const token = getClientAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/challans', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.challans)) {
+        return data.challans as Challan[];
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch challans from server DB:', err);
+  }
+  return [];
+}
+
+/**
  * Subscribe to real-time challans changes from Firestore, Server API, and BroadcastChannel
  */
 export function subscribeToChallans(onUpdate: (challans: Challan[]) => void): () => void {
-  let isFirestoreActive = false;
-
   // 1. Cross-tab real-time BroadcastChannel (0ms delay across tabs/windows on same device)
   let broadcastChannel: BroadcastChannel | null = null;
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     try {
       broadcastChannel = new BroadcastChannel('showhouse_challans_sync');
       broadcastChannel.onmessage = (event) => {
-        if (event.data?.type === 'CHALLANS_UPDATED' && Array.isArray(event.data.challans)) {
+        if (event.data?.type === 'CHALLANS_UPDATED' && Array.isArray(event.data.challans) && event.data.challans.length > 0) {
           onUpdate(event.data.challans);
         }
       };
@@ -298,13 +470,15 @@ export function subscribeToChallans(onUpdate: (challans: Challan[]) => void): ()
     unsubFirestore = onSnapshot(
       colRef,
       (snapshot) => {
-        isFirestoreActive = true;
         const list: Challan[] = [];
         snapshot.forEach((d) => {
           const item = d.data() as Challan;
           list.push({ ...item, id: d.id || item.id });
         });
-        onUpdate(list);
+        // Only update if there are remote records; never wipe local records with empty list
+        if (list.length > 0) {
+          onUpdate(list);
+        }
       },
       (error) => {
         console.warn('Firestore real-time subscription note:', error.message);
@@ -314,23 +488,28 @@ export function subscribeToChallans(onUpdate: (challans: Challan[]) => void): ()
     console.warn('subscribeToChallans Firestore init:', err);
   }
 
-  // 3. Multi-device Server API sync polling (Runs every 3 seconds for 10 employees on LAN/Server)
+  // 3. Multi-device Server API sync polling (Runs every 4 seconds for LAN/Server)
   let pollInterval: any = null;
   if (typeof window !== 'undefined') {
     pollInterval = setInterval(async () => {
       try {
-        const res = await fetch('/api/challans', { cache: 'no-store', credentials: 'same-origin' });
+        const token = getClientAuthToken();
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/challans', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers,
+        });
         if (res.ok) {
           const data = await res.json();
-          if (data.success && Array.isArray(data.challans)) {
-            // When firestore is unavailable or empty, server API provides the live list
-            if (!isFirestoreActive || data.challans.length > 0) {
-              onUpdate(data.challans);
-            }
+          if (data.success && Array.isArray(data.challans) && data.challans.length > 0) {
+            onUpdate(data.challans);
           }
         }
       } catch {}
-    }, 3000);
+    }, 4000);
   }
 
   return () => {

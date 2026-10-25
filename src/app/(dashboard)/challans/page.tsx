@@ -33,7 +33,7 @@ import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
 import { SwipeableChallanCard } from '@/components/challans/swipeable-challan-card';
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
@@ -60,7 +60,9 @@ export default function ChallansPage() {
   const {
     getChallans,
     profile,
+    customers,
     showToast,
+    updateChallan,
     updateChallanStatus,
     updateShareStatus,
     duplicateChallan,
@@ -79,6 +81,8 @@ export default function ChallansPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [cancelModalChallan, setCancelModalChallan] = useState<Challan | null>(null);
   const [deleteModalChallan, setDeleteModalChallan] = useState<Challan | null>(null);
+  const [phonePromptChallan, setPhonePromptChallan] = useState<Challan | null>(null);
+  const [tempPhone, setTempPhone] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -196,41 +200,69 @@ export default function ChallansPage() {
   const handleWhatsApp = async (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!profile) return;
-    if (!challan.customer_phone) {
-      showToast('Customer phone number not available', 'error');
+    const targetPhone = resolveCustomerPhone(challan, customers, allChallans);
+    if (!targetPhone) {
+      setPhonePromptChallan(challan);
+      setTempPhone('');
       return;
     }
+
     await shareChallanViaWhatsApp({
       challan,
+      phoneOverride: targetPhone,
       items: challan.items || [],
       profile,
       onToast: showToast,
     });
     updateShareStatus(challan.id, 'share_initiated');
+    if (!challan.customer_phone?.trim()) {
+      updateChallan(challan.id, { customer_phone: targetPhone });
+    }
   };
 
-  const handleDuplicate = (id: string, e: React.MouseEvent) => {
+  const handlePhonePromptSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phonePromptChallan || !tempPhone.trim() || !profile) return;
+    const phone = tempPhone.trim();
+    const target = { ...phonePromptChallan, customer_phone: phone };
+    setPhonePromptChallan(null);
+
+    // Share immediately
+    await shareChallanViaWhatsApp({
+      challan: target,
+      phoneOverride: phone,
+      items: target.items || [],
+      profile,
+      onToast: showToast,
+    });
+
+    // Save phone to challan in background
+    updateChallan(phonePromptChallan.id, { customer_phone: phone });
+    updateShareStatus(target.id, 'share_initiated');
+  };
+
+  const handleDuplicate = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const dup = duplicateChallan(id);
+    const dup = await duplicateChallan(id);
     if (dup) {
       showToast(`Duplicated: ${dup.challan_number}`);
       router.push(`/challans/${dup.id}`);
     }
   };
 
-  const confirmCancel = () => {
+  const confirmCancel = async () => {
     if (!cancelModalChallan) return;
-    updateChallanStatus(cancelModalChallan.id, 'cancelled');
+    await updateChallanStatus(cancelModalChallan.id, 'cancelled');
     showToast(`Challan ${cancelModalChallan.challan_number} marked as cancelled`);
     setCancelModalChallan(null);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteModalChallan) return;
     const num = deleteModalChallan.challan_number;
     const id = deleteModalChallan.id;
     setDeleteModalChallan(null);
-    deleteChallan(id);
+    await deleteChallan(id);
     showToast(`Challan ${num} permanently deleted`, 'success');
   };
 
@@ -508,6 +540,7 @@ export default function ChallansPage() {
                       <SwipeableChallanCard
                         key={challan.id}
                         challan={challan}
+                        resolvedPhone={resolveCustomerPhone(challan, customers, allChallans)}
                         onDelete={(c) => setDeleteModalChallan(c)}
                         onPrint={handlePrint}
                         onWhatsApp={handleWhatsApp}
@@ -587,6 +620,7 @@ export default function ChallansPage() {
                       <SwipeableChallanCard
                         key={challan.id}
                         challan={challan}
+                        resolvedPhone={resolveCustomerPhone(challan, customers, allChallans)}
                         onDelete={(c) => setDeleteModalChallan(c)}
                         onPrint={handlePrint}
                         onWhatsApp={handleWhatsApp}
@@ -606,6 +640,7 @@ export default function ChallansPage() {
               <SwipeableChallanCard
                 key={challan.id}
                 challan={challan}
+                resolvedPhone={resolveCustomerPhone(challan, customers, allChallans)}
                 onDelete={(c) => setDeleteModalChallan(c)}
                 onPrint={handlePrint}
                 onWhatsApp={handleWhatsApp}
@@ -717,15 +752,27 @@ export default function ChallansPage() {
                           >
                             <Download size={15} />
                           </button>
-                          {challan.customer_phone && (
-                            <button
-                              title="Share WhatsApp"
-                              onClick={(e) => handleWhatsApp(challan, e)}
-                              className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition-colors"
-                            >
-                              <Send size={15} />
-                            </button>
-                          )}
+                          {(() => {
+                            const phone = resolveCustomerPhone(challan, customers, allChallans);
+                            return (
+                              <button
+                                title={
+                                  phone
+                                    ? `Share WhatsApp (${phone})`
+                                    : 'Enter Phone & Share WhatsApp'
+                                }
+                                onClick={(e) => handleWhatsApp(challan, e)}
+                                className={cn(
+                                  'p-1.5 rounded-md transition-colors',
+                                  phone
+                                    ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                                    : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'
+                                )}
+                              >
+                                <Send size={15} />
+                              </button>
+                            );
+                          })()}
                           <button
                             title="Edit"
                             onClick={(e) => {
@@ -791,6 +838,60 @@ export default function ChallansPage() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteModalChallan(null)}
       />
+
+      {/* Phone Number Prompt Modal for Instant WhatsApp Sharing */}
+      {phonePromptChallan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="card max-w-sm w-full p-4 space-y-3 bg-white shadow-xl rounded-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-surface-900">
+                Share via WhatsApp
+              </h3>
+              <button
+                onClick={() => setPhonePromptChallan(null)}
+                className="text-surface-400 hover:text-surface-700 p-1"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-surface-600">
+              Enter customer WhatsApp phone number for challan{' '}
+              <b className="font-mono text-primary-600">
+                {phonePromptChallan.challan_number}
+              </b>:
+            </p>
+            <form onSubmit={handlePhonePromptSubmit} className="space-y-3">
+              <div>
+                <input
+                  type="tel"
+                  placeholder="e.g. 9820012345 or +91 98200 12345"
+                  value={tempPhone}
+                  onChange={(e) => setTempPhone(e.target.value)}
+                  className="input text-xs w-full py-2"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPhonePromptChallan(null)}
+                  className="btn-secondary text-xs py-1.5 px-3"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-xs py-1.5 px-3.5 bg-emerald-600 hover:bg-emerald-700 border-emerald-600 flex items-center gap-1.5 text-white"
+                >
+                  <Send size={13} />
+                  <span>Send WhatsApp</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

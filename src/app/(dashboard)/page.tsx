@@ -21,7 +21,7 @@ import {
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
 import { printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
   const badgeClasses: Record<ChallanStatus, string> = {
@@ -47,6 +47,8 @@ export default function DashboardPage() {
     getDashboardStats,
     getChallans,
     profile,
+    customers,
+    updateChallan,
     showToast,
     updateShareStatus,
     isLoading,
@@ -88,17 +90,22 @@ export default function DashboardPage() {
   const handleWhatsApp = async (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!profile) return;
-    if (!challan.customer_phone) {
-      showToast('No customer phone recorded', 'error');
+    const targetPhone = resolveCustomerPhone(challan, customers, liveChallans);
+    if (!targetPhone) {
+      showToast('No customer phone recorded for ' + challan.customer_name, 'error');
       return;
     }
     await shareChallanViaWhatsApp({
       challan,
+      phoneOverride: targetPhone,
       items: challan.items || [],
       profile,
       onToast: showToast,
     });
     updateShareStatus(challan.id, 'share_initiated');
+    if (!challan.customer_phone?.trim()) {
+      updateChallan(challan.id, { customer_phone: targetPhone });
+    }
   };
 
   if (!mounted || isLoading) {
@@ -364,15 +371,23 @@ export default function DashboardPage() {
                         >
                           <Printer size={15} />
                         </button>
-                        {c.customer_phone && (
-                          <button
-                            onClick={(e) => handleWhatsApp(c, e)}
-                            className="p-1 text-emerald-600 hover:text-emerald-700 rounded"
-                            title="WhatsApp"
-                          >
-                            <Send size={15} />
-                          </button>
-                        )}
+                        {(() => {
+                          const phone = resolveCustomerPhone(c, customers, liveChallans);
+                          return (
+                            <button
+                              onClick={(e) => handleWhatsApp(c, e)}
+                              className={cn(
+                                'p-1 rounded transition-colors',
+                                phone
+                                  ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                                  : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'
+                              )}
+                              title={phone ? `WhatsApp (${phone})` : 'Enter Phone & Share WhatsApp'}
+                            >
+                              <Send size={15} />
+                            </button>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>

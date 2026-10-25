@@ -25,7 +25,7 @@ import {
 import { formatDateIndian, formatINR, formatPhone, amountToWords, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage, tryNativeShare, shareChallanViaWhatsApp } from '@/lib/whatsapp';
+import { openWhatsApp, generateShareMessage, tryNativeShare, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DeliveryMemoBill } from '@/components/challans/delivery-memo-bill';
 
@@ -37,6 +37,8 @@ export default function ChallanDetailPage() {
   const {
     getChallan,
     profile,
+    customers,
+    updateChallan,
     updateChallanStatus,
     updateShareStatus,
     duplicateChallan,
@@ -48,9 +50,12 @@ export default function ChallanDetailPage() {
   } = useApp();
 
   const [mounted, setMounted] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [challan, setChallan] = useState<Challan | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
   const [viewMode, setViewMode] = useState<'challan' | 'bill'>('challan');
 
   useEffect(() => {
@@ -58,10 +63,89 @@ export default function ChallanDetailPage() {
   }, []);
 
   useEffect(() => {
-    if (mounted && challanId) {
-      const found = getChallan(challanId);
-      setChallan(found || null);
+    let isCancelled = false;
+
+    async function loadChallan() {
+      // 1. Try local cache
+      const local = getChallan(challanId);
+      if (local) {
+        if (!isCancelled) {
+          setChallan(local);
+          setPageLoading(false);
+        }
+      }
+
+      // 2. Fetch single challan directly from Cloud Firestore (vital for cold mobile loads & multi-device sync)
+      try {
+        const { fetchSingleChallanFromFirebase } = await import('@/lib/firebase-service');
+        const remote = await fetchSingleChallanFromFirebase(challanId);
+        if (remote && !isCancelled) {
+          const { syncFromFirebase } = await import('@/lib/demo-store');
+          syncFromFirebase([remote]);
+          setChallan(remote);
+          setPageLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Direct Firestore fetch attempt note:', err);
+      }
+
+      // 3. Fallback to Server API /api/challans?id=...
+      try {
+        const { getClientAuthToken } = await import('@/lib/auth');
+        const token = getClientAuthToken();
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`/api/challans?id=${encodeURIComponent(challanId)}`, {
+          credentials: 'same-origin',
+          headers,
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.challan && !isCancelled) {
+            const { syncFromFirebase } = await import('@/lib/demo-store');
+            syncFromFirebase([json.challan]);
+            setChallan(json.challan);
+            setPageLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('API challans fetch attempt note:', err);
+      }
+
+      // 4. Fallback to public endpoint /api/public/challan?id=...
+      try {
+        const res = await fetch(`/api/public/challan?id=${encodeURIComponent(challanId)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.challan && !isCancelled) {
+            const { syncFromFirebase } = await import('@/lib/demo-store');
+            syncFromFirebase([json.challan]);
+            setChallan(json.challan);
+            setPageLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Public API challans fetch attempt note:', err);
+      }
+
+      // 5. If not found in any store/remote/API
+      if (!isCancelled && !local) {
+        setChallan(null);
+        setPageLoading(false);
+      }
     }
+
+    if (mounted && challanId) {
+      loadChallan();
+    }
+
+    return () => {
+      isCancelled = true;
+    };
   }, [mounted, challanId, getChallan, dataVersion, liveChallans]);
 
   const itemsSubtotal = useMemo(() => {
@@ -87,10 +171,11 @@ export default function ChallanDetailPage() {
     return taxableSubtotal + cgstAmount + sgstAmount + additional9Amount;
   }, [challan, taxableSubtotal, cgstAmount, sgstAmount, additional9Amount]);
 
-  if (!mounted || isLoading) {
+  if (!mounted || isLoading || (pageLoading && !challan)) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+      <div className="flex flex-col items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mb-2" />
+        <p className="text-xs text-surface-500">Loading challan details...</p>
       </div>
     );
   }
@@ -132,42 +217,70 @@ export default function ChallanDetailPage() {
   };
 
   const handleWhatsApp = async () => {
-    if (!profile) return;
-    if (!challan.customer_phone) {
-      showToast('Customer phone number is missing', 'error');
+    if (!profile || !challan) return;
+    const targetPhone = resolveCustomerPhone(challan, customers, liveChallans);
+    if (!targetPhone) {
+      setPhoneInput('');
+      setShowPhoneModal(true);
       return;
     }
 
     await shareChallanViaWhatsApp({
       challan,
+      phoneOverride: targetPhone,
       items: challan.items || [],
       profile,
       onToast: showToast,
     });
 
     updateShareStatus(challan.id, 'user_marked_sent');
-    const refreshed = getChallan(challan.id);
-    if (refreshed) setChallan(refreshed);
+    if (!challan.customer_phone?.trim()) {
+      updateChallan(challan.id, { customer_phone: targetPhone });
+      setChallan({ ...challan, customer_phone: targetPhone });
+    }
   };
 
-  const handleDuplicate = () => {
-    const dup = duplicateChallan(challan.id);
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!challan || !phoneInput.trim() || !profile) {
+      showToast('Please enter a phone number', 'error');
+      return;
+    }
+    const cleanNum = phoneInput.trim();
+    setShowPhoneModal(false);
+    const targetChallan = { ...challan, customer_phone: cleanNum };
+    setChallan(targetChallan);
+
+    await shareChallanViaWhatsApp({
+      challan: targetChallan,
+      phoneOverride: cleanNum,
+      items: targetChallan.items || [],
+      profile,
+      onToast: showToast,
+    });
+
+    updateChallan(challan.id, { customer_phone: cleanNum });
+    updateShareStatus(challan.id, 'user_marked_sent');
+  };
+
+  const handleDuplicate = async () => {
+    const dup = await duplicateChallan(challan.id);
     if (dup) {
       showToast(`Duplicated to ${dup.challan_number}`);
       router.push(`/challans/${dup.id}`);
     }
   };
 
-  const confirmCancel = () => {
-    updateChallanStatus(challan.id, 'cancelled');
+  const confirmCancel = async () => {
+    await updateChallanStatus(challan.id, 'cancelled');
     const refreshed = getChallan(challan.id);
     if (refreshed) setChallan(refreshed);
     setShowCancelModal(false);
     showToast(`Challan ${challan.challan_number} marked as cancelled`);
   };
 
-  const confirmDelete = () => {
-    deleteChallan(challan.id);
+  const confirmDelete = async () => {
+    await deleteChallan(challan.id);
     showToast(`Challan ${challan.challan_number} permanently deleted`, 'success');
     setShowDeleteModal(false);
     router.push('/challans');
@@ -221,16 +334,19 @@ export default function ChallanDetailPage() {
               <span>Bill / Memo</span>
             </Link>
 
-            {challan.customer_phone && (
-              <button
-                onClick={handleWhatsApp}
-                className="btn-primary py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1.5 shadow-xs"
-                title="Share via WhatsApp"
-              >
-                <Send size={14} />
-                <span>WhatsApp</span>
-              </button>
-            )}
+            {(() => {
+              const targetPhone = challan ? resolveCustomerPhone(challan, customers, liveChallans) : '';
+              return (
+                <button
+                  onClick={handleWhatsApp}
+                  className="btn-primary py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  title={targetPhone ? `Share via WhatsApp (${targetPhone})` : 'Share via WhatsApp'}
+                >
+                  <Send size={14} />
+                  <span>WhatsApp</span>
+                </button>
+              );
+            })()}
 
             <button
               onClick={handlePrint}
@@ -699,6 +815,64 @@ export default function ChallanDetailPage() {
         onConfirm={confirmDelete}
         onCancel={() => setShowDeleteModal(false)}
       />
+
+      {/* Customer WhatsApp Phone Prompt Modal */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-surface-200 shadow-2xl space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <Send size={18} />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-surface-900">Share on WhatsApp</h3>
+                <p className="text-xs text-surface-500">Customer: {challan.customer_name}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handlePhoneSubmit} className="space-y-3.5">
+              <div>
+                <label className="text-xs font-semibold text-surface-700 block mb-1">
+                  Customer WhatsApp Number *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 font-mono text-xs">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    autoFocus
+                    placeholder="Enter 10-digit mobile number"
+                    value={phoneInput}
+                    onChange={(e) => setPhoneInput(e.target.value)}
+                    className="input pl-11 text-sm font-mono"
+                  />
+                </div>
+                <p className="text-[11px] text-surface-400 mt-1">
+                  The PDF will auto-download and WhatsApp chat will open with the customer.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowPhoneModal(false)}
+                  className="btn-secondary text-xs py-2 px-3"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                >
+                  <Send size={13} />
+                  <span>Share Now</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

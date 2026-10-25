@@ -33,6 +33,7 @@ interface AppContextType {
   // Challans
   challans: Challan[];
   dataVersion: number;
+  peekNextChallanNumber: () => string;
   getNextChallanNumber: () => string;
   getChallans: (filters?: {
     search?: string;
@@ -43,12 +44,12 @@ interface AppContextType {
     customerId?: string;
   }) => Challan[];
   getChallan: (id: string) => Challan | undefined;
-  createChallan: (data: Partial<Challan>, items: Partial<ChallanItem>[]) => Challan;
-  updateChallan: (id: string, data: Partial<Challan>, items?: Partial<ChallanItem>[]) => Challan | null;
-  deleteChallan: (id: string) => boolean;
-  updateChallanStatus: (id: string, status: ChallanStatus) => Challan | null;
-  updateShareStatus: (id: string, status: ShareStatus) => Challan | null;
-  duplicateChallan: (id: string) => Challan | null;
+  createChallan: (data: Partial<Challan>, items: Partial<ChallanItem>[]) => Promise<Challan>;
+  updateChallan: (id: string, data: Partial<Challan>, items?: Partial<ChallanItem>[]) => Promise<Challan | null>;
+  deleteChallan: (id: string) => Promise<boolean>;
+  updateChallanStatus: (id: string, status: ChallanStatus) => Promise<Challan | null>;
+  updateShareStatus: (id: string, status: ShareStatus) => Promise<Challan | null>;
+  duplicateChallan: (id: string) => Promise<Challan | null>;
   getActivityLog: (challanId: string) => ChallanActivityLog[];
 
   // Dashboard
@@ -81,6 +82,60 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setChallans(store.getChallans());
     setIsLoading(false);
 
+    // Initial fetch from Cloud Firestore & Server Database API
+    import('@/lib/firebase-service').then(async ({ fetchChallansFromFirebase, fetchChallansFromServer }) => {
+      try {
+        const [firestoreChallans, serverChallans] = await Promise.all([
+          fetchChallansFromFirebase().catch(() => []),
+          fetchChallansFromServer().catch(() => []),
+        ]);
+        const combined = [...firestoreChallans, ...serverChallans];
+        if (combined.length > 0) {
+          store.syncFromFirebase(combined);
+          setChallans([...store.getChallans()]);
+          setDataVersion((v) => v + 1);
+        }
+      } catch (err) {
+        console.warn('Challans initial cloud sync note:', err);
+      }
+    }).catch(() => {});
+
+    // Fetch and sync customers from Cloud Firestore
+    import('@/lib/firebase-service').then(({ fetchCustomersFromFirebase, subscribeToCustomers }) => {
+      fetchCustomersFromFirebase().then((remoteCustomers) => {
+        if (remoteCustomers && remoteCustomers.length > 0) {
+          store.syncCustomersFromFirebase(remoteCustomers);
+          setCustomers(store.getCustomers());
+          setDataVersion((v) => v + 1);
+        }
+      });
+      subscribeToCustomers((remoteCustomers) => {
+        if (remoteCustomers && remoteCustomers.length > 0) {
+          store.syncCustomersFromFirebase(remoteCustomers);
+          setCustomers(store.getCustomers());
+          setDataVersion((v) => v + 1);
+        }
+      });
+    }).catch(() => {});
+
+    // Fetch and sync products from Cloud Firestore
+    import('@/lib/firebase-service').then(({ fetchProductsFromFirebase, subscribeToProducts }) => {
+      fetchProductsFromFirebase().then((remoteProducts) => {
+        if (remoteProducts && remoteProducts.length > 0) {
+          store.syncProductsFromFirebase(remoteProducts);
+          setProducts(store.getProducts());
+          setDataVersion((v) => v + 1);
+        }
+      });
+      subscribeToProducts((remoteProducts) => {
+        if (remoteProducts && remoteProducts.length > 0) {
+          store.syncProductsFromFirebase(remoteProducts);
+          setProducts(store.getProducts());
+          setDataVersion((v) => v + 1);
+        }
+      });
+    }).catch(() => {});
+
     // Fetch and subscribe to profile / employees from Firebase Firestore & Server API
     import('@/lib/firebase-service').then(({ fetchProfileFromFirebase, subscribeToProfile }) => {
       fetchProfileFromFirebase().then((remoteProfile) => {
@@ -101,7 +156,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Dynamic real-time sync with Firebase, Server API, and BroadcastChannel
     import('@/lib/firebase-service').then(({ subscribeToChallans }) => {
       const unsub = subscribeToChallans((remoteChallans) => {
-        if (remoteChallans && Array.isArray(remoteChallans)) {
+        if (remoteChallans && Array.isArray(remoteChallans) && remoteChallans.length > 0) {
           store.syncFromFirebase(remoteChallans);
           setChallans([...store.getChallans()]);
           setDataVersion((v) => v + 1);
@@ -169,45 +224,77 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
-  const deleteChallanFn = useCallback((id: string) => {
+  const deleteChallanFn = useCallback(async (id: string) => {
     const res = store.deleteChallan(id);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
+    try {
+      const { deleteChallanFromFirebase } = await import('@/lib/firebase-service');
+      await deleteChallanFromFirebase(id);
+    } catch {}
     return res;
   }, []);
 
-  const createChallanFn = useCallback((data: Partial<Challan>, items: Partial<ChallanItem>[]) => {
+  const createChallanFn = useCallback(async (data: Partial<Challan>, items: Partial<ChallanItem>[]) => {
     const res = store.createChallan(data, items);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
+    try {
+      const { saveChallanToFirebase } = await import('@/lib/firebase-service');
+      await saveChallanToFirebase(res);
+    } catch {}
     return res;
   }, []);
 
-  const updateChallanFn = useCallback((id: string, data: Partial<Challan>, items?: Partial<ChallanItem>[]) => {
+  const updateChallanFn = useCallback(async (id: string, data: Partial<Challan>, items?: Partial<ChallanItem>[]) => {
     const res = store.updateChallan(id, data, items);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
+    if (res) {
+      try {
+        const { saveChallanToFirebase } = await import('@/lib/firebase-service');
+        await saveChallanToFirebase(res);
+      } catch {}
+    }
     return res;
   }, []);
 
-  const updateChallanStatusFn = useCallback((id: string, status: ChallanStatus) => {
+  const updateChallanStatusFn = useCallback(async (id: string, status: ChallanStatus) => {
     const res = store.updateChallanStatus(id, status);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
+    if (res) {
+      try {
+        const { saveChallanToFirebase } = await import('@/lib/firebase-service');
+        await saveChallanToFirebase(res);
+      } catch {}
+    }
     return res;
   }, []);
 
-  const updateShareStatusFn = useCallback((id: string, status: ShareStatus) => {
+  const updateShareStatusFn = useCallback(async (id: string, status: ShareStatus) => {
     const res = store.updateShareStatus(id, status);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
+    if (res) {
+      try {
+        const { saveChallanToFirebase } = await import('@/lib/firebase-service');
+        await saveChallanToFirebase(res);
+      } catch {}
+    }
     return res;
   }, []);
 
-  const duplicateChallanFn = useCallback((id: string) => {
+  const duplicateChallanFn = useCallback(async (id: string) => {
     const res = store.duplicateChallan(id);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
+    if (res) {
+      try {
+        const { saveChallanToFirebase } = await import('@/lib/firebase-service');
+        await saveChallanToFirebase(res);
+      } catch {}
+    }
     return res;
   }, []);
 
@@ -242,6 +329,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     createProduct: createProductFn,
     updateProduct: updateProductFn,
     deleteProduct: deleteProductFn,
+    peekNextChallanNumber: store.peekNextChallanNumber,
     getNextChallanNumber: store.getNextChallanNumber,
     getChallans: getChallansFn,
     getChallan: store.getChallan,
