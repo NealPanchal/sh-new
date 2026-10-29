@@ -28,17 +28,26 @@ import {
   LayoutList,
   Layers,
   Trash2,
+  Truck,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
+import {
+  openWhatsApp,
+  generateShareMessage,
+  shareChallanViaWhatsApp,
+  shareDeliveryConfirmationViaWhatsApp,
+  resolveCustomerPhone,
+} from '@/lib/whatsapp';
 import { SwipeableChallanCard } from '@/components/challans/swipeable-challan-card';
+import { DateFilter, DateFilterState, filterChallansByDate } from '@/components/challans/date-filter';
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
   const badgeClasses: Record<ChallanStatus, string> = {
     final: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    delivered: 'bg-blue-50 text-blue-700 border-blue-200',
     draft: 'bg-amber-50 text-amber-700 border-amber-200',
     cancelled: 'bg-red-50 text-red-700 border-red-200',
     void: 'bg-surface-100 text-surface-500 border-surface-200',
@@ -46,11 +55,11 @@ function StatusBadge({ status }: { status: ChallanStatus }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border',
+        'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border gap-1',
         badgeClasses[status] || 'bg-surface-100 text-surface-600 border-surface-200'
       )}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {status === 'delivered' ? '🚚 Delivered' : status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
 }
@@ -77,6 +86,12 @@ export default function ChallansPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
   const [creatorFilter, setCreatorFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilterState>({
+    preset: 'all',
+    singleDate: '',
+    fromDate: '',
+    toDate: '',
+  });
   const [viewMode, setViewMode] = useState<'list' | 'company' | 'creator'>('list');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [cancelModalChallan, setCancelModalChallan] = useState<Challan | null>(null);
@@ -122,8 +137,19 @@ export default function ChallansPage() {
         return creator === creatorFilter.toLowerCase();
       });
     }
+    list = filterChallansByDate(list, dateFilter);
     return list;
-  }, [mounted, isLoading, getChallans, search, statusFilter, companyFilter, creatorFilter, dataVersion, liveChallans]);
+  }, [mounted, isLoading, getChallans, search, statusFilter, companyFilter, creatorFilter, dateFilter, dataVersion, liveChallans]);
+
+  const counts = useMemo(() => {
+    return {
+      all: allChallans.length,
+      final: allChallans.filter((c) => c.status === 'final').length,
+      delivered: allChallans.filter((c) => c.status === 'delivered').length,
+      draft: allChallans.filter((c) => c.status === 'draft').length,
+      cancelled: allChallans.filter((c) => c.status === 'cancelled').length,
+    };
+  }, [allChallans]);
 
   // Grouped by Company
   const groupedByCompany = useMemo(() => {
@@ -163,17 +189,6 @@ export default function ChallansPage() {
       [key]: !prev[key],
     }));
   };
-
-  // Statistics
-  const counts = useMemo(() => {
-    if (!mounted || isLoading) return { all: 0, final: 0, draft: 0, cancelled: 0 };
-    return {
-      all: allChallans.length,
-      final: allChallans.filter((c) => c.status === 'final').length,
-      draft: allChallans.filter((c) => c.status === 'draft').length,
-      cancelled: allChallans.filter((c) => c.status === 'cancelled').length,
-    };
-  }, [mounted, isLoading, allChallans]);
 
   const handlePrint = (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -217,6 +232,26 @@ export default function ChallansPage() {
     updateShareStatus(challan.id, 'share_initiated');
     if (!challan.customer_phone?.trim()) {
       updateChallan(challan.id, { customer_phone: targetPhone });
+    }
+  };
+
+  const handleMarkDeliveredFromList = async (challan: Challan, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!profile) return;
+    const targetPhone = resolveCustomerPhone(challan, customers, allChallans);
+    await updateChallanStatus(challan.id, 'delivered');
+    showToast(`Challan ${challan.challan_number} marked as DELIVERED! 🚚`, 'success');
+
+    if (targetPhone) {
+      await shareDeliveryConfirmationViaWhatsApp({
+        challan: { ...challan, status: 'delivered', customer_phone: targetPhone },
+        profile,
+        phoneOverride: targetPhone,
+        onToast: showToast,
+      });
+    } else {
+      setPhonePromptChallan(challan);
+      setTempPhone('');
     }
   };
 
@@ -321,6 +356,16 @@ export default function ChallansPage() {
           )}
         </div>
 
+        {/* Professional Date-wise Filter */}
+        <div className="pt-1 border-t border-surface-100">
+          <DateFilter
+            value={dateFilter}
+            onChange={setDateFilter}
+            filteredCount={challans.length}
+            totalCount={allChallans.length}
+          />
+        </div>
+
         {/* Segregation Filters (Company + Creator Dropdowns) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-surface-100">
           {/* Company / Customer Segregation Filter */}
@@ -375,6 +420,7 @@ export default function ChallansPage() {
             {[
               { id: 'all', label: 'All', count: counts.all },
               { id: 'final', label: 'Final', count: counts.final },
+              { id: 'delivered', label: 'Delivered 🚚', count: counts.delivered },
               { id: 'draft', label: 'Drafts', count: counts.draft },
               { id: 'cancelled', label: 'Cancelled', count: counts.cancelled },
             ].map((tab) => (
@@ -721,6 +767,24 @@ export default function ChallansPage() {
                       </td>
                       <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
+                          {/* Mark as Delivered / WhatsApp Notification Button */}
+                          <button
+                            title={
+                              challan.status === 'delivered'
+                                ? 'Delivered • Re-send Delivery WhatsApp'
+                                : 'Mark as Delivered & Send WhatsApp Notification'
+                            }
+                            onClick={(e) => handleMarkDeliveredFromList(challan, e)}
+                            className={cn(
+                              'p-1.5 rounded-md transition-colors',
+                              challan.status === 'delivered'
+                                ? 'text-blue-600 hover:bg-blue-50 bg-blue-50/50'
+                                : 'text-surface-500 hover:text-blue-600 hover:bg-surface-100'
+                            )}
+                          >
+                            <Truck size={15} />
+                          </button>
+
                           <button
                             title="View Challan"
                             onClick={() => router.push(`/challans/${challan.id}`)}

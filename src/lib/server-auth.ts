@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { NextRequest } from 'next/server';
+import { findEmployeeByUsername } from '@/lib/employee-accounts';
+import { AuthUser } from '@/types';
 
 export const AUTH_COOKIE_NAME = 'sh_admin_session';
 
@@ -54,39 +56,75 @@ export function resetLoginRateLimit(ip: string): void {
 }
 
 // ----------------------------------------------------
-// Secure Constant-Time Password Verification
+// Secure Password Verification (Admin + Staff Accounts)
 // ----------------------------------------------------
-export function verifyServerCredentials(username: string, pass: string): boolean {
-  if (!username || !pass) return false;
+export function verifyServerCredentials(
+  username: string,
+  pass: string
+): { valid: boolean; user?: AuthUser } {
+  if (!username || !pass) return { valid: false };
 
-  const userMatch = username.trim().toLowerCase() === ADMIN_USERNAME;
+  const cleanUser = username.trim().toLowerCase();
 
-  // Constant-time comparison for password to avoid timing attacks
-  const passBuf = Buffer.from(pass);
-  const adminBuf = Buffer.from(ADMIN_PASSWORD);
-
-  if (passBuf.length !== adminBuf.length) {
-    return false;
+  // 1. Check Admin Credentials
+  if (cleanUser === ADMIN_USERNAME) {
+    const passBuf = Buffer.from(pass);
+    const adminBuf = Buffer.from(ADMIN_PASSWORD);
+    if (passBuf.length === adminBuf.length && crypto.timingSafeEqual(passBuf, adminBuf)) {
+      return {
+        valid: true,
+        user: {
+          username: ADMIN_USERNAME,
+          name: 'Admin SH',
+          role: 'admin',
+        },
+      };
+    }
   }
 
-  return userMatch && crypto.timingSafeEqual(passBuf, adminBuf);
+  // 2. Check Employee Accounts (10 Staff Logins)
+  const emp = findEmployeeByUsername(cleanUser);
+  if (emp && emp.is_active !== false) {
+    const empPassBuf = Buffer.from(emp.password);
+    const passBuf = Buffer.from(pass);
+    if (empPassBuf.length === passBuf.length && crypto.timingSafeEqual(empPassBuf, passBuf)) {
+      return {
+        valid: true,
+        user: {
+          username: emp.username.toLowerCase(),
+          name: emp.name,
+          role: 'employee',
+        },
+      };
+    }
+  }
+
+  return { valid: false };
 }
 
 // ----------------------------------------------------
 // Cryptographically Signed HMAC Session Token
 // ----------------------------------------------------
-interface SessionPayload {
+export interface SessionPayload {
   username: string;
-  role: 'admin';
+  name: string;
+  role: 'admin' | 'employee';
   exp: number;
   iat: number;
 }
 
-export function createSignedSessionToken(username = 'adminsh'): string {
+export function createSignedSessionToken(
+  user: { username: string; name?: string; role?: 'admin' | 'employee' } | string = 'adminsh'
+): string {
   const now = Math.floor(Date.now() / 1000);
+  const username = typeof user === 'string' ? user : user.username;
+  const role = typeof user === 'string' ? 'admin' : (user.role || 'admin');
+  const name = typeof user === 'string' ? (username === 'adminsh' ? 'Admin SH' : username) : (user.name || username);
+
   const payload: SessionPayload = {
     username,
-    role: 'admin',
+    name,
+    role,
     iat: now,
     exp: now + SESSION_TTL_SECONDS,
   };
@@ -128,6 +166,13 @@ export function verifySignedSessionToken(token: string | null | undefined): Sess
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
       return null; // Expired
+    }
+
+    if (!payload.name) {
+      payload.name = payload.username === 'adminsh' ? 'Admin SH' : payload.username;
+    }
+    if (!payload.role) {
+      payload.role = 'admin';
     }
 
     return payload;

@@ -31,6 +31,10 @@ const emptyItem = (): ChallanItemFormData => ({
   quantity: '',
   rate: '',
   amount: '',
+  length: '',
+  width: '',
+  dimension_unit: 'ft',
+  calculated_sqft: '',
 });
 
 export default function EditChallanPage() {
@@ -122,6 +126,10 @@ export default function EditChallanPage() {
           quantity: it.quantity,
           rate: it.rate ? String(it.rate) : '',
           amount: it.amount ? String(it.amount) : '',
+          length: it.length ? String(it.length) : '',
+          width: it.width ? String(it.width) : '',
+          dimension_unit: it.dimension_unit || 'ft',
+          calculated_sqft: it.calculated_sqft ? String(it.calculated_sqft) : '',
         }))
       );
     }
@@ -254,17 +262,45 @@ export default function EditChallanPage() {
 
   const updateItem = (index: number, field: keyof ChallanItemFormData, value: string) => {
     const newItems = [...items];
-    newItems[index] = {
+    const it = {
       ...newItems[index],
       [field]: value,
     };
 
-    if (field === 'quantity' || field === 'rate') {
-      const qty = Number(newItems[index].quantity) || 0;
-      const rate = Number(newItems[index].rate) || 0;
-      newItems[index].amount = rate > 0 ? String(qty * rate) : '';
+    const qty = Number(it.quantity) || 0;
+    const rate = it.rate ? Number(it.rate) : 0;
+    const len = Number(it.length) || 0;
+    const wid = Number(it.width) || 0;
+    const dimUnit = it.dimension_unit || 'ft';
+
+    // Dimension calculation for sq.ft & running ft
+    if (it.unit === 'sq.ft' && len > 0 && wid > 0) {
+      const sqftPerPc = dimUnit === 'in' ? (len * wid) / 144 : len * wid;
+      const totalSqft = Math.round(qty * sqftPerPc * 100) / 100;
+      it.calculated_sqft = String(totalSqft);
+      if (rate > 0) {
+        it.amount = String(Math.round(totalSqft * rate));
+      } else {
+        it.amount = '';
+      }
+    } else if (it.unit === 'running ft' && len > 0) {
+      const totalRft = Math.round(qty * len * 100) / 100;
+      it.calculated_sqft = String(totalRft);
+      if (rate > 0) {
+        it.amount = String(Math.round(totalRft * rate));
+      } else {
+        it.amount = '';
+      }
+    } else {
+      it.calculated_sqft = '';
+      if (rate > 0 && qty > 0) {
+        it.amount = String(Math.round(qty * rate * 100) / 100);
+      } else {
+        it.amount = '';
+      }
     }
 
+    newItems[index] = it;
     setItems(newItems);
   };
 
@@ -364,17 +400,29 @@ export default function EditChallanPage() {
           subtotal_amount: taxableSubtotal > 0 ? taxableSubtotal : null,
           total_amount: totalAmount > 0 ? totalAmount : null,
         },
-        validItems.map((it) => ({
-          product_id: it.product_id || undefined,
-          item_description: it.item_description.trim(),
-          brand: it.brand || undefined,
-          colour_finish: it.colour_finish || undefined,
-          size: it.size || undefined,
-          unit: it.unit,
-          quantity: Number(it.quantity) || 0,
-          rate: it.rate ? Number(it.rate) : undefined,
-          amount: it.amount ? Number(it.amount) : undefined,
-        }))
+        validItems.map((it) => {
+          let derivedSize = it.size || undefined;
+          if (!derivedSize && it.length) {
+            derivedSize = it.width
+              ? `${it.length}×${it.width} ${it.dimension_unit || 'ft'}`
+              : `${it.length} ${it.dimension_unit || 'ft'}`;
+          }
+          return {
+            product_id: it.product_id || undefined,
+            item_description: it.item_description.trim(),
+            brand: it.brand || undefined,
+            colour_finish: it.colour_finish || undefined,
+            size: derivedSize,
+            unit: it.unit,
+            quantity: Number(it.quantity) || 0,
+            rate: it.rate ? Number(it.rate) : null,
+            amount: it.amount ? Number(it.amount) : null,
+            length: it.length ? Number(it.length) : null,
+            width: it.width ? Number(it.width) : null,
+            dimension_unit: it.dimension_unit || 'ft',
+            calculated_sqft: it.calculated_sqft ? Number(it.calculated_sqft) : null,
+          };
+        })
       );
 
       if (updated) {
@@ -689,7 +737,7 @@ export default function EditChallanPage() {
 
                 <div>
                   <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-1">
-                    Rate (₹)
+                    Rate (₹) <span className="text-[9px] text-surface-400 font-normal lowercase">(optional)</span>
                   </label>
                   <input
                     type="number"
@@ -710,6 +758,62 @@ export default function EditChallanPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Dimensions Section for Sq.Ft & Running Ft */}
+              {(item.unit === 'sq.ft' || item.unit === 'running ft' || item.length) && (
+                <div className="pl-7 pt-1">
+                  <div className="p-2 rounded-md bg-amber-50/70 border border-amber-200/80 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1">
+                      📐 Dimensions:
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-surface-600 font-medium">Length:</span>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="L"
+                        value={item.length || ''}
+                        onChange={(e) => updateItem(idx, 'length', e.target.value)}
+                        className="input text-xs py-1 px-1.5 w-16 bg-white font-mono text-center"
+                      />
+                    </div>
+
+                    {item.unit === 'sq.ft' && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-surface-600 font-medium">Width:</span>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          placeholder="W"
+                          value={item.width || ''}
+                          onChange={(e) => updateItem(idx, 'width', e.target.value)}
+                          className="input text-xs py-1 px-1.5 w-16 bg-white font-mono text-center"
+                        />
+                      </div>
+                    )}
+
+                    <select
+                      value={item.dimension_unit || 'ft'}
+                      onChange={(e) => updateItem(idx, 'dimension_unit', e.target.value)}
+                      className="input text-xs py-1 px-1.5 bg-white text-[11px]"
+                    >
+                      <option value="ft">Feet (ft)</option>
+                      <option value="in">Inches (in)</option>
+                    </select>
+
+                    {item.calculated_sqft && Number(item.calculated_sqft) > 0 && (
+                      <div className="ml-auto text-[11px] font-semibold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
+                        Total {item.unit === 'sq.ft' ? 'Area' : 'Length'}:{' '}
+                        <span className="font-bold">{item.calculated_sqft}</span>{' '}
+                        {item.unit === 'sq.ft' ? 'Sq.Ft' : 'R.Ft'}
+                        {item.rate && Number(item.rate) > 0 ? ` @ ₹${item.rate}` : ''}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

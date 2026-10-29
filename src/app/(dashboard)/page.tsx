@@ -26,6 +26,7 @@ import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCus
 function StatusBadge({ status }: { status: ChallanStatus }) {
   const badgeClasses: Record<ChallanStatus, string> = {
     final: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    delivered: 'bg-blue-50 text-blue-700 border-blue-200',
     draft: 'bg-amber-50 text-amber-700 border-amber-200',
     cancelled: 'bg-red-50 text-red-700 border-red-200',
     void: 'bg-surface-100 text-surface-500 border-surface-200',

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/lib/context';
 import {
   Building2,
@@ -13,18 +14,25 @@ import {
   Upload,
   Check,
   ShieldCheck,
+  ShieldAlert,
   FileCheck,
   Users,
   Plus,
   X,
   Trash2,
+  Key,
+  Eye,
+  EyeOff,
+  Copy,
+  Lock,
 } from 'lucide-react';
-import { BusinessProfile } from '@/types';
+import { BusinessProfile, EmployeeAccount } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { cn } from '@/lib/utils';
 import * as store from '@/lib/demo-store';
 
 export default function SettingsPage() {
-  const { profile, saveProfile, showToast, isLoading } = useApp();
+  const { profile, saveProfile, showToast, isLoading, isEmployee, currentUser } = useApp();
   const [mounted, setMounted] = useState(false);
 
   // Form states
@@ -44,6 +52,12 @@ export default function SettingsPage() {
   // Employees / Creators (Billed By)
   const [employees, setEmployees] = useState<string[]>(['Neal', 'Vrushank']);
   const [newEmployeeName, setNewEmployeeName] = useState('');
+
+  // 10 Employee Accounts Management
+  const [employeeAccounts, setEmployeeAccounts] = useState<EmployeeAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [savingAccounts, setSavingAccounts] = useState(false);
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
 
   // Bank & Terms
   const [bankName, setBankName] = useState('');
@@ -88,6 +102,55 @@ export default function SettingsPage() {
     }
   }, [profile]);
 
+  // Load Employee Accounts
+  useEffect(() => {
+    if (mounted && !isEmployee) {
+      setLoadingAccounts(true);
+      fetch('/api/employees')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.employees)) {
+            setEmployeeAccounts(data.employees);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingAccounts(false));
+    }
+  }, [mounted, isEmployee]);
+
+  const handleUpdateAccount = (idx: number, field: keyof EmployeeAccount, value: any) => {
+    const updated = [...employeeAccounts];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setEmployeeAccounts(updated);
+  };
+
+  const handleSaveAccounts = async () => {
+    setSavingAccounts(true);
+    try {
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: employeeAccounts }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('All 10 employee logins saved successfully!', 'success');
+      } else {
+        showToast(data.error || 'Failed to save employee accounts', 'error');
+      }
+    } catch {
+      showToast('Network error while saving accounts', 'error');
+    } finally {
+      setSavingAccounts(false);
+    }
+  };
+
+  const handleCopyCredentials = (acc: EmployeeAccount) => {
+    const text = `Showhouse Portal Login:\nUsername: ${acc.username}\nPassword: ${acc.password}\nPortal Link: ${window.location.origin}/login`;
+    navigator.clipboard.writeText(text);
+    showToast(`Copied login details for ${acc.name}!`, 'success');
+  };
+
   const handleAddEmployee = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const name = newEmployeeName.trim();
@@ -116,6 +179,28 @@ export default function SettingsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Security Check: If an employee tries to access Settings, block them!
+  if (isEmployee) {
+    return (
+      <div className="card p-8 sm:p-12 text-center max-w-lg mx-auto my-12 space-y-4 shadow-sm border border-surface-200">
+        <div className="w-14 h-14 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
+          <ShieldAlert size={28} />
+        </div>
+        <h2 className="text-lg font-bold text-surface-900">Settings Restricted to Admin</h2>
+        <p className="text-xs text-surface-500 max-w-sm mx-auto leading-relaxed">
+          You are currently signed in as <b>{currentUser?.name}</b> (Staff Account).
+          Business profile, tax settings, and employee credentials are only accessible by the Showhouse Admin.
+        </p>
+        <Link
+          href="/"
+          className="btn-primary inline-flex items-center gap-1.5 text-xs py-2 px-4 shadow-xs mt-2"
+        >
+          Return to Dashboard
+        </Link>
       </div>
     );
   }
@@ -386,20 +471,26 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between pb-2 border-b border-surface-100">
             <div className="flex items-center gap-2 text-primary-600 font-bold text-base">
               <Users size={20} />
-              <span>Challan Creators & Staff (Billed By)</span>
+              <span>Staff Members & Employee Logins (10 Isolated Accounts)</span>
             </div>
             <span className="text-xs bg-primary-50 text-primary-700 px-2.5 py-0.5 rounded-full font-semibold border border-primary-200">
-              {employees.length} {employees.length === 1 ? 'Staff Member' : 'Staff Members'}
+              {employeeAccounts.length > 0 ? employeeAccounts.length : employees.length} Staff Accounts
             </span>
           </div>
 
-          <p className="text-xs text-surface-500">
-            Manage staff members and employees who create delivery challans. These employees will appear directly in the &quot;Billed / Created By&quot; dropdown selector across all challan forms.
-          </p>
+          <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs space-y-1">
+            <div className="font-bold text-amber-900 flex items-center gap-1.5">
+              <ShieldCheck size={15} className="text-amber-700" />
+              <span>Strict Data Leakage Protection Active</span>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              Har employee apne personal username & password se login karega. <b>Employee ko sirf apne banaye huye challans aur bills dikhenge</b>—kisi dusre employee ka data ya company ka pura customer base unhe nahi dikhega. Kalko koi employee chhod ke jaye toh data leak hone ka khatra 0% ho jata hai.
+            </p>
+          </div>
 
           {/* Current Employees Badges */}
           <div className="space-y-2">
-            <label className="label text-xs">Current Staff / Employees</label>
+            <label className="label text-xs">Active Staff for &quot;Billed By&quot; Dropdown</label>
             <div className="flex flex-wrap items-center gap-2">
               {employees.map((emp) => (
                 <div
@@ -423,9 +514,9 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Add New Employee Form */}
+          {/* Add New Employee to Selector Form */}
           <div className="pt-2">
-            <label className="label text-xs">Add New Staff / Employee</label>
+            <label className="label text-xs">Add New Staff / Employee to Selector</label>
             <div className="flex items-center gap-2 max-w-md">
               <input
                 type="text"
@@ -446,12 +537,126 @@ export default function SettingsPage() {
                 className="btn-primary text-xs py-2 px-3.5 whitespace-nowrap flex items-center gap-1.5 shrink-0"
               >
                 <Plus size={15} />
-                <span>Add Employee</span>
+                <span>Add to List</span>
               </button>
             </div>
-            <span className="text-[11px] text-surface-400 mt-1 block">
-              Type employee name, click &quot;Add Employee&quot;, and then click &quot;Save Settings&quot; below.
-            </span>
+          </div>
+
+          {/* 10 Employee Logins Table */}
+          <div className="pt-4 border-t border-surface-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-surface-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Key size={14} className="text-primary-600" />
+                  <span>10 Staff Login Accounts & Passwords</span>
+                </h3>
+                <p className="text-[11px] text-surface-500">
+                  Aap in 10 accounts ke username aur password yaha se dekh ya badal sakte hain.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={savingAccounts}
+                onClick={handleSaveAccounts}
+                className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+              >
+                <Save size={13} />
+                <span>{savingAccounts ? 'Saving...' : 'Save Logins'}</span>
+              </button>
+            </div>
+
+            <div className="overflow-x-auto border border-surface-200 rounded-lg">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-surface-50 text-[10px] font-bold text-surface-500 uppercase border-b border-surface-200">
+                  <tr>
+                    <th className="px-3 py-2 w-10">#</th>
+                    <th className="px-3 py-2">Staff Name</th>
+                    <th className="px-3 py-2">Username</th>
+                    <th className="px-3 py-2">Password</th>
+                    <th className="px-3 py-2 text-center w-20">Status</th>
+                    <th className="px-3 py-2 text-right w-24">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-100 bg-white">
+                  {employeeAccounts.map((acc, idx) => {
+                    const isVisible = showPasswords[acc.id];
+                    return (
+                      <tr key={acc.id} className="hover:bg-surface-50/60 transition-colors">
+                        <td className="px-3 py-2 text-surface-400 font-mono font-bold">
+                          {idx + 1}
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={acc.name}
+                            onChange={(e) => handleUpdateAccount(idx, 'name', e.target.value)}
+                            className="input text-xs py-1 px-2 font-semibold text-surface-900 w-32 sm:w-40"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={acc.username}
+                            onChange={(e) =>
+                              handleUpdateAccount(idx, 'username', e.target.value.toLowerCase().trim())
+                            }
+                            className="input text-xs py-1 px-2 font-mono text-primary-700 w-28 sm:w-32 bg-surface-50"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="relative inline-flex items-center">
+                            <input
+                              type={isVisible ? 'text' : 'password'}
+                              value={acc.password}
+                              onChange={(e) => handleUpdateAccount(idx, 'password', e.target.value)}
+                              className="input text-xs py-1 pl-2 pr-7 font-mono w-32 sm:w-40"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowPasswords({
+                                  ...showPasswords,
+                                  [acc.id]: !isVisible,
+                                })
+                              }
+                              className="absolute right-1.5 p-0.5 text-surface-400 hover:text-surface-700 cursor-pointer"
+                              title={isVisible ? 'Hide password' : 'Show password'}
+                            >
+                              {isVisible ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateAccount(idx, 'is_active', !acc.is_active)}
+                            className={cn(
+                              'text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer border',
+                              acc.is_active !== false
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-surface-100 text-surface-500 border-surface-200'
+                            )}
+                          >
+                            {acc.is_active !== false ? 'Active' : 'Disabled'}
+                          </button>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyCredentials(acc)}
+                            className="p-1 rounded text-surface-500 hover:text-primary-600 hover:bg-surface-100 inline-flex items-center gap-1 text-[11px] font-medium"
+                            title="Copy login details to send to staff"
+                          >
+                            <Copy size={13} />
+                            <span>Copy</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 

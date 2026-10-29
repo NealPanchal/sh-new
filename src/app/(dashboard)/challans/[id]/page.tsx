@@ -21,11 +21,19 @@ import {
   Share2,
   Receipt,
   Trash2,
+  Truck,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, formatPhone, amountToWords, cn } from '@/lib/utils';
 import { Challan, ChallanStatus } from '@/types';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
-import { openWhatsApp, generateShareMessage, tryNativeShare, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
+import {
+  openWhatsApp,
+  generateShareMessage,
+  tryNativeShare,
+  shareChallanViaWhatsApp,
+  shareDeliveryConfirmationViaWhatsApp,
+  resolveCustomerPhone,
+} from '@/lib/whatsapp';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DeliveryMemoBill } from '@/components/challans/delivery-memo-bill';
 
@@ -271,6 +279,36 @@ export default function ChallanDetailPage() {
     }
   };
 
+  const handleMarkDelivered = async () => {
+    if (!challan || !profile) return;
+    const targetPhone = resolveCustomerPhone(challan, customers, liveChallans);
+    if (!targetPhone) {
+      setPhoneInput('');
+      setShowPhoneModal(true);
+      return;
+    }
+
+    const updated = await updateChallanStatus(challan.id, 'delivered');
+    if (updated) {
+      setChallan({
+        ...challan,
+        ...updated,
+        status: 'delivered',
+        is_delivered: true,
+        delivered_at: new Date().toISOString(),
+      });
+    }
+    showToast(`Challan ${challan.challan_number} marked as DELIVERED! 🚚`, 'success');
+
+    // Trigger WhatsApp Delivery Notification
+    await shareDeliveryConfirmationViaWhatsApp({
+      challan: { ...challan, status: 'delivered', customer_phone: targetPhone },
+      profile,
+      phoneOverride: targetPhone,
+      onToast: showToast,
+    });
+  };
+
   const confirmCancel = async () => {
     await updateChallanStatus(challan.id, 'cancelled');
     const refreshed = getChallan(challan.id);
@@ -306,25 +344,47 @@ export default function ChallanDetailPage() {
                 <span
                   className={cn(
                     'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider',
-                    challan.status === 'final'
+                    challan.status === 'delivered'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-300'
+                      : challan.status === 'final'
                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                       : challan.status === 'draft'
                       ? 'bg-amber-50 text-amber-700 border border-amber-200'
                       : 'bg-red-50 text-red-700 border border-red-200'
                   )}
                 >
-                  {challan.status}
+                  {challan.status === 'delivered' ? '🚚 Delivered' : challan.status}
                 </span>
               </div>
               <p className="text-[11px] text-surface-500 mt-0.5">
                 Date: {formatDateIndian(challan.challan_date)}
                 {challan.reference_number && ` • Ref: ${challan.reference_number}`}
+                {challan.delivered_at && ` • Delivered on: ${formatDateIndian(challan.delivered_at)}`}
               </p>
             </div>
           </div>
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            {/* Mark as Delivered / Re-notify Button */}
+            <button
+              onClick={handleMarkDelivered}
+              className={cn(
+                'btn-primary py-1.5 px-3 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap',
+                challan.status === 'delivered'
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              )}
+              title={
+                challan.status === 'delivered'
+                  ? 'Re-send Delivery Confirmation via WhatsApp'
+                  : 'Mark as delivered and send WhatsApp notification'
+              }
+            >
+              <Truck size={14} />
+              <span>{challan.status === 'delivered' ? 'Delivery Sent' : 'Mark Delivered'}</span>
+            </button>
+
             <Link
               href={`/challans/${challan.id}/bill`}
               className="btn-primary py-1.5 px-3 bg-[#b8860b] hover:bg-[#a07408] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs whitespace-nowrap"

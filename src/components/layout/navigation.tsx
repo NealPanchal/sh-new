@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import {
@@ -17,28 +17,46 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { logoutAdmin } from '@/lib/auth';
+import { logoutAdmin, getCurrentUser } from '@/lib/auth';
 
-export const navItems = [
+export const allNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/challans/new', label: 'New Challan', icon: FilePlus },
   { href: '/challans', label: 'All Challans', icon: FileText },
   { href: '/bills', label: 'Delivery Bills', icon: Receipt },
   { href: '/customers', label: 'Customers', icon: Users },
   { href: '/products', label: 'Products', icon: Package },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
+
+export const navItems = allNavItems;
 
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [user, setUser] = useState<{ username: string; name: string; role: 'admin' | 'employee' } | null>(null);
+
+  useEffect(() => {
+    setUser(getCurrentUser());
+  }, []);
 
   const handleLogout = async () => {
-    if (confirm('Logout from Showhouse Admin?')) {
+    if (confirm('Logout from Showhouse Portal?')) {
       await logoutAdmin();
     }
   };
+
+  const navItems = allNavItems.filter((item) => {
+    if (item.adminOnly && user?.role === 'employee') {
+      return false; // Employees cannot access Settings
+    }
+    return true;
+  });
+
+  const displayName = user?.name || (user?.username === 'adminsh' ? 'Admin SH' : 'Staff');
+  const avatarLetter = (displayName[0] || 'U').toUpperCase();
+  const roleLabel = user?.role === 'employee' ? '• Staff Member' : '• Verified';
 
   return (
     <aside
@@ -135,20 +153,20 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer / Admin Account & Logout */}
+      {/* Footer / Account & Logout */}
       <div className="p-3 border-t border-surface-100 bg-surface-50/50">
         {!collapsed ? (
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-full bg-surface-900 text-white flex items-center justify-center text-[11px] font-bold shrink-0">
-                A
+              <div className="w-7 h-7 rounded-full bg-[#1e293b] text-white flex items-center justify-center text-[11px] font-bold shrink-0 shadow-2xs">
+                {avatarLetter}
               </div>
               <div className="min-w-0">
                 <span className="font-bold text-xs text-surface-900 block truncate leading-none">
-                  Admin SH
+                  {displayName}
                 </span>
                 <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
-                  • Verified
+                  {roleLabel}
                 </span>
               </div>
             </div>
@@ -156,7 +174,7 @@ export function Sidebar() {
             <button
               onClick={handleLogout}
               className="p-1.5 text-surface-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Logout from Admin"
+              title="Logout"
             >
               <LogOut size={15} />
             </button>

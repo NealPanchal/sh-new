@@ -11,7 +11,8 @@ export interface LoginResult {
   error?: string;
   user?: {
     username: string;
-    role: string;
+    name: string;
+    role: 'admin' | 'employee';
   };
 }
 
@@ -44,6 +45,8 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
         JSON.stringify({
           authenticated: true,
           username: data.user?.username || username,
+          name: data.user?.name || username,
+          role: data.user?.role || 'admin',
           loggedInAt: new Date().toISOString(),
         })
       );
@@ -103,7 +106,7 @@ export function getClientAuthToken(): string | null {
 }
 
 /**
- * Check if admin is currently authenticated
+ * Check if user is currently authenticated
  */
 export function isAdminAuthenticated(): boolean {
   if (typeof window === 'undefined') return false;
@@ -115,6 +118,33 @@ export function isAdminAuthenticated(): boolean {
   } catch {
     return false;
   }
+}
+
+export function getCurrentUser(): { username: string; name: string; role: 'admin' | 'employee' } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session?.authenticated) return null;
+    return {
+      username: session.username || 'adminsh',
+      name: session.name || (session.username === 'adminsh' ? 'Admin SH' : session.username),
+      role: session.role || 'admin',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function isEmployee(): boolean {
+  const u = getCurrentUser();
+  return u?.role === 'employee';
+}
+
+export function isAdmin(): boolean {
+  const u = getCurrentUser();
+  return u?.role === 'admin' || !u; // default to true if legacy session
 }
 
 /**

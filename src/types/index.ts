@@ -1,8 +1,26 @@
 // Database types for Showhouse Challan Management System
 
-export type ChallanStatus = 'draft' | 'final' | 'cancelled' | 'void';
+export type ChallanStatus = 'draft' | 'final' | 'delivered' | 'cancelled' | 'void';
 export type ShareStatus = 'not_shared' | 'share_initiated' | 'user_marked_sent' | 'failed';
 export type UnitType = 'sheets' | 'pieces' | 'boxes' | 'bundles' | 'sq.ft' | 'running ft' | 'nos';
+
+export type UserRole = 'admin' | 'employee';
+
+export interface AuthUser {
+  username: string;
+  name: string;
+  role: UserRole;
+}
+
+export interface EmployeeAccount {
+  id: string;
+  username: string;
+  name: string;
+  password: string;
+  role: 'employee';
+  is_active: boolean;
+  created_at?: string;
+}
 
 export interface BusinessProfile {
   id: string;
@@ -86,6 +104,9 @@ export interface Challan {
   created_by?: string | null;
   status: ChallanStatus;
   share_status: ShareStatus;
+  is_delivered?: boolean;
+  delivered_at?: string | null;
+  delivered_by?: string | null;
   total_quantity: number;
   total_amount: number | null;
   subtotal_amount?: number | null;
@@ -118,6 +139,10 @@ export interface ChallanItem {
   quantity: number;
   rate: number | null;
   amount: number | null;
+  length?: number | string | null;
+  width?: number | string | null;
+  dimension_unit?: 'ft' | 'in' | 'm' | null;
+  calculated_sqft?: number | string | null;
   created_at: string;
 }
 
@@ -161,6 +186,10 @@ export interface ChallanItemFormData {
   quantity: number | string;
   rate: number | string;
   amount: number | string;
+  length?: number | string;
+  width?: number | string;
+  dimension_unit?: 'ft' | 'in' | 'm';
+  calculated_sqft?: number | string;
 }
 
 export interface CustomerFormData {

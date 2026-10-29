@@ -78,7 +78,7 @@ export default function LoginPage() {
           </p>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mt-3 rounded-full bg-surface-800/80 border border-surface-700/60 text-[10px] text-surface-300 font-medium">
             <ShieldCheck size={12} className="text-emerald-400" />
-            <span>Admin Access Portal Only</span>
+            <span>Secure Portal • Admin & Staff</span>
           </div>
         </div>
 
@@ -106,7 +106,7 @@ export default function LoginPage() {
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter admin username"
+                placeholder="Enter username (admin or staff)"
                 className="w-full bg-surface-950 border border-surface-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-white rounded-lg pl-9 pr-3 py-2.5 text-xs outline-hidden transition-colors"
               />
             </div>
@@ -149,7 +149,7 @@ export default function LoginPage() {
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <span>Sign In as Admin</span>
+                <span>Sign In to Showhouse</span>
                 <ArrowRight size={15} />
               </>
             )}

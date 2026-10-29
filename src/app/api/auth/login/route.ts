@@ -37,13 +37,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Validate Credentials
-    const isValid = verifyServerCredentials(username, password);
+    // 2. Validate Credentials (Admin or Employee)
+    const authResult = verifyServerCredentials(username, password);
 
-    if (!isValid) {
+    if (!authResult.valid || !authResult.user) {
       recordFailedLogin(ip);
       return NextResponse.json(
-        { success: false, error: 'Invalid admin username or password' },
+        { success: false, error: 'Invalid username or password. Please check your credentials.' },
         { status: 401 }
       );
     }
@@ -52,14 +52,15 @@ export async function POST(req: NextRequest) {
     resetLoginRateLimit(ip);
 
     // 3. Generate Signed Session Token
-    const token = createSignedSessionToken(username.trim().toLowerCase());
+    const token = createSignedSessionToken(authResult.user);
 
     const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
     const response = NextResponse.json({
       success: true,
       user: {
-        username: username.trim().toLowerCase(),
-        role: 'admin',
+        username: authResult.user.username,
+        name: authResult.user.name,
+        role: authResult.user.role,
       },
       token, // Also return for client convenience / service worker
     });

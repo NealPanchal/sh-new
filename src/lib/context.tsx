@@ -1,8 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { BusinessProfile, Customer, Product, Challan, ChallanItem, DashboardStats, ChallanStatus, ShareStatus, ChallanActivityLog } from '@/types';
+import { BusinessProfile, Customer, Product, Challan, ChallanItem, DashboardStats, ChallanStatus, ShareStatus, ChallanActivityLog, AuthUser } from '@/types';
 import * as store from '@/lib/demo-store';
+import { getCurrentUser } from '@/lib/auth';
 
 interface AppContextType {
   // State
@@ -11,6 +12,9 @@ interface AppContextType {
   profile: BusinessProfile | null;
   customers: Customer[];
   products: Product[];
+  currentUser: AuthUser | null;
+  isAdmin: boolean;
+  isEmployee: boolean;
 
   // Profile
   saveProfile: (data: Partial<BusinessProfile>) => BusinessProfile;
@@ -47,7 +51,7 @@ interface AppContextType {
   createChallan: (data: Partial<Challan>, items: Partial<ChallanItem>[]) => Promise<Challan>;
   updateChallan: (id: string, data: Partial<Challan>, items?: Partial<ChallanItem>[]) => Promise<Challan | null>;
   deleteChallan: (id: string) => Promise<boolean>;
-  updateChallanStatus: (id: string, status: ChallanStatus) => Promise<Challan | null>;
+  updateChallanStatus: (id: string, status: ChallanStatus, meta?: { delivered_by?: string }) => Promise<Challan | null>;
   updateShareStatus: (id: string, status: ShareStatus) => Promise<Challan | null>;
   duplicateChallan: (id: string) => Promise<Challan | null>;
   getActivityLog: (challanId: string) => ChallanActivityLog[];
@@ -71,6 +75,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [challans, setChallans] = useState<Challan[]>([]);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser());
+  }, []);
 
   useEffect(() => {
     store.initDemoStore();
@@ -236,7 +245,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const createChallanFn = useCallback(async (data: Partial<Challan>, items: Partial<ChallanItem>[]) => {
-    const res = store.createChallan(data, items);
+    // If employee, tie creation strictly to their identity
+    const user = getCurrentUser();
+    const preparedData = {
+      ...data,
+      created_by: data.created_by || (user?.role === 'employee' ? user.name : data.prepared_by),
+      prepared_by: data.prepared_by || (user?.role === 'employee' ? user.name : data.created_by),
+    };
+
+    const res = store.createChallan(preparedData, items);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     try {
@@ -259,8 +276,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return res;
   }, []);
 
-  const updateChallanStatusFn = useCallback(async (id: string, status: ChallanStatus) => {
-    const res = store.updateChallanStatus(id, status);
+  const updateChallanStatusFn = useCallback(async (id: string, status: ChallanStatus, meta?: { delivered_by?: string }) => {
+    const user = getCurrentUser();
+    const finalMeta = {
+      delivered_by: meta?.delivered_by || user?.name || 'Staff',
+      ...meta,
+    };
+    const res = store.updateChallanStatus(id, status, finalMeta);
     setChallans([...store.getChallans()]);
     setDataVersion((v) => v + 1);
     if (res) {
@@ -300,14 +322,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const getChallansFn = useCallback(
     (filters?: Parameters<typeof store.getChallans>[0]) => {
-      return store.getChallans(filters);
+      let list = store.getChallans(filters);
+      const user = getCurrentUser();
+
+      // STRICT DATA ISOLATION FOR EMPLOYEES:
+      // Employee can ONLY see challans they created or prepared!
+      // This prevents outgoing employees from harvesting company client databases.
+      if (user && user.role === 'employee') {
+        const empName = (user.name || '').trim().toLowerCase();
+        const empUser = (user.username || '').trim().toLowerCase();
+        list = list.filter((c) => {
+          const creator = (c.created_by || '').trim().toLowerCase();
+          const preparer = (c.prepared_by || '').trim().toLowerCase();
+          return (
+            creator === empName ||
+            creator === empUser ||
+            preparer === empName ||
+            preparer === empUser
+          );
+        });
+      }
+
+      return list;
     },
     [dataVersion, challans]
   );
 
   const getDashboardStatsFn = useCallback(() => {
-    return store.getDashboardStats();
-  }, [dataVersion, challans]);
+    const user = getCurrentUser();
+    if (!user || user.role === 'admin') {
+      return store.getDashboardStats();
+    }
+
+    // Isolated stats for employee
+    const userChallans = getChallansFn();
+    const today = new Date().toISOString().slice(0, 10);
+    const thisMonth = today.slice(0, 7);
+
+    return {
+      totalChallans: userChallans.length,
+      challansToday: userChallans.filter((c) => c.challan_date === today).length,
+      challansThisMonth: userChallans.filter((c) => c.challan_date.startsWith(thisMonth)).length,
+      recentChallans: [...userChallans]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 10),
+    };
+  }, [dataVersion, challans, getChallansFn]);
 
   const value: AppContextType = {
     isLoading,
@@ -317,6 +377,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     products,
     challans,
     dataVersion,
+    currentUser,
+    isAdmin: currentUser?.role === 'admin' || !currentUser,
+    isEmployee: currentUser?.role === 'employee',
     saveProfile: saveProfileFn,
     refreshCustomers,
     getCustomer: store.getCustomer,

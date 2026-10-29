@@ -6,13 +6,14 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
-  const token = req.cookies.get(AUTH_COOKIE_NAME)?.value || createSignedSessionToken(session.username);
+  const token = req.cookies.get(AUTH_COOKIE_NAME)?.value || createSignedSessionToken(session);
   return NextResponse.json({
     authenticated: true,
     token,
     user: {
       username: session.username,
-      role: session.role,
+      name: session.name || (session.username === 'adminsh' ? 'Admin SH' : session.username),
+      role: session.role || 'admin',
     },
   });
 }

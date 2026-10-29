@@ -32,6 +32,10 @@ export function generateShareMessage(
     message += `🔖 *Ref / Order No:* ${challan.reference_number}\n`;
   }
 
+  if (viewUrl) {
+    message += `\n📥 *View & Download Official PDF:*\n${viewUrl}\n`;
+  }
+
   if (challan.items && challan.items.length > 0) {
     message += `\n*Particulars:*\n`;
     challan.items.forEach((item, idx) => {
@@ -140,6 +144,10 @@ export function generateBillShareMessage(
     `*Memo No:* ${memoNo}\n` +
     `*Date:* ${formatDateIndian(challan.challan_date)}\n`;
 
+  if (viewUrl) {
+    msg += `\n📥 *View & Download Official PDF:*\n${viewUrl}\n`;
+  }
+
   if (challan.items && challan.items.length > 0) {
     msg += `\n*Particulars:*\n`;
     challan.items.forEach((it, idx) => {
@@ -157,6 +165,56 @@ export function generateBillShareMessage(
 
   msg +=
     `\nThank you for choosing ${businessName} Decor Studio!\n` +
+    `— Thane (W) | +91 93248 69306`;
+
+  return msg;
+}
+
+/**
+ * Generate Delivery Confirmation WhatsApp message for customer
+ */
+export function generateDeliveryConfirmationMessage(
+  challan: Challan,
+  profile: BusinessProfile,
+  viewUrl?: string
+): string {
+  const businessName = profile.business_name || 'Showhouse';
+  const deliveryDate = challan.delivered_at
+    ? formatDateIndian(challan.delivered_at)
+    : formatDateIndian(new Date().toISOString());
+
+  let msg =
+    `Hello ${challan.customer_name},\n\n` +
+    `🚚 *GOOD NEWS! ORDER DELIVERED*\n` +
+    `Your goods for *${businessName} Delivery Challan* have been successfully *DELIVERED* to your address.\n\n` +
+    `📄 *Challan No:* ${challan.challan_number}\n` +
+    `📅 *Delivery Date:* ${deliveryDate}\n`;
+
+  if (challan.reference_number) {
+    msg += `🔖 *Ref / Order No:* ${challan.reference_number}\n`;
+  }
+
+  if (challan.delivery_address) {
+    msg += `📍 *Delivery Address:* ${challan.delivery_address}\n`;
+  }
+
+  if (challan.items && challan.items.length > 0) {
+    msg += `\n*Items Delivered:*\n`;
+    challan.items.forEach((item, idx) => {
+      msg += `${idx + 1}. ${item.item_description} (${item.quantity} ${item.unit})\n`;
+    });
+  }
+
+  msg += `\n*Total Delivered Qty:* ${challan.total_quantity} items\n`;
+
+  if (viewUrl) {
+    msg += `\n📥 *View & Verify Delivery Challan:*\n${viewUrl}\n`;
+  }
+
+  msg +=
+    `\nKindly inspect and check all items delivered.\n` +
+    `If you have any questions or discrepancies, please inform us within 24 hours.\n\n` +
+    `Thank you for choosing ${businessName} Decor Studio!\n` +
     `— Thane (W) | +91 93248 69306`;
 
   return msg;
@@ -294,12 +352,18 @@ export async function shareChallanViaWhatsApp(options: ShareWhatsAppOptions): Pr
   const fileDocNum = (challan.reference_number || challan.challan_number).replace(/[\/\\]/g, '-');
   const fileName = `Showhouse_${fileDocNum}.pdf`;
 
-  // Clean, professional WhatsApp message WITHOUT ANY WEBSITE LINK
+  // Generate live official PDF view / download link for customer
+  let viewUrl = '';
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
+  }
+
+  // Clean, professional WhatsApp message with live view & download link
   const message =
     options.customMessage ||
     (options.isBillMemo
-      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy)
-      : generateShareMessage(challan, profile));
+      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy, viewUrl)
+      : generateShareMessage(challan, profile, viewUrl));
 
   // 1. Mobile devices: share the downloaded PDF file directly into WhatsApp!
   if (
@@ -431,4 +495,42 @@ export async function copyShareMessage(
     document.body.removeChild(textArea);
     return true;
   }
+}
+
+/**
+ * Send WhatsApp Delivery Confirmation directly to customer
+ */
+export async function shareDeliveryConfirmationViaWhatsApp(options: {
+  challan: Challan;
+  profile: BusinessProfile;
+  phoneOverride?: string;
+  onToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
+}): Promise<boolean> {
+  const { challan, profile } = options;
+  const targetPhone = (options.phoneOverride || challan.customer_phone || '').trim();
+
+  if (!targetPhone) {
+    options.onToast?.('Customer phone number not available for delivery notification', 'error');
+    return false;
+  }
+
+  let viewUrl = '';
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
+  }
+
+  const message = generateDeliveryConfirmationMessage(challan, profile, viewUrl);
+
+  // Auto-download PDF for desktop drag-drop
+  try {
+    downloadChallanPDF({
+      challan,
+      items: challan.items || [],
+      profile,
+    });
+  } catch {}
+
+  openWhatsApp(targetPhone, message);
+  options.onToast?.(`WhatsApp opened with Delivery Confirmation for ${challan.customer_name}!`, 'success');
+  return true;
 }

@@ -23,6 +23,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { DateFilter, DateFilterState, filterChallansByDate } from '@/components/challans/date-filter';
 
 export default function DeliveryBillsPage() {
   const router = useRouter();
@@ -41,6 +42,12 @@ export default function DeliveryBillsPage() {
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
   const [creatorFilter, setCreatorFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilterState>({
+    preset: 'all',
+    singleDate: '',
+    fromDate: '',
+    toDate: '',
+  });
   const [viewMode, setViewMode] = useState<'list' | 'company' | 'creator'>('list');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [deleteModalChallan, setDeleteModalChallan] = useState<Challan | null>(null);
@@ -90,8 +97,9 @@ export default function DeliveryBillsPage() {
         return creator === creatorFilter.toLowerCase();
       });
     }
+    list = filterChallansByDate(list, dateFilter);
     return list;
-  }, [mounted, isLoading, getChallans, search, companyFilter, creatorFilter, dataVersion, liveChallans]);
+  }, [mounted, isLoading, getChallans, search, companyFilter, creatorFilter, dateFilter, dataVersion, liveChallans]);
 
   // Grouped by Company
   const groupedByCompany = useMemo(() => {
@@ -324,6 +332,16 @@ export default function DeliveryBillsPage() {
               <X size={14} />
             </button>
           )}
+        </div>
+
+        {/* Date Filter */}
+        <div className="pt-1 border-t border-surface-100">
+          <DateFilter
+            value={dateFilter}
+            onChange={setDateFilter}
+            filteredCount={filteredBills.length}
+            totalCount={allChallans.length}
+          />
         </div>
 
         {/* Segregation Dropdowns: Company & Creator */}

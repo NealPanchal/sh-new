@@ -782,10 +782,17 @@ export function updateChallan(
   return updated || null;
 }
 
-export function updateChallanStatus(id: string, status: ChallanStatus): Challan | null {
+export function updateChallanStatus(id: string, status: ChallanStatus, meta?: { delivered_by?: string }): Challan | null {
   const idx = state.challans.findIndex((c) => c.id === id);
   if (idx === -1) return null;
   state.challans[idx].status = status;
+  if (status === 'delivered') {
+    state.challans[idx].is_delivered = true;
+    state.challans[idx].delivered_at = new Date().toISOString();
+    if (meta?.delivered_by) {
+      state.challans[idx].delivered_by = meta.delivered_by;
+    }
+  }
   state.challans[idx].updated_at = new Date().toISOString();
   addActivityLog(id, `status_changed`, `Status changed to ${status}`);
   saveState(state);
