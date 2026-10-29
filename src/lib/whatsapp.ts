@@ -25,11 +25,11 @@ export function generateShareMessage(
   let message =
     `Hello ${challan.customer_name},\n\n` +
     `Please find your *${businessName} Delivery Challan* details below:\n` +
-    `📄 *Challan No:* ${challan.challan_number}\n` +
-    `📅 *Date:* ${formatDateIndian(challan.challan_date)}\n`;
+    `*Challan No:* ${challan.challan_number}\n` +
+    `*Date:* ${formatDateIndian(challan.challan_date)}\n`;
 
   if (challan.reference_number) {
-    message += `🔖 *Ref / Order No:* ${challan.reference_number}\n`;
+    message += `*Ref / Order No:* ${challan.reference_number}\n`;
   }
 
   if (challan.items && challan.items.length > 0) {
@@ -177,17 +177,17 @@ export function generateDeliveryConfirmationMessage(
 
   let msg =
     `Hello ${challan.customer_name},\n\n` +
-    `🚚 *GOOD NEWS! ORDER DELIVERED*\n` +
+    `*GOOD NEWS! ORDER DELIVERED*\n` +
     `Your goods for *${businessName} Delivery Challan* have been successfully *DELIVERED* to your address.\n\n` +
-    `📄 *Challan No:* ${challan.challan_number}\n` +
-    `📅 *Delivery Date:* ${deliveryDate}\n`;
+    `*Challan No:* ${challan.challan_number}\n` +
+    `*Delivery Date:* ${deliveryDate}\n`;
 
   if (challan.reference_number) {
-    msg += `🔖 *Ref / Order No:* ${challan.reference_number}\n`;
+    msg += `*Ref / Order No:* ${challan.reference_number}\n`;
   }
 
   if (challan.delivery_address) {
-    msg += `📍 *Delivery Address:* ${challan.delivery_address}\n`;
+    msg += `*Delivery Address:* ${challan.delivery_address}\n`;
   }
 
   if (challan.items && challan.items.length > 0) {
