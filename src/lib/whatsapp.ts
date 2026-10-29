@@ -32,10 +32,6 @@ export function generateShareMessage(
     message += `🔖 *Ref / Order No:* ${challan.reference_number}\n`;
   }
 
-  if (viewUrl) {
-    message += `\n📥 *View & Download Official PDF:*\n${viewUrl}\n`;
-  }
-
   if (challan.items && challan.items.length > 0) {
     message += `\n*Particulars:*\n`;
     challan.items.forEach((item, idx) => {
@@ -144,10 +140,6 @@ export function generateBillShareMessage(
     `*Memo No:* ${memoNo}\n` +
     `*Date:* ${formatDateIndian(challan.challan_date)}\n`;
 
-  if (viewUrl) {
-    msg += `\n📥 *View & Download Official PDF:*\n${viewUrl}\n`;
-  }
-
   if (challan.items && challan.items.length > 0) {
     msg += `\n*Particulars:*\n`;
     challan.items.forEach((it, idx) => {
@@ -206,10 +198,6 @@ export function generateDeliveryConfirmationMessage(
   }
 
   msg += `\n*Total Delivered Qty:* ${challan.total_quantity} items\n`;
-
-  if (viewUrl) {
-    msg += `\n📥 *View & Verify Delivery Challan:*\n${viewUrl}\n`;
-  }
 
   msg +=
     `\nKindly inspect and check all items delivered.\n` +
@@ -352,18 +340,12 @@ export async function shareChallanViaWhatsApp(options: ShareWhatsAppOptions): Pr
   const fileDocNum = (challan.reference_number || challan.challan_number).replace(/[\/\\]/g, '-');
   const fileName = `Showhouse_${fileDocNum}.pdf`;
 
-  // Generate live official PDF view / download link for customer
-  let viewUrl = '';
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
-  }
-
-  // Clean, professional WhatsApp message with live view & download link
+  // Clean, professional WhatsApp message WITHOUT ANY WEBSITE LINK
   const message =
     options.customMessage ||
     (options.isBillMemo
-      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy, viewUrl)
-      : generateShareMessage(challan, profile, viewUrl));
+      ? generateBillShareMessage(challan, profile, options.memoNo, options.confirmBy)
+      : generateShareMessage(challan, profile));
 
   // 1. Mobile devices: share the downloaded PDF file directly into WhatsApp!
   if (
@@ -514,12 +496,7 @@ export async function shareDeliveryConfirmationViaWhatsApp(options: {
     return false;
   }
 
-  let viewUrl = '';
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    viewUrl = `${window.location.origin}/view/challan/${challan.id}`;
-  }
-
-  const message = generateDeliveryConfirmationMessage(challan, profile, viewUrl);
+  const message = generateDeliveryConfirmationMessage(challan, profile);
 
   // Auto-download PDF for desktop drag-drop
   try {
