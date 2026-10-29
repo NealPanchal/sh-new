@@ -19,6 +19,7 @@ export interface EmployeeAccount {
   password: string;
   role: 'employee';
   is_active: boolean;
+  po_prefix?: string;
   created_at?: string;
 }
 
@@ -37,6 +38,8 @@ export interface BusinessProfile {
   state_code?: string | null;
   challan_prefix: string;
   challan_next_number?: number;
+  pi_prefix?: string;
+  pi_next_number?: number;
   financial_year_start_month: number; // 4 = April
   default_unit: UnitType;
   footer_message: string;
@@ -91,6 +94,8 @@ export interface Challan {
   id: string;
   user_id: string;
   challan_number: string;
+  pi_number?: string | null;
+  document_type?: 'challan' | 'proforma_invoice' | 'both';
   challan_date: string;
   customer_id: string;
   customer_name: string;
@@ -158,6 +163,9 @@ export interface ChallanActivityLog {
 // Form types
 export interface ChallanFormData {
   challan_date: string;
+  challan_number?: string;
+  pi_number?: string;
+  document_type?: 'challan' | 'proforma_invoice' | 'both';
   customer_id: string;
   customer_name: string;
   customer_phone: string;

@@ -170,6 +170,16 @@ export function SwipeableChallanCard({
             <span className="font-mono font-bold text-primary-600 text-sm">
               {challan.challan_number}
             </span>
+            {challan.pi_number && (
+              <span className="font-mono font-semibold text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200" title="Proforma Invoice ID">
+                PI: {challan.pi_number}
+              </span>
+            )}
+            {challan.reference_number && (
+              <span className="font-mono font-semibold text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200" title="Staff Purchase / Work Order">
+                PO: {challan.reference_number}
+              </span>
+            )}
             <span className="text-[11px] text-surface-400">
               • {formatDateIndian(challan.challan_date)}
             </span>

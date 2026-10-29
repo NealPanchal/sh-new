@@ -54,9 +54,13 @@ function CreateChallanContent() {
     getCustomer,
     peekNextChallanNumber,
     getNextChallanNumber,
+    peekNextPINumber,
+    getNextStaffPONumber,
     createChallan,
     createCustomer,
     profile,
+    currentUser,
+    isEmployee,
     showToast,
     updateShareStatus,
     challans: liveChallans,
@@ -65,11 +69,13 @@ function CreateChallanContent() {
   // Core Form State (Speed & Simplicity)
   const [challanDate, setChallanDate] = useState('');
   const [challanNumberPreview, setChallanNumberPreview] = useState('');
+  const [piNumberPreview, setPiNumberPreview] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState(preselectedCustomerId || '');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
+  const [isPoManual, setIsPoManual] = useState(false);
   const [createdBy, setCreatedBy] = useState('');
   const [showExtraDetails, setShowExtraDetails] = useState(false);
 
@@ -92,11 +98,45 @@ function CreateChallanContent() {
     return ['Neal', 'Vrushank'];
   }, [profile?.employees]);
 
+  // Auto-set staff creator on initial load (with employee identity support)
   useEffect(() => {
+    if (currentUser?.name) {
+      const match = employeeList.find(
+        (e) => e.toLowerCase() === currentUser.name.toLowerCase()
+      );
+      if (match && createdBy !== match) {
+        setCreatedBy(match);
+        return;
+      }
+    }
     if (employeeList.length > 0 && (!createdBy || !employeeList.includes(createdBy))) {
       setCreatedBy(employeeList[0]);
     }
-  }, [employeeList, createdBy]);
+  }, [employeeList, createdBy, currentUser]);
+
+  // Auto-populate staff-specific continuous PO sequence (e.g. Vrushank: PO VS 001, Bhavin: PO BH 001, etc.)
+  useEffect(() => {
+    if (createdBy && (!referenceNumber || !isPoManual)) {
+      try {
+        const nextPO = getNextStaffPONumber(createdBy);
+        setReferenceNumber(nextPO);
+      } catch (err) {
+        console.warn('Could not auto-generate staff PO:', err);
+      }
+    }
+  }, [createdBy, liveChallans, getNextStaffPONumber, isPoManual]);
+
+  const handleCreatorChange = (newCreator: string) => {
+    setCreatedBy(newCreator);
+    try {
+      const nextPO = getNextStaffPONumber(newCreator);
+      setReferenceNumber(nextPO);
+      setIsPoManual(false);
+    } catch {
+      // Keep previous
+    }
+  };
+
   const [showCancel, setShowCancel] = useState(false);
 
   // Autocomplete UI
@@ -110,9 +150,14 @@ function CreateChallanContent() {
     try {
       setChallanNumberPreview(peekNextChallanNumber());
     } catch {
-      setChallanNumberPreview('SH/CH-0001');
+      setChallanNumberPreview('SH/2026-27/0001');
     }
-  }, [peekNextChallanNumber, liveChallans]);
+    try {
+      setPiNumberPreview(peekNextPINumber());
+    } catch {
+      setPiNumberPreview('PI/2026-27/0001');
+    }
+  }, [peekNextChallanNumber, peekNextPINumber, liveChallans]);
 
   // Pre-select customer if passed in URL
   useEffect(() => {
@@ -326,12 +371,15 @@ function CreateChallanContent() {
       const challan = await createChallan(
         {
           challan_date: challanDate,
+          challan_number: challanNumberPreview,
+          pi_number: piNumberPreview,
+          document_type: 'both',
           customer_id: finalCustomerId || '',
           customer_name: customerName.trim(),
           customer_phone: finalPhone,
           customer_address: deliveryAddress.trim(),
           delivery_address: deliveryAddress.trim(),
-          reference_number: referenceNumber.trim(),
+          reference_number: referenceNumber.trim() || getNextStaffPONumber(createdBy),
           prepared_by: createdBy.trim() || employeeList[0] || 'Neal',
           created_by: createdBy.trim() || employeeList[0] || 'Neal',
           status,
@@ -564,7 +612,7 @@ function CreateChallanContent() {
             </div>
             <select
               value={createdBy}
-              onChange={(e) => setCreatedBy(e.target.value)}
+              onChange={(e) => handleCreatorChange(e.target.value)}
               className="input text-xs font-semibold text-surface-900 bg-white cursor-pointer h-9 w-full"
             >
               {employeeList.map((emp) => (
@@ -573,6 +621,68 @@ function CreateChallanContent() {
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        {/* Document Series & Staff PO Auto-Sequence Bar */}
+        <div className="bg-gradient-to-r from-surface-50 to-amber-50/50 p-2.5 sm:p-3 rounded-lg border border-surface-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
+            {/* Challan No */}
+            <div>
+              <span className="text-[10px] uppercase font-bold text-surface-500 tracking-wider block">
+                Challan # (Delivery)
+              </span>
+              <span className="font-mono font-bold text-primary-700 bg-white px-2 py-0.5 rounded border border-primary-200 text-xs shadow-2xs inline-block">
+                {challanNumberPreview || 'SH/2026-27/0001'}
+              </span>
+            </div>
+
+            {/* PI No */}
+            <div>
+              <span className="text-[10px] uppercase font-bold text-surface-500 tracking-wider block">
+                PI # (Proforma Invoice)
+              </span>
+              <span className="font-mono font-bold text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200 text-xs shadow-2xs inline-block">
+                {piNumberPreview || 'PI/2026-27/0001'}
+              </span>
+            </div>
+
+            {/* Staff PO Sequence */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[10px] uppercase font-bold text-surface-700 tracking-wider">
+                  Staff PO # ({createdBy || 'Staff'} Sequence)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = getNextStaffPONumber(createdBy);
+                    setReferenceNumber(next);
+                    setIsPoManual(false);
+                    showToast(`PO auto-sequenced for ${createdBy}: ${next}`);
+                  }}
+                  className="text-[10px] text-primary-600 hover:text-primary-800 font-semibold cursor-pointer underline"
+                  title="Auto-calculate next sequential PO for this staff"
+                >
+                  Auto-Next
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={referenceNumber}
+                  onChange={(e) => {
+                    setReferenceNumber(e.target.value);
+                    setIsPoManual(true);
+                  }}
+                  placeholder="e.g. PO VS 001"
+                  className="input text-xs font-mono font-bold bg-white text-surface-900 h-7 max-w-[150px]"
+                />
+                <span className="text-[10px] text-surface-500">
+                  {isPoManual ? '(Manual)' : '(Auto-incrementing)'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 

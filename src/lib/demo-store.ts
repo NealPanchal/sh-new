@@ -15,6 +15,7 @@ import {
   DashboardStats,
 } from '@/types';
 import { generateId, getFinancialYear, generateChallanNumber, getTodayISO } from '@/lib/utils';
+import { getNextStaffPONumber } from '@/lib/po-sequence';
 import {
   saveChallanToFirebase,
   deleteChallanFromFirebase,
@@ -464,6 +465,74 @@ export function getNextChallanNumber(): string {
   return generateChallanNumber(prefix, fy, nextSeq);
 }
 
+export function peekNextPINumber(): string {
+  const profile = state.profile;
+  const prefix = profile?.pi_prefix || 'PI';
+  const startMonth = profile?.financial_year_start_month || 4;
+  const fy = getFinancialYear(new Date(), startMonth);
+
+  let maxSeq = 0;
+  const prefixFyPattern = new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i');
+
+  for (const c of state.challans) {
+    if (c.pi_number) {
+      const m = c.pi_number.match(prefixFyPattern);
+      if (m && m[1]) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    }
+  }
+
+  // Fallback: align with current challan sequence if no PI recorded yet
+  if (maxSeq === 0 && state.challanSequence > 0) {
+    maxSeq = state.challanSequence - 1;
+  }
+
+  let nextSeq = maxSeq + 1;
+  while (state.challans.some((c) => c.pi_number === `${prefix}/${fy}/${String(nextSeq).padStart(4, '0')}` && !c.is_deleted)) {
+    nextSeq++;
+  }
+
+  return `${prefix}/${fy}/${String(nextSeq).padStart(4, '0')}`;
+}
+
+export function getNextPINumber(): string {
+  const profile = state.profile;
+  const prefix = profile?.pi_prefix || 'PI';
+  const startMonth = profile?.financial_year_start_month || 4;
+  const fy = getFinancialYear(new Date(), startMonth);
+
+  let maxSeq = 0;
+  const prefixFyPattern = new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i');
+
+  for (const c of state.challans) {
+    if (c.pi_number) {
+      const m = c.pi_number.match(prefixFyPattern);
+      if (m && m[1]) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    }
+  }
+
+  if (maxSeq === 0 && state.challanSequence > 0) {
+    maxSeq = state.challanSequence - 1;
+  }
+
+  let nextSeq = maxSeq + 1;
+  while (state.challans.some((c) => c.pi_number === `${prefix}/${fy}/${String(nextSeq).padStart(4, '0')}` && !c.is_deleted)) {
+    nextSeq++;
+  }
+
+  saveState(state);
+  return `${prefix}/${fy}/${String(nextSeq).padStart(4, '0')}`;
+}
+
 export function getChallans(filters?: {
   search?: string;
   status?: ChallanStatus;
@@ -481,6 +550,7 @@ export function getChallans(filters?: {
         challans = challans.filter(
           (c) =>
             (c.challan_number && c.challan_number.toLowerCase().includes(q)) ||
+            (c.pi_number && c.pi_number.toLowerCase().includes(q)) ||
             (c.customer_name && c.customer_name.toLowerCase().includes(q)) ||
             (c.customer_phone && c.customer_phone.toLowerCase().includes(q)) ||
             (c.reference_number && c.reference_number.toLowerCase().includes(q)) ||
@@ -564,6 +634,19 @@ export function createChallan(
     challanNumber = getNextChallanNumber();
   }
 
+  // Assign or validate unique PI number (Proforma Invoice ID is distinct from Challan No)
+  let piNumber = data.pi_number;
+  if (!piNumber) {
+    piNumber = getNextPINumber();
+  }
+
+  // Auto-assign staff PO number if not provided (e.g. PO VS 001 for Vrushank, PO BH 001 for Bhavin)
+  let refNumber = data.reference_number?.trim() || null;
+  if (!refNumber) {
+    const creator = data.created_by || data.prepared_by || state.profile?.employees?.[0] || 'Neal';
+    refNumber = getNextStaffPONumber(creator, state.challans);
+  }
+
   // If a specific challan_number was provided, make sure state.challanSequence tracks it
   const prefix = state.profile?.challan_prefix || 'SH';
   const startMonth = state.profile?.financial_year_start_month || 4;
@@ -627,6 +710,8 @@ export function createChallan(
     id: challanId,
     user_id: 'demo-user',
     challan_number: challanNumber,
+    pi_number: piNumber,
+    document_type: data.document_type || 'both',
     challan_date: data.challan_date || getTodayISO(),
     customer_id: data.customer_id || '',
     customer_name: data.customer_name || 'Walk-in Customer',
@@ -634,7 +719,7 @@ export function createChallan(
     customer_address: data.customer_address || '',
     customer_gstin: data.customer_gstin || null,
     delivery_address: data.delivery_address || data.customer_address || '',
-    reference_number: data.reference_number || null,
+    reference_number: refNumber,
     notes: data.notes || null,
     prepared_by: data.prepared_by || data.created_by || state.profile?.employees?.[0] || 'Neal',
     created_by: data.created_by || data.prepared_by || state.profile?.employees?.[0] || 'Neal',

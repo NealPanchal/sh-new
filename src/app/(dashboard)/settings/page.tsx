@@ -146,7 +146,7 @@ export default function SettingsPage() {
   };
 
   const handleCopyCredentials = (acc: EmployeeAccount) => {
-    const text = `Showhouse Portal Login:\nUsername: ${acc.username}\nPassword: ${acc.password}\nPortal Link: ${window.location.origin}/login`;
+    const text = `Showhouse Staff Login:\nStaff: ${acc.name}\nPO Series: ${acc.po_prefix || 'PO'}\nUsername: ${acc.username}\nPassword: ${acc.password}\nPortal Link: ${window.location.origin}/login`;
     navigator.clipboard.writeText(text);
     showToast(`Copied login details for ${acc.name}!`, 'success');
   };
@@ -571,6 +571,7 @@ export default function SettingsPage() {
                   <tr>
                     <th className="px-3 py-2 w-10">#</th>
                     <th className="px-3 py-2">Staff Name</th>
+                    <th className="px-3 py-2">PO Prefix</th>
                     <th className="px-3 py-2">Username</th>
                     <th className="px-3 py-2">Password</th>
                     <th className="px-3 py-2 text-center w-20">Status</th>
@@ -590,7 +591,19 @@ export default function SettingsPage() {
                             type="text"
                             value={acc.name}
                             onChange={(e) => handleUpdateAccount(idx, 'name', e.target.value)}
-                            className="input text-xs py-1 px-2 font-semibold text-surface-900 w-32 sm:w-40"
+                            className="input text-xs py-1 px-2 font-semibold text-surface-900 w-28 sm:w-36"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={acc.po_prefix || ''}
+                            placeholder="e.g. PO VS"
+                            onChange={(e) =>
+                              handleUpdateAccount(idx, 'po_prefix', e.target.value.toUpperCase())
+                            }
+                            className="input text-xs py-1 px-2 font-mono font-bold text-amber-700 w-24 sm:w-28 bg-surface-50"
+                            title="Staff PO series prefix (e.g. PO VS 001, PO VS 002...)"
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -600,7 +613,7 @@ export default function SettingsPage() {
                             onChange={(e) =>
                               handleUpdateAccount(idx, 'username', e.target.value.toLowerCase().trim())
                             }
-                            className="input text-xs py-1 px-2 font-mono text-primary-700 w-28 sm:w-32 bg-surface-50"
+                            className="input text-xs py-1 px-2 font-mono text-primary-700 w-24 sm:w-28 bg-surface-50"
                           />
                         </td>
                         <td className="px-3 py-2">

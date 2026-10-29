@@ -13,6 +13,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'vrushank@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO VS',
   },
   {
     id: 'emp_2',
@@ -21,6 +22,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'bhavin@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO BH',
   },
   {
     id: 'emp_3',
@@ -29,6 +31,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'neal@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO NP',
   },
   {
     id: 'emp_4',
@@ -37,6 +40,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'staff1@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO ST1',
   },
   {
     id: 'emp_5',
@@ -45,6 +49,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'staff2@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO ST2',
   },
   {
     id: 'emp_6',
@@ -53,6 +58,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'staff3@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO ST3',
   },
   {
     id: 'emp_7',
@@ -61,6 +67,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'staff4@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO ST4',
   },
   {
     id: 'emp_8',
@@ -69,6 +76,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'staff5@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO ST5',
   },
   {
     id: 'emp_9',
@@ -77,6 +85,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'staff6@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO ST6',
   },
   {
     id: 'emp_10',
@@ -85,6 +94,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     password: 'staff7@sh26',
     role: 'employee',
     is_active: true,
+    po_prefix: 'PO ST7',
   },
 ];
 

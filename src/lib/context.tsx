@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { BusinessProfile, Customer, Product, Challan, ChallanItem, DashboardStats, ChallanStatus, ShareStatus, ChallanActivityLog, AuthUser } from '@/types';
 import * as store from '@/lib/demo-store';
 import { getCurrentUser } from '@/lib/auth';
+import { getNextStaffPONumber as calcNextStaffPONumber } from '@/lib/po-sequence';
 
 interface AppContextType {
   // State
@@ -39,6 +40,9 @@ interface AppContextType {
   dataVersion: number;
   peekNextChallanNumber: () => string;
   getNextChallanNumber: () => string;
+  peekNextPINumber: () => string;
+  getNextPINumber: () => string;
+  getNextStaffPONumber: (staffName: string) => string;
   getChallans: (filters?: {
     search?: string;
     status?: ChallanStatus;
@@ -394,6 +398,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteProduct: deleteProductFn,
     peekNextChallanNumber: store.peekNextChallanNumber,
     getNextChallanNumber: store.getNextChallanNumber,
+    peekNextPINumber: store.peekNextPINumber,
+    getNextPINumber: store.getNextPINumber,
+    getNextStaffPONumber: (staffName: string) => calcNextStaffPONumber(staffName, store.getChallans()),
     getChallans: getChallansFn,
     getChallan: store.getChallan,
     createChallan: createChallanFn,

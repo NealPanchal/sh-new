@@ -649,7 +649,10 @@ export default function DeliveryBillsPage() {
                           </span>
                         </td>
                         <td className="font-mono text-xs text-surface-600">
-                          {c.challan_number}
+                          <div>{c.challan_number}</div>
+                          {c.pi_number && (
+                            <div className="text-[10px] text-blue-600">PI: {c.pi_number}</div>
+                          )}
                         </td>
                         <td className="whitespace-nowrap text-xs text-surface-600">
                           {formatDateIndian(c.challan_date)}

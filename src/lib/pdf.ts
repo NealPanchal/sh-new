@@ -33,7 +33,7 @@ export function generateChallanPDF({
   challan,
   items,
   profile,
-  documentType = 'PROFORMA INVOICE',
+  documentType,
 }: PDFOptions): jsPDF {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
@@ -41,6 +41,12 @@ export function generateChallanPDF({
   const margin = 14;
   const contentWidth = pageWidth - margin * 2; // 182mm
   let y = margin;
+
+  // Resolve document type: 'DELIVERY CHALLAN' or 'PROFORMA INVOICE'
+  const resolvedDocType: 'PROFORMA INVOICE' | 'DELIVERY CHALLAN' =
+    documentType ||
+    (challan.document_type === 'proforma_invoice' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN');
+  const isPI = resolvedDocType === 'PROFORMA INVOICE';
 
   // Colors
   const blackColor: [number, number, number] = [20, 20, 20];
@@ -83,8 +89,8 @@ export function generateChallanPDF({
   doc.text('Decor Studio', margin + 18, y + 10.5);
 
   // Right Header: Rounded Pill Box ("PROFORMA INVOICE" / "DELIVERY CHALLAN")
-  const titleText = documentType || 'PROFORMA INVOICE';
-  const boxWidth = 58;
+  const titleText = resolvedDocType;
+  const boxWidth = isPI ? 52 : 56;
   const boxHeight = 7.5;
   const boxX = pageWidth - margin - boxWidth;
   const boxY = y;
@@ -95,21 +101,43 @@ export function generateChallanPDF({
   doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 1.5, 1.5, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(...blueColor);
   doc.text(titleText, boxX + boxWidth / 2, boxY + 5.2, { align: 'center' });
 
-  // PI NO & DATE (Right side below pill)
+  // Separate Document Number, Staff PO & Date (Right side below pill)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8.2);
   doc.setTextColor(...blackColor);
-  doc.text(`PI NO : ${challan.reference_number || challan.challan_number}`, boxX, y + 13);
-  doc.text(`DATE : ${formattedDate}`, boxX, y + 17);
+
+  let docInfoY = y + 12.5;
+  if (isPI) {
+    const piNum = challan.pi_number || challan.challan_number.replace(/^SH\//, 'PI/');
+    doc.text(`PI NO : ${piNum}`, boxX, docInfoY);
+    docInfoY += 3.8;
+    if (challan.reference_number) {
+      doc.text(`PO NO : ${challan.reference_number}`, boxX, docInfoY);
+      docInfoY += 3.8;
+    }
+  } else {
+    doc.text(`CHALLAN NO : ${challan.challan_number}`, boxX, docInfoY);
+    docInfoY += 3.8;
+    if (challan.reference_number) {
+      doc.text(`PO NO : ${challan.reference_number}`, boxX, docInfoY);
+      docInfoY += 3.8;
+    }
+    if (challan.pi_number && challan.pi_number !== challan.challan_number) {
+      doc.text(`PI REF : ${challan.pi_number}`, boxX, docInfoY);
+      docInfoY += 3.8;
+    }
+  }
+  doc.text(`DATE : ${formattedDate}`, boxX, docInfoY);
+  docInfoY += 4.5;
 
   // ----------------------------------------------------
   // 2. COMPANY DETAILS (RIGHT) & CUSTOMER DETAILS (LEFT)
   // ----------------------------------------------------
-  const detailsY = y + 22;
+  const detailsY = Math.max(y + 22, docInfoY);
 
   // Left: Customer Details
   doc.setFont('helvetica', 'bold');
@@ -413,7 +441,16 @@ export function generateChallanPDF({
 
 export function downloadChallanPDF(options: PDFOptions): void {
   const doc = generateChallanPDF(options);
-  doc.save(`Showhouse_${options.challan.challan_number.replace(/\//g, '-')}.pdf`);
+  const resolvedType =
+    options.documentType ||
+    (options.challan.document_type === 'proforma_invoice' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN');
+  const isPI = resolvedType === 'PROFORMA INVOICE';
+  const docNum = isPI
+    ? (options.challan.pi_number || options.challan.challan_number.replace(/^SH\//, 'PI/'))
+    : options.challan.challan_number;
+  const safeNum = docNum.replace(/[\/\\]/g, '-');
+  const filePrefix = isPI ? 'Showhouse_PI_' : 'Showhouse_Challan_';
+  doc.save(`${filePrefix}${safeNum}.pdf`);
 }
 
 export function printChallanPDF(options: PDFOptions): void {

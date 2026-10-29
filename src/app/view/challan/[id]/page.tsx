@@ -260,14 +260,20 @@ export default function PublicChallanViewPage() {
                   <span className="text-surface-500">Challan Number:</span>
                   <span className="font-mono font-bold text-surface-900">{challan.challan_number}</span>
                 </div>
+                {challan.pi_number && (
+                  <div className="flex justify-between">
+                    <span className="text-surface-500">PI Number (Proforma):</span>
+                    <span className="font-mono font-bold text-blue-700">{challan.pi_number}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-surface-500">Challan Date:</span>
                   <span className="font-medium text-surface-800">{formatDateIndian(challan.challan_date)}</span>
                 </div>
                 {challan.reference_number && (
                   <div className="flex justify-between">
-                    <span className="text-surface-500">Reference / Order No:</span>
-                    <span className="font-medium text-surface-800">{challan.reference_number}</span>
+                    <span className="text-surface-500">Staff PO #:</span>
+                    <span className="font-mono font-bold text-amber-700">{challan.reference_number}</span>
                   </div>
                 )}
                 {challan.prepared_by && (

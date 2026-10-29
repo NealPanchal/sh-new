@@ -50,6 +50,7 @@ export default function EditChallanPage() {
     profile,
     showToast,
     isLoading,
+    getNextStaffPONumber,
     challans: liveChallans,
   } = useApp();
 
@@ -57,6 +58,7 @@ export default function EditChallanPage() {
   const [challanLoaded, setChallanLoaded] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [challanNumber, setChallanNumber] = useState('');
+  const [piNumber, setPiNumber] = useState('');
 
   // Form state
   const [challanDate, setChallanDate] = useState('');
@@ -97,6 +99,7 @@ export default function EditChallanPage() {
 
   const populateChallan = (c: any) => {
     setChallanNumber(c.challan_number);
+    setPiNumber(c.pi_number || c.challan_number?.replace(/^SH\//, 'PI/') || '');
     setChallanDate(c.challan_date);
     setSelectedCustomerId(c.customer_id || '');
     setCustomerName(c.customer_name);
@@ -381,6 +384,7 @@ export default function EditChallanPage() {
         challanId,
         {
           challan_date: challanDate,
+          pi_number: piNumber.trim() || undefined,
           customer_id: selectedCustomerId || undefined,
           customer_name: customerName.trim(),
           customer_phone: finalPhone,
@@ -563,7 +567,16 @@ export default function EditChallanPage() {
             </div>
             <select
               value={createdBy}
-              onChange={(e) => setCreatedBy(e.target.value)}
+              onChange={(e) => {
+                const newC = e.target.value;
+                setCreatedBy(newC);
+                if (!referenceNumber) {
+                  try {
+                    const next = getNextStaffPONumber(newC);
+                    setReferenceNumber(next);
+                  } catch {}
+                }
+              }}
               className="input text-xs font-semibold text-surface-900 bg-white cursor-pointer h-9 w-full"
             >
               {employeeList.map((emp) => (
@@ -572,6 +585,65 @@ export default function EditChallanPage() {
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        {/* Document Series & Staff PO Auto-Sequence Bar */}
+        <div className="bg-gradient-to-r from-surface-50 to-amber-50/50 p-2.5 sm:p-3 rounded-lg border border-surface-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
+            {/* Challan No */}
+            <div>
+              <span className="text-[10px] uppercase font-bold text-surface-500 tracking-wider block">
+                Challan # (Delivery)
+              </span>
+              <span className="font-mono font-bold text-primary-700 bg-white px-2 py-0.5 rounded border border-primary-200 text-xs shadow-2xs inline-block">
+                {challanNumber || 'SH/2026-27/0001'}
+              </span>
+            </div>
+
+            {/* PI No */}
+            <div>
+              <span className="text-[10px] uppercase font-bold text-surface-500 tracking-wider block">
+                PI # (Proforma Invoice)
+              </span>
+              <input
+                type="text"
+                value={piNumber}
+                onChange={(e) => setPiNumber(e.target.value)}
+                placeholder="e.g. PI/2026-27/0001"
+                className="input text-xs font-mono font-bold bg-white text-blue-700 h-7 max-w-[170px]"
+              />
+            </div>
+
+            {/* Staff PO Sequence */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[10px] uppercase font-bold text-surface-700 tracking-wider">
+                  Staff PO # ({createdBy || 'Staff'} Sequence)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = getNextStaffPONumber(createdBy);
+                    setReferenceNumber(next);
+                    showToast(`PO auto-sequenced for ${createdBy}: ${next}`);
+                  }}
+                  className="text-[10px] text-primary-600 hover:text-primary-800 font-semibold cursor-pointer underline"
+                  title="Auto-calculate next sequential PO for this staff"
+                >
+                  Auto-Next
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={referenceNumber}
+                  onChange={(e) => setReferenceNumber(e.target.value)}
+                  placeholder="e.g. PO VS 001"
+                  className="input text-xs font-mono font-bold bg-white text-surface-900 h-7 max-w-[150px]"
+                />
+              </div>
+            </div>
           </div>
         </div>
 

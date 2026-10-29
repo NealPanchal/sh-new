@@ -64,7 +64,8 @@ export default function ChallanDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
-  const [viewMode, setViewMode] = useState<'challan' | 'bill'>('challan');
+  const [viewMode, setViewMode] = useState<'challan' | 'pi' | 'bill'>('challan');
+  const [activeDocType, setActiveDocType] = useState<'DELIVERY CHALLAN' | 'PROFORMA INVOICE'>('DELIVERY CHALLAN');
 
   useEffect(() => {
     setMounted(true);
@@ -204,28 +205,39 @@ export default function ChallanDetailPage() {
     );
   }
 
-  const handlePrint = () => {
+  const handlePrint = (typeOverride?: 'DELIVERY CHALLAN' | 'PROFORMA INVOICE') => {
     if (!profile) return;
+    const docType = typeOverride || activeDocType;
     printChallanPDF({
       challan,
       items: challan.items || [],
       profile,
+      documentType: docType,
     });
-    showToast(`Print dialog opened for ${challan.challan_number}`);
+    const label = docType === 'PROFORMA INVOICE'
+      ? (challan.pi_number || 'PI')
+      : challan.challan_number;
+    showToast(`Print opened for ${label}`);
   };
 
-  const handleDownload = () => {
+  const handleDownload = (typeOverride?: 'DELIVERY CHALLAN' | 'PROFORMA INVOICE') => {
     if (!profile) return;
+    const docType = typeOverride || activeDocType;
     downloadChallanPDF({
       challan,
       items: challan.items || [],
       profile,
+      documentType: docType,
     });
-    showToast(`PDF downloaded: ${challan.challan_number}`);
+    const label = docType === 'PROFORMA INVOICE'
+      ? (challan.pi_number || 'PI')
+      : challan.challan_number;
+    showToast(`PDF downloaded: ${label}`);
   };
 
-  const handleWhatsApp = async () => {
+  const handleWhatsApp = async (typeOverride?: 'DELIVERY CHALLAN' | 'PROFORMA INVOICE') => {
     if (!profile || !challan) return;
+    const docType = typeOverride || activeDocType;
     const targetPhone = resolveCustomerPhone(challan, customers, liveChallans);
     if (!targetPhone) {
       setPhoneInput('');
@@ -238,6 +250,7 @@ export default function ChallanDetailPage() {
       phoneOverride: targetPhone,
       items: challan.items || [],
       profile,
+      documentType: docType,
       onToast: showToast,
     });
 
@@ -337,10 +350,20 @@ export default function ChallanDetailPage() {
               <ArrowLeft size={18} />
             </Link>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono font-extrabold text-base sm:text-lg text-primary-600">
                   {challan.challan_number}
                 </span>
+                {challan.pi_number && (
+                  <span className="font-mono font-bold text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200" title="Proforma Invoice ID">
+                    PI: {challan.pi_number}
+                  </span>
+                )}
+                {challan.reference_number && (
+                  <span className="font-mono font-bold text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200" title="Staff Purchase / Work Order">
+                    PO: {challan.reference_number}
+                  </span>
+                )}
                 <span
                   className={cn(
                     'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider',
@@ -358,7 +381,8 @@ export default function ChallanDetailPage() {
               </div>
               <p className="text-[11px] text-surface-500 mt-0.5">
                 Date: {formatDateIndian(challan.challan_date)}
-                {challan.reference_number && ` • Ref: ${challan.reference_number}`}
+                {challan.reference_number && ` • Staff PO: ${challan.reference_number}`}
+                {challan.pi_number && ` • PI No: ${challan.pi_number}`}
                 {challan.delivered_at && ` • Delivered on: ${formatDateIndian(challan.delivered_at)}`}
               </p>
             </div>
@@ -396,34 +420,35 @@ export default function ChallanDetailPage() {
 
             {(() => {
               const targetPhone = challan ? resolveCustomerPhone(challan, customers, liveChallans) : '';
+              const docLabel = viewMode === 'pi' ? 'PI' : 'Challan';
               return (
                 <button
-                  onClick={handleWhatsApp}
-                  className="btn-primary py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer"
-                  title={targetPhone ? `Share via WhatsApp (${targetPhone})` : 'Share via WhatsApp'}
+                  onClick={() => handleWhatsApp(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
+                  className="btn-primary py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
+                  title={targetPhone ? `Share ${docLabel} via WhatsApp (${targetPhone})` : `Share ${docLabel} via WhatsApp`}
                 >
                   <Send size={14} />
-                  <span>WhatsApp</span>
+                  <span>WhatsApp ({docLabel})</span>
                 </button>
               );
             })()}
 
             <button
-              onClick={handlePrint}
-              className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
-              title="Print Document"
+              onClick={() => handlePrint(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
+              className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+              title={`Print ${viewMode === 'pi' ? 'Proforma Invoice' : 'Delivery Challan'}`}
             >
               <Printer size={14} />
-              <span>Print</span>
+              <span>Print {viewMode === 'pi' ? 'PI' : 'Challan'}</span>
             </button>
 
             <button
-              onClick={handleDownload}
-              className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
-              title="Download PDF"
+              onClick={() => handleDownload(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
+              className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+              title={`Download ${viewMode === 'pi' ? 'Proforma Invoice' : 'Delivery Challan'} PDF`}
             >
               <Download size={14} />
-              <span>PDF</span>
+              <span>PDF ({viewMode === 'pi' ? 'PI' : 'Challan'})</span>
             </button>
 
             <Link
@@ -464,11 +489,14 @@ export default function ChallanDetailPage() {
       </div>
 
       {/* Format Toggle Tabs */}
-      <div className="flex items-center gap-2 border-b border-surface-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-surface-200 pb-2 flex-wrap">
         <button
-          onClick={() => setViewMode('challan')}
+          onClick={() => {
+            setViewMode('challan');
+            setActiveDocType('DELIVERY CHALLAN');
+          }}
           className={cn(
-            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5',
+            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer',
             viewMode === 'challan'
               ? 'bg-surface-900 text-white shadow-xs'
               : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
@@ -479,9 +507,25 @@ export default function ChallanDetailPage() {
         </button>
 
         <button
+          onClick={() => {
+            setViewMode('pi');
+            setActiveDocType('PROFORMA INVOICE');
+          }}
+          className={cn(
+            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer',
+            viewMode === 'pi'
+              ? 'bg-[#2B5EA7] text-white shadow-xs'
+              : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+          )}
+        >
+          <FileText size={14} />
+          <span>Proforma Invoice PI (A4)</span>
+        </button>
+
+        <button
           onClick={() => setViewMode('bill')}
           className={cn(
-            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5',
+            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer',
             viewMode === 'bill'
               ? 'bg-[#b8860b] text-white shadow-xs'
               : 'bg-[#b8860b]/10 text-[#b8860b] hover:bg-[#b8860b]/20 border border-[#b8860b]/30'
@@ -542,30 +586,64 @@ export default function ChallanDetailPage() {
           </div>
 
           <div className="mt-3 text-center">
-            <span className="inline-block bg-surface-900 text-white font-bold text-[11px] uppercase tracking-widest px-3 py-0.5 rounded">
-              Delivery Challan
+            <span
+              className={cn(
+                'inline-block font-bold text-[11px] uppercase tracking-widest px-3 py-0.5 rounded',
+                viewMode === 'pi'
+                  ? 'bg-[#2B5EA7] text-white'
+                  : 'bg-surface-900 text-white'
+              )}
+            >
+              {viewMode === 'pi' ? 'Proforma Invoice' : 'Delivery Challan'}
             </span>
           </div>
         </div>
 
-        {/* Challan & Consignee Meta */}
+        {/* Challan / PI & Consignee Meta */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-4 border-b border-surface-200 text-xs">
-          {/* Challan Info */}
+          {/* Document & PO Info */}
           <div className="bg-surface-50 p-3 rounded-lg border border-surface-100 space-y-1.5">
-            <div className="flex justify-between">
-              <span className="text-surface-500">Challan No:</span>
-              <span className="font-mono font-bold text-surface-900">{challan.challan_number}</span>
-            </div>
+            {viewMode === 'pi' ? (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-surface-500">PI No (Invoice ID):</span>
+                  <span className="font-mono font-bold text-blue-700">
+                    {challan.pi_number || challan.challan_number.replace(/^SH\//, 'PI/')}
+                  </span>
+                </div>
+                {challan.challan_number && (
+                  <div className="flex justify-between">
+                    <span className="text-surface-500">Challan Ref:</span>
+                    <span className="font-mono font-medium text-surface-800">{challan.challan_number}</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-surface-500">Challan No:</span>
+                  <span className="font-mono font-bold text-surface-900">{challan.challan_number}</span>
+                </div>
+                {challan.pi_number && (
+                  <div className="flex justify-between">
+                    <span className="text-surface-500">PI Ref (Invoice ID):</span>
+                    <span className="font-mono font-medium text-blue-700">{challan.pi_number}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {challan.reference_number && (
+              <div className="flex justify-between">
+                <span className="text-surface-500">Staff PO #:</span>
+                <span className="font-mono font-bold text-amber-700">{challan.reference_number}</span>
+              </div>
+            )}
+
             <div className="flex justify-between">
               <span className="text-surface-500">Date:</span>
               <span className="font-medium text-surface-800">{formatDateIndian(challan.challan_date)}</span>
             </div>
-            {challan.reference_number && (
-              <div className="flex justify-between">
-                <span className="text-surface-500">Ref / Order No:</span>
-                <span className="font-medium text-surface-800">{challan.reference_number}</span>
-              </div>
-            )}
           </div>
 
           {/* Consignee Info */}
