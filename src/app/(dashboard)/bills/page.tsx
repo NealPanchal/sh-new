@@ -21,9 +21,11 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DateFilter, DateFilterState, filterChallansByDate } from '@/components/challans/date-filter';
+import { exportMonthSalesToExcel } from '@/lib/excel-export';
 
 export default function DeliveryBillsPage() {
   const router = useRouter();
@@ -302,6 +304,40 @@ export default function DeliveryBillsPage() {
     );
   };
 
+  const handleExportExcel = () => {
+    if (filteredBills.length === 0) {
+      showToast('No bills match the current filter to export', 'error');
+      return;
+    }
+
+    let label = 'Bills';
+    if (dateFilter.preset === 'previous_month') {
+      const now = new Date();
+      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      label = prev.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    } else if (dateFilter.preset === 'month') {
+      label = new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    } else if (dateFilter.preset === 'specific_month' && dateFilter.selectedMonth) {
+      const [y, m] = dateFilter.selectedMonth.split('-').map(Number);
+      if (y && m) {
+        label = new Date(y, m - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+      }
+    } else if (dateFilter.preset === 'today') {
+      label = `Today_${new Date().toISOString().slice(0, 10)}`;
+    } else if (dateFilter.preset === 'custom' && dateFilter.fromDate && dateFilter.toDate) {
+      label = `${dateFilter.fromDate}_to_${dateFilter.toDate}`;
+    } else if (dateFilter.preset === 'all') {
+      label = 'All_Dates';
+    }
+
+    exportMonthSalesToExcel({
+      challans: filteredBills,
+      monthLabel: label,
+      profile,
+    });
+    showToast(`Downloaded ${label} bills Excel (${filteredBills.length} orders)!`, 'success');
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -328,13 +364,26 @@ export default function DeliveryBillsPage() {
           </p>
         </div>
 
-        <Link
-          href="/challans/new"
-          className="btn-primary py-2 px-3.5 text-xs font-semibold shadow-xs flex items-center gap-1.5"
-        >
-          <Plus size={16} />
-          <span>New Bill</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2 px-3 sm:px-3.5 rounded-lg shadow-xs hover:shadow transition-all inline-flex items-center gap-1.5 cursor-pointer"
+            title="Download bills report in Excel (.xlsx) format"
+          >
+            <FileSpreadsheet size={15} />
+            <span className="hidden sm:inline">Export Month Excel</span>
+            <span className="sm:hidden">Excel</span>
+          </button>
+
+          <Link
+            href="/challans/new"
+            className="btn-primary py-2 px-3.5 text-xs font-semibold shadow-xs flex items-center gap-1.5"
+          >
+            <Plus size={16} />
+            <span>New Bill</span>
+          </Link>
+        </div>
       </div>
 
       {/* Filter and Search Card */}

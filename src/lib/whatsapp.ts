@@ -13,6 +13,29 @@ interface ShareOptions {
   profile: BusinessProfile;
 }
 
+function getShowhouseContact(creator?: string | null): string {
+  if (typeof window !== 'undefined' && creator) {
+    try {
+      const raw = localStorage.getItem('showhouse_employee_cache');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const clean = creator.trim().toLowerCase();
+          const match = list.find(
+            (e: any) =>
+              (e.name && e.name.trim().toLowerCase() === clean) ||
+              (e.username && e.username.trim().toLowerCase() === clean)
+          );
+          if (match?.phone && match.phone.trim() && match.phone.trim() !== '+91 93248 69306') {
+            return `— Thane (W) | +91 93248 69306 / ${match.phone.trim()}`;
+          }
+        }
+      }
+    } catch {}
+  }
+  return `— Thane (W) | +91 93248 69306`;
+}
+
 /**
  * Generate WhatsApp share message for Delivery Challan
  */
@@ -103,7 +126,8 @@ export function generateShareMessage(
     message += `*${taxLabel}:* ₹${Number(totalAmt).toLocaleString('en-IN')}\n`;
   }
 
-  message += `\nThank you for your business!\n— ${businessName} Decor Studio`;
+  const creator = challan.created_by || challan.prepared_by;
+  message += `\nThank you for choosing ${businessName} Decor Studio!\n${getShowhouseContact(creator)}`;
   return message;
 }
 
@@ -198,7 +222,8 @@ export function generatePIShareMessage(
     message += `*${taxLabel}:* ₹${Number(totalAmt).toLocaleString('en-IN')}\n`;
   }
 
-  message += `\nThank you for choosing ${businessName} Decor Studio!\n— Thane (W) | +91 93248 69306`;
+  const creator = challan.created_by || challan.prepared_by;
+  message += `\nThank you for choosing ${businessName} Decor Studio!\n${getShowhouseContact(creator)}`;
   return message;
 }
 
@@ -255,7 +280,7 @@ export function generateBillShareMessage(
 
   msg +=
     `\nThank you for choosing ${businessName} Decor Studio!\n` +
-    `— Thane (W) | +91 93248 69306`;
+    `${getShowhouseContact(challan.created_by || challan.prepared_by)}`;
 
   return msg;
 }
@@ -301,7 +326,7 @@ export function generateDeliveryConfirmationMessage(
     `\nKindly inspect and check all items delivered.\n` +
     `If you have any questions or discrepancies, please inform us within 24 hours.\n\n` +
     `Thank you for choosing ${businessName} Decor Studio!\n` +
-    `— Thane (W) | +91 93248 69306`;
+    `${getShowhouseContact(challan.created_by || challan.prepared_by)}`;
 
   return msg;
 }

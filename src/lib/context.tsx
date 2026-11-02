@@ -166,6 +166,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     }).catch(() => {});
 
+    // Sync employee accounts cache for contact numbers and PO prefixes
+    fetch('/api/employees')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.employees)) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('showhouse_employee_cache', JSON.stringify(data.employees));
+          }
+        }
+      })
+      .catch(() => {});
+
     // Dynamic real-time sync with Firebase, Server API, and BroadcastChannel
     import('@/lib/firebase-service').then(({ subscribeToChallans }) => {
       const unsub = subscribeToChallans((remoteChallans) => {

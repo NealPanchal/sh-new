@@ -16,6 +16,7 @@ export interface EmployeeAccount {
   id: string;
   username: string;
   name: string;
+  phone?: string;
   password: string;
   role: 'employee';
   is_active: boolean;

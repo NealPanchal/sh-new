@@ -13,6 +13,32 @@ interface PDFOptions {
   items: ChallanItem[];
   profile: BusinessProfile;
   documentType?: 'PROFORMA INVOICE' | 'DELIVERY CHALLAN';
+  employeePhone?: string;
+}
+
+/**
+ * Dynamically look up employee contact number from cache or profile
+ */
+function lookupStaffPhone(staffName?: string | null): string | undefined {
+  if (!staffName || typeof window === 'undefined') return undefined;
+  try {
+    const raw = localStorage.getItem('showhouse_employee_cache');
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        const clean = staffName.trim().toLowerCase();
+        const found = list.find(
+          (e: any) =>
+            (e.name && e.name.trim().toLowerCase() === clean) ||
+            (e.username && e.username.trim().toLowerCase() === clean)
+        );
+        if (found?.phone && found.phone.trim()) {
+          return found.phone.trim();
+        }
+      }
+    }
+  } catch {}
+  return undefined;
 }
 
 function formatAmountNum(amount: number | null | undefined): string {
@@ -34,6 +60,7 @@ export function generateChallanPDF({
   items,
   profile,
   documentType,
+  employeePhone,
 }: PDFOptions): jsPDF {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
@@ -352,7 +379,14 @@ export function generateChallanPDF({
   doc.setFont('helvetica', 'bold');
   doc.text(`PREPARED BY : ${creator.toUpperCase()}`, leftX, leftY + 5.2);
   doc.setFont('helvetica', 'normal');
-  doc.text(`MOBILE : +91 93248 69306 / +91 8169214522`, leftX, leftY + 8.4);
+
+  // Dynamic Contact Number (Employee phone if configured, otherwise showroom mobile)
+  const staffPhone = employeePhone || lookupStaffPhone(creator);
+  const mobileText =
+    staffPhone && staffPhone.trim() && staffPhone !== '+91 93248 69306'
+      ? `MOBILE : +91 93248 69306 / ${staffPhone.trim()}`
+      : `MOBILE : +91 93248 69306`;
+  doc.text(mobileText, leftX, leftY + 8.4);
   leftY += 10.5;
 
   // Terms & Conditions

@@ -25,14 +25,25 @@ import {
   EyeOff,
   Copy,
   Lock,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { BusinessProfile, EmployeeAccount } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { cn } from '@/lib/utils';
+import { cn, formatDateIndian } from '@/lib/utils';
+import { exportMonthSalesToExcel } from '@/lib/excel-export';
 import * as store from '@/lib/demo-store';
 
+function formatMonthYearLabel(monthKey: string): string {
+  if (!monthKey || monthKey === 'all') return 'All Time (Complete Sales)';
+  const [y, m] = monthKey.split('-').map(Number);
+  if (!y || !m) return monthKey;
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+}
+
 export default function SettingsPage() {
-  const { profile, saveProfile, showToast, isLoading, isEmployee, currentUser } = useApp();
+  const { profile, saveProfile, showToast, isLoading, isEmployee, currentUser, challans } =
+    useApp();
   const [mounted, setMounted] = useState(false);
 
   // Form states
@@ -51,13 +62,16 @@ export default function SettingsPage() {
 
   // Employees / Creators (Billed By)
   const [employees, setEmployees] = useState<string[]>(['Neal', 'Vrushank']);
-  const [newEmployeeName, setNewEmployeeName] = useState('');
 
-  // 10 Employee Accounts Management
+  // Employee Accounts Management
   const [employeeAccounts, setEmployeeAccounts] = useState<EmployeeAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [savingAccounts, setSavingAccounts] = useState(false);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [deleteAccountTarget, setDeleteAccountTarget] = useState<EmployeeAccount | null>(null);
+
+  // Monthly Sales Backup State
+  const [selectedBackupMonth, setSelectedBackupMonth] = useState<string>('');
 
   // Bank & Terms
   const [bankName, setBankName] = useState('');
@@ -111,6 +125,9 @@ export default function SettingsPage() {
         .then((data) => {
           if (data.success && Array.isArray(data.employees)) {
             setEmployeeAccounts(data.employees);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('showhouse_employee_cache', JSON.stringify(data.employees));
+            }
           }
         })
         .catch(() => {})
@@ -118,10 +135,113 @@ export default function SettingsPage() {
     }
   }, [mounted, isEmployee]);
 
+  // Monthly Sales Backup computations
+  const availableMonths = React.useMemo(() => {
+    const all = challans && challans.length > 0 ? challans : store.getChallans();
+    const set = new Set<string>();
+    all.forEach((c) => {
+      if (c.challan_date) {
+        const d = new Date(c.challan_date);
+        if (!isNaN(d.getTime())) {
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          set.add(key);
+        }
+      }
+    });
+    return Array.from(set).sort().reverse();
+  }, [challans]);
+
+  useEffect(() => {
+    if (availableMonths.length > 0 && !selectedBackupMonth) {
+      setSelectedBackupMonth(availableMonths[0]);
+    }
+  }, [availableMonths, selectedBackupMonth]);
+
+  const monthChallans = React.useMemo(() => {
+    const all = challans && challans.length > 0 ? challans : store.getChallans();
+    if (!selectedBackupMonth || selectedBackupMonth === 'all') return all;
+    return all.filter((c) => c.challan_date && c.challan_date.startsWith(selectedBackupMonth));
+  }, [challans, selectedBackupMonth]);
+
+  const monthTotalQty = React.useMemo(() => {
+    return monthChallans.reduce((s, c) => s + (Number(c.total_quantity) || 0), 0);
+  }, [monthChallans]);
+
+  const monthTotalAmt = React.useMemo(() => {
+    return monthChallans.reduce((s, c) => s + (Number(c.total_amount) || 0), 0);
+  }, [monthChallans]);
+
+  const handleDownloadMonthlyExcel = () => {
+    if (monthChallans.length === 0) {
+      showToast('No challans found for the selected month to export', 'error');
+      return;
+    }
+    const label = formatMonthYearLabel(selectedBackupMonth);
+    exportMonthSalesToExcel({
+      challans: monthChallans,
+      monthLabel: label,
+      profile,
+    });
+    showToast(`Exported ${label} sales report to Excel!`, 'success');
+  };
+
   const handleUpdateAccount = (idx: number, field: keyof EmployeeAccount, value: any) => {
     const updated = [...employeeAccounts];
     updated[idx] = { ...updated[idx], [field]: value };
     setEmployeeAccounts(updated);
+  };
+
+  const handleAddStaffRow = () => {
+    const nextIdx = employeeAccounts.length + 1;
+    const newAcc: EmployeeAccount = {
+      id: `emp_${Date.now()}_${nextIdx}`,
+      name: `Staff ${nextIdx}`,
+      username: `staff${nextIdx}`,
+      phone: '',
+      password: `staff${nextIdx}@sh26`,
+      role: 'employee',
+      is_active: true,
+      po_prefix: `PO ST${nextIdx}`,
+    };
+    const updated = [...employeeAccounts, newAcc];
+    setEmployeeAccounts(updated);
+    showToast(`Added row for Staff ${nextIdx}. Click "Save Logins" when done!`);
+  };
+
+  const handleDeleteAccount = (acc: EmployeeAccount) => {
+    if (employeeAccounts.length <= 1) {
+      showToast('At least one staff member must remain active', 'error');
+      return;
+    }
+    setDeleteAccountTarget(acc);
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!deleteAccountTarget) return;
+    const targetName = deleteAccountTarget.name;
+    const updated = employeeAccounts.filter((a) => a.id !== deleteAccountTarget.id);
+    setEmployeeAccounts(updated);
+    setDeleteAccountTarget(null);
+
+    try {
+      await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: updated }),
+      });
+      const activeNames = updated
+        .filter((a) => a.is_active !== false)
+        .map((a) => a.name.trim())
+        .filter(Boolean);
+      setEmployees(activeNames);
+      saveProfile({ employees: activeNames });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('showhouse_employee_cache', JSON.stringify(updated));
+      }
+      showToast(`Removed staff member "${targetName}"`, 'success');
+    } catch {
+      showToast('Error removing staff member', 'error');
+    }
   };
 
   const handleSaveAccounts = async () => {
@@ -134,7 +254,16 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('All 10 employee logins saved successfully!', 'success');
+        const activeNames = employeeAccounts
+          .filter((a) => a.is_active !== false)
+          .map((a) => a.name.trim())
+          .filter(Boolean);
+        setEmployees(activeNames);
+        saveProfile({ employees: activeNames });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('showhouse_employee_cache', JSON.stringify(employeeAccounts));
+        }
+        showToast('All employee logins & contact numbers saved successfully!', 'success');
       } else {
         showToast(data.error || 'Failed to save employee accounts', 'error');
       }
@@ -146,33 +275,10 @@ export default function SettingsPage() {
   };
 
   const handleCopyCredentials = (acc: EmployeeAccount) => {
-    const text = `Showhouse Staff Login:\nStaff: ${acc.name}\nPO Series: ${acc.po_prefix || 'PO'}\nUsername: ${acc.username}\nPassword: ${acc.password}\nPortal Link: ${window.location.origin}/login`;
+    const phoneLine = acc.phone ? `\nContact: ${acc.phone}` : '';
+    const text = `Showhouse Staff Login:\nStaff: ${acc.name}${phoneLine}\nPO Series: ${acc.po_prefix || 'PO'}\nUsername: ${acc.username}\nPassword: ${acc.password}\nPortal Link: ${window.location.origin}/login`;
     navigator.clipboard.writeText(text);
     showToast(`Copied login details for ${acc.name}!`, 'success');
-  };
-
-  const handleAddEmployee = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const name = newEmployeeName.trim();
-    if (!name) return;
-    if (employees.some((emp) => emp.toLowerCase() === name.toLowerCase())) {
-      showToast(`${name} is already in the employee list`, 'error');
-      return;
-    }
-    const updated = [...employees, name];
-    setEmployees(updated);
-    setNewEmployeeName('');
-    showToast(`Added ${name} to employee list`);
-  };
-
-  const handleRemoveEmployee = (nameToRemove: string) => {
-    if (employees.length <= 1) {
-      showToast('At least one employee must remain in the list', 'error');
-      return;
-    }
-    const updated = employees.filter((emp) => emp !== nameToRemove);
-    setEmployees(updated);
-    showToast(`Removed ${nameToRemove}`);
   };
 
   if (!mounted || isLoading) {
@@ -205,10 +311,18 @@ export default function SettingsPage() {
     );
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
+      const activeNames =
+        employeeAccounts.length > 0
+          ? employeeAccounts
+              .filter((a) => a.is_active !== false)
+              .map((a) => a.name.trim())
+              .filter(Boolean)
+          : employees.filter(Boolean);
+
       saveProfile({
         business_name: businessName,
         tagline,
@@ -220,13 +334,25 @@ export default function SettingsPage() {
         state_code: stateCode,
         challan_prefix: challanPrefix,
         challan_next_number: Number(challanNextNumber) || 1,
-        employees: employees.filter(Boolean),
+        employees: activeNames,
         bank_name: bankName,
         bank_account: bankAccount,
         bank_ifsc: bankIfsc,
         bank_branch: bankBranch,
         terms_conditions: terms,
       });
+
+      if (employeeAccounts.length > 0) {
+        await fetch('/api/employees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employees: employeeAccounts }),
+        });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('showhouse_employee_cache', JSON.stringify(employeeAccounts));
+        }
+      }
+
       showToast('Settings and business profile saved successfully');
     } catch (err) {
       showToast('Failed to save settings', 'error');
@@ -471,11 +597,22 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between pb-2 border-b border-surface-100">
             <div className="flex items-center gap-2 text-primary-600 font-bold text-base">
               <Users size={20} />
-              <span>Staff Members & Employee Logins (10 Isolated Accounts)</span>
+              <span>Staff Accounts & Employee Logins</span>
             </div>
-            <span className="text-xs bg-primary-50 text-primary-700 px-2.5 py-0.5 rounded-full font-semibold border border-primary-200">
-              {employeeAccounts.length > 0 ? employeeAccounts.length : employees.length} Staff Accounts
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-primary-50 text-primary-700 px-2.5 py-0.5 rounded-full font-semibold border border-primary-200">
+                {employeeAccounts.length} Staff Members
+              </span>
+              <button
+                type="button"
+                disabled={savingAccounts}
+                onClick={handleSaveAccounts}
+                className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+              >
+                <Save size={13} />
+                <span>{savingAccounts ? 'Saving...' : 'Save Logins'}</span>
+              </button>
+            </div>
           </div>
 
           <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs space-y-1">
@@ -488,101 +625,27 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {/* Current Employees Badges */}
-          <div className="space-y-2">
-            <label className="label text-xs">Active Staff for &quot;Billed By&quot; Dropdown</label>
-            <div className="flex flex-wrap items-center gap-2">
-              {employees.map((emp) => (
-                <div
-                  key={emp}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-200 text-xs font-semibold text-surface-800 shadow-2xs"
-                >
-                  <div className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-[10px]">
-                    👤
-                  </div>
-                  <span>{emp}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveEmployee(emp)}
-                    title={`Remove ${emp}`}
-                    className="p-0.5 text-surface-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Add New Employee to Selector Form */}
-          <div className="pt-2">
-            <label className="label text-xs">Add New Staff / Employee to Selector</label>
-            <div className="flex items-center gap-2 max-w-md">
-              <input
-                type="text"
-                value={newEmployeeName}
-                onChange={(e) => setNewEmployeeName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddEmployee();
-                  }
-                }}
-                placeholder="e.g. Ramesh Patel"
-                className="input text-xs flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => handleAddEmployee()}
-                className="btn-primary text-xs py-2 px-3.5 whitespace-nowrap flex items-center gap-1.5 shrink-0"
-              >
-                <Plus size={15} />
-                <span>Add to List</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 10 Employee Logins Table */}
-          <div className="pt-4 border-t border-surface-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold text-surface-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <Key size={14} className="text-primary-600" />
-                  <span>10 Staff Login Accounts & Passwords</span>
-                </h3>
-                <p className="text-[11px] text-surface-500">
-                  Aap in 10 accounts ke username aur password yaha se dekh ya badal sakte hain.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={savingAccounts}
-                onClick={handleSaveAccounts}
-                className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-xs disabled:opacity-50"
-              >
-                <Save size={13} />
-                <span>{savingAccounts ? 'Saving...' : 'Save Logins'}</span>
-              </button>
-            </div>
-
-            <div className="overflow-x-auto border border-surface-200 rounded-lg">
+          {/* Unified Staff Accounts Table */}
+          <div className="space-y-3 pt-1">
+            <div className="overflow-x-auto border border-surface-200 rounded-lg shadow-2xs">
               <table className="w-full text-xs text-left">
-                <thead className="bg-surface-50 text-[10px] font-bold text-surface-500 uppercase border-b border-surface-200">
+                <thead className="bg-surface-50 text-[10px] font-bold text-surface-600 uppercase border-b border-surface-200">
                   <tr>
-                    <th className="px-3 py-2 w-10">#</th>
-                    <th className="px-3 py-2">Staff Name</th>
-                    <th className="px-3 py-2">PO Prefix</th>
-                    <th className="px-3 py-2">Username</th>
-                    <th className="px-3 py-2">Password</th>
-                    <th className="px-3 py-2 text-center w-20">Status</th>
-                    <th className="px-3 py-2 text-right w-24">Actions</th>
+                    <th className="px-3 py-2.5 w-10">#</th>
+                    <th className="px-3 py-2.5 min-w-[130px]">Staff Name</th>
+                    <th className="px-3 py-2.5 min-w-[140px]">Contact Number</th>
+                    <th className="px-3 py-2.5 min-w-[100px]">PO Prefix</th>
+                    <th className="px-3 py-2.5 min-w-[110px]">Username</th>
+                    <th className="px-3 py-2.5 min-w-[140px]">Password</th>
+                    <th className="px-3 py-2.5 text-center w-20">Status</th>
+                    <th className="px-3 py-2.5 text-right min-w-[120px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-100 bg-white">
                   {employeeAccounts.map((acc, idx) => {
                     const isVisible = showPasswords[acc.id];
                     return (
-                      <tr key={acc.id} className="hover:bg-surface-50/60 transition-colors">
+                      <tr key={acc.id} className="hover:bg-surface-50/70 transition-colors">
                         <td className="px-3 py-2 text-surface-400 font-mono font-bold">
                           {idx + 1}
                         </td>
@@ -591,7 +654,18 @@ export default function SettingsPage() {
                             type="text"
                             value={acc.name}
                             onChange={(e) => handleUpdateAccount(idx, 'name', e.target.value)}
-                            className="input text-xs py-1 px-2 font-semibold text-surface-900 w-28 sm:w-36"
+                            placeholder="Staff Name"
+                            className="input text-xs py-1 px-2 font-semibold text-surface-900 w-full"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={acc.phone || ''}
+                            placeholder="e.g. +91 98765 43210"
+                            onChange={(e) => handleUpdateAccount(idx, 'phone', e.target.value)}
+                            className="input text-xs py-1 px-2 font-mono text-surface-800 w-full bg-surface-50/60"
+                            title="Employee contact number (prints on delivery challans and quotes)"
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -602,8 +676,8 @@ export default function SettingsPage() {
                             onChange={(e) =>
                               handleUpdateAccount(idx, 'po_prefix', e.target.value.toUpperCase())
                             }
-                            className="input text-xs py-1 px-2 font-mono font-bold text-amber-700 w-24 sm:w-28 bg-surface-50"
-                            title="Staff PO series prefix (e.g. PO VS 001, PO VS 002...)"
+                            className="input text-xs py-1 px-2 font-mono font-bold text-amber-700 w-full bg-surface-50"
+                            title="Staff PO series prefix (e.g. PO VS 001, PO BH 001...)"
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -611,18 +685,24 @@ export default function SettingsPage() {
                             type="text"
                             value={acc.username}
                             onChange={(e) =>
-                              handleUpdateAccount(idx, 'username', e.target.value.toLowerCase().trim())
+                              handleUpdateAccount(
+                                idx,
+                                'username',
+                                e.target.value.toLowerCase().trim()
+                              )
                             }
-                            className="input text-xs py-1 px-2 font-mono text-primary-700 w-24 sm:w-28 bg-surface-50"
+                            className="input text-xs py-1 px-2 font-mono text-primary-700 w-full bg-surface-50"
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <div className="relative inline-flex items-center">
+                          <div className="relative inline-flex items-center w-full">
                             <input
                               type={isVisible ? 'text' : 'password'}
                               value={acc.password}
-                              onChange={(e) => handleUpdateAccount(idx, 'password', e.target.value)}
-                              className="input text-xs py-1 pl-2 pr-7 font-mono w-32 sm:w-40"
+                              onChange={(e) =>
+                                handleUpdateAccount(idx, 'password', e.target.value)
+                              }
+                              className="input text-xs py-1 pl-2 pr-7 font-mono w-full"
                             />
                             <button
                               type="button"
@@ -642,33 +722,62 @@ export default function SettingsPage() {
                         <td className="px-3 py-2 text-center">
                           <button
                             type="button"
-                            onClick={() => handleUpdateAccount(idx, 'is_active', !acc.is_active)}
+                            onClick={() =>
+                              handleUpdateAccount(idx, 'is_active', !acc.is_active)
+                            }
                             className={cn(
-                              'text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer border',
+                              'text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer border transition-colors',
                               acc.is_active !== false
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-surface-100 text-surface-500 border-surface-200'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-surface-100 text-surface-500 border-surface-200 hover:bg-surface-200'
                             )}
                           >
                             {acc.is_active !== false ? 'Active' : 'Disabled'}
                           </button>
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleCopyCredentials(acc)}
-                            className="p-1 rounded text-surface-500 hover:text-primary-600 hover:bg-surface-100 inline-flex items-center gap-1 text-[11px] font-medium"
-                            title="Copy login details to send to staff"
-                          >
-                            <Copy size={13} />
-                            <span>Copy</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCredentials(acc)}
+                              className="p-1 rounded text-surface-500 hover:text-primary-600 hover:bg-surface-100 inline-flex items-center gap-1 text-[11px] font-medium"
+                              title="Copy login details to send to staff"
+                            >
+                              <Copy size={13} />
+                              <span className="hidden sm:inline">Copy</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAccount(acc)}
+                              className="p-1 rounded text-surface-400 hover:text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer"
+                              title={`Remove ${acc.name} from staff list`}
+                            >
+                              <Trash2 size={13} />
+                              <span className="hidden sm:inline">Remove</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Bottom Row: + Add Staff Member & Helpful Note */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleAddStaffRow}
+                className="btn-secondary text-xs py-1.5 px-3 inline-flex items-center gap-1.5 self-start cursor-pointer hover:border-primary-400"
+              >
+                <Plus size={14} className="text-primary-600" />
+                <span>+ Add Staff Member</span>
+              </button>
+
+              <p className="text-[11px] text-surface-500">
+                Active staff automatically populate the <b>&quot;Billed By&quot;</b> dropdown when generating new challans.
+              </p>
             </div>
           </div>
         </div>
@@ -737,6 +846,72 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Monthly Sales Excel Backup & Audit Card */}
+        <div className="card p-6 space-y-4 border-2 border-emerald-500/25 bg-gradient-to-br from-white via-white to-emerald-50/30 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-surface-100">
+            <div className="flex items-center gap-2 text-emerald-800 font-bold text-base">
+              <FileSpreadsheet size={20} className="text-emerald-600" />
+              <span>Monthly Sales Backup & Audit (Excel .xlsx)</span>
+            </div>
+            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/80 border border-emerald-300 px-2.5 py-0.5 rounded-full self-start sm:self-auto">
+              Executive Sales Report
+            </span>
+          </div>
+
+          <p className="text-xs text-surface-600 leading-relaxed">
+            Download complete monthly sales reports in Microsoft Excel (.xlsx) format for showroom accounting and GST audits. Contains two formatted sheets:
+            <br />
+            <b>1. Sales & Taxes Summary:</b> S.No, Challan #, PI #, Staff PO #, Billed By, Customer, Delivery Site, Items, Subtotal, Transportation, Loading, CGST 9%, SGST 9%, Addl 9%, and Grand Totals.
+            <br />
+            <b>2. Itemized Items:</b> Complete product-level details with brand, finish, thickness, and quantity.
+          </p>
+
+          <div className="p-4 bg-white rounded-lg border border-emerald-200/70 shadow-2xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div className="space-y-1.5 flex-1 max-w-sm">
+                <label className="label text-[11px] font-bold text-surface-700 uppercase tracking-wide">
+                  Select Month to Download
+                </label>
+                <select
+                  value={selectedBackupMonth}
+                  onChange={(e) => setSelectedBackupMonth(e.target.value)}
+                  className="input text-xs py-2 font-medium bg-surface-50"
+                >
+                  {availableMonths.map((mKey) => (
+                    <option key={mKey} value={mKey}>
+                      {formatMonthYearLabel(mKey)}
+                    </option>
+                  ))}
+                  <option value="all">All Dates / Complete Sales Backup</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <div className="text-[11px] text-surface-400 font-semibold uppercase">
+                    {formatMonthYearLabel(selectedBackupMonth)}
+                  </div>
+                  <div className="text-xs font-bold text-surface-900">
+                    {monthChallans.length} Orders • {monthTotalQty} Sheets/Units
+                  </div>
+                  <div className="text-xs font-mono font-black text-emerald-700">
+                    ₹{monthTotalAmt.toLocaleString('en-IN')}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadMonthlyExcel}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-lg shadow-xs hover:shadow transition-all inline-flex items-center gap-2 shrink-0 cursor-pointer"
+                >
+                  <Download size={15} />
+                  <span>Download Month Sales (.xlsx)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Data Backup & Restore */}
         <div className="card p-6 space-y-4">
           <div className="flex items-center gap-2 text-primary-600 font-bold text-base pb-2 border-b border-surface-100">
@@ -792,6 +967,16 @@ export default function SettingsPage() {
           </button>
         </div>
       </form>
+
+      <ConfirmDialog
+        isOpen={Boolean(deleteAccountTarget)}
+        title="Remove Staff Account?"
+        message={`Are you sure you want to remove "${deleteAccountTarget?.name || 'this staff member'}"? They will no longer be able to log in or create challans under their account.`}
+        variant="danger"
+        confirmLabel="Remove Staff"
+        onConfirm={confirmDeleteAccount}
+        onCancel={() => setDeleteAccountTarget(null)}
+      />
 
       <ConfirmDialog
         isOpen={showResetConfirm}

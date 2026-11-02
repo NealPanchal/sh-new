@@ -10,6 +10,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     id: 'emp_1',
     username: 'vrushank',
     name: 'Vrushank',
+    phone: '+91 81692 14522',
     password: 'vrushank@sh26',
     role: 'employee',
     is_active: true,
@@ -19,6 +20,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     id: 'emp_2',
     username: 'bhavin',
     name: 'Bhavin',
+    phone: '+91 93248 69306',
     password: 'bhavin@sh26',
     role: 'employee',
     is_active: true,
@@ -28,6 +30,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
     id: 'emp_3',
     username: 'neal',
     name: 'Neal',
+    phone: '+91 93248 69306',
     password: 'neal@sh26',
     role: 'employee',
     is_active: true,
@@ -35,66 +38,73 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
   },
   {
     id: 'emp_4',
+    username: 'rishi',
+    name: 'Rishi',
+    phone: '',
+    password: 'rishi@sh26',
+    role: 'employee',
+    is_active: true,
+    po_prefix: 'PO RS',
+  },
+  {
+    id: 'emp_5',
+    username: 'deepak',
+    name: 'Deepak',
+    phone: '',
+    password: 'deepak@sh26',
+    role: 'employee',
+    is_active: true,
+    po_prefix: 'PO DP',
+  },
+  {
+    id: 'emp_6',
+    username: 'umang',
+    name: 'Umang',
+    phone: '',
+    password: 'umang@sh26',
+    role: 'employee',
+    is_active: true,
+    po_prefix: 'PO UM',
+  },
+  {
+    id: 'emp_7',
+    username: 'kenil',
+    name: 'Kenil',
+    phone: '',
+    password: 'kenil@sh26',
+    role: 'employee',
+    is_active: true,
+    po_prefix: 'PO KN',
+  },
+  {
+    id: 'emp_8',
+    username: 'ronaksir',
+    name: 'Ronak sir',
+    phone: '',
+    password: 'ronak@sh26',
+    role: 'employee',
+    is_active: true,
+    po_prefix: 'PO RN',
+  },
+  {
+    id: 'emp_9',
     username: 'staff1',
     name: 'Staff 1',
+    phone: '',
     password: 'staff1@sh26',
     role: 'employee',
     is_active: true,
     po_prefix: 'PO ST1',
   },
   {
-    id: 'emp_5',
+    id: 'emp_10',
     username: 'staff2',
     name: 'Staff 2',
+    phone: '',
     password: 'staff2@sh26',
     role: 'employee',
     is_active: true,
     po_prefix: 'PO ST2',
-  },
-  {
-    id: 'emp_6',
-    username: 'staff3',
-    name: 'Staff 3',
-    password: 'staff3@sh26',
-    role: 'employee',
-    is_active: true,
-    po_prefix: 'PO ST3',
-  },
-  {
-    id: 'emp_7',
-    username: 'staff4',
-    name: 'Staff 4',
-    password: 'staff4@sh26',
-    role: 'employee',
-    is_active: true,
-    po_prefix: 'PO ST4',
-  },
-  {
-    id: 'emp_8',
-    username: 'staff5',
-    name: 'Staff 5',
-    password: 'staff5@sh26',
-    role: 'employee',
-    is_active: true,
-    po_prefix: 'PO ST5',
-  },
-  {
-    id: 'emp_9',
-    username: 'staff6',
-    name: 'Staff 6',
-    password: 'staff6@sh26',
-    role: 'employee',
-    is_active: true,
-    po_prefix: 'PO ST6',
-  },
-  {
-    id: 'emp_10',
-    username: 'staff7',
-    name: 'Staff 7',
-    password: 'staff7@sh26',
-    role: 'employee',
-    is_active: true,
-    po_prefix: 'PO ST7',
   },
 ];
 
@@ -143,3 +153,16 @@ export function findEmployeeByUsername(username: string): EmployeeAccount | unde
   return accounts.find((a) => a.username.trim().toLowerCase() === clean);
 }
 
+export function findEmployeeByName(name: string): EmployeeAccount | undefined {
+  const accounts = getEmployeeAccounts();
+  const clean = name.trim().toLowerCase();
+  return accounts.find(
+    (a) => a.name.trim().toLowerCase() === clean || a.username.trim().toLowerCase() === clean
+  );
+}
+
+export function getEmployeePhone(nameOrUsername?: string | null): string | undefined {
+  if (!nameOrUsername) return undefined;
+  const emp = findEmployeeByName(nameOrUsername);
+  return emp?.phone?.trim() || undefined;
+}

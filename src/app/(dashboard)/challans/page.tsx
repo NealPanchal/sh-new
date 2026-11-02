@@ -29,11 +29,13 @@ import {
   Layers,
   Trash2,
   Truck,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
+import { exportMonthSalesToExcel } from '@/lib/excel-export';
 import {
   openWhatsApp,
   generateShareMessage,
@@ -336,6 +338,40 @@ export default function ChallansPage() {
     showToast(`Challan ${num} permanently deleted`, 'success');
   };
 
+  const handleExportExcel = () => {
+    if (challans.length === 0) {
+      showToast('No challans match the current filter to export', 'error');
+      return;
+    }
+
+    let label = 'Sales';
+    if (dateFilter.preset === 'previous_month') {
+      const now = new Date();
+      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      label = prev.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    } else if (dateFilter.preset === 'month') {
+      label = new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    } else if (dateFilter.preset === 'specific_month' && dateFilter.selectedMonth) {
+      const [y, m] = dateFilter.selectedMonth.split('-').map(Number);
+      if (y && m) {
+        label = new Date(y, m - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+      }
+    } else if (dateFilter.preset === 'today') {
+      label = `Today_${new Date().toISOString().slice(0, 10)}`;
+    } else if (dateFilter.preset === 'custom' && dateFilter.fromDate && dateFilter.toDate) {
+      label = `${dateFilter.fromDate}_to_${dateFilter.toDate}`;
+    } else if (dateFilter.preset === 'all') {
+      label = 'All_Dates';
+    }
+
+    exportMonthSalesToExcel({
+      challans,
+      monthLabel: label,
+      profile,
+    });
+    showToast(`Downloaded ${label} sales Excel (${challans.length} orders)!`, 'success');
+  };
+
   if (!mounted || isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -357,13 +393,26 @@ export default function ChallansPage() {
           </p>
         </div>
 
-        <Link
-          href="/challans/new"
-          className="btn-primary py-2 px-3.5 text-xs font-semibold shadow-xs flex items-center gap-1.5"
-        >
-          <Plus size={16} />
-          <span>New Challan</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2 px-3 sm:px-3.5 rounded-lg shadow-xs hover:shadow transition-all inline-flex items-center gap-1.5 cursor-pointer"
+            title="Download sales report in Excel (.xlsx) format"
+          >
+            <FileSpreadsheet size={15} />
+            <span className="hidden sm:inline">Export Month Excel</span>
+            <span className="sm:hidden">Excel</span>
+          </button>
+
+          <Link
+            href="/challans/new"
+            className="btn-primary py-2 px-3.5 text-xs font-semibold shadow-xs flex items-center gap-1.5"
+          >
+            <Plus size={16} />
+            <span>New Challan</span>
+          </Link>
+        </div>
       </div>
 
       {/* Search Bar, Segregation Filters & View Mode Tabs */}
