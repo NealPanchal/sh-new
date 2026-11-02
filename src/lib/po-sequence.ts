@@ -105,3 +105,4 @@ export function formatStaffPONumber(prefix: string, seq: number): string {
   const padded = String(seq).padStart(3, '0');
   return `${cleanPrefix} ${padded}`;
 }
+

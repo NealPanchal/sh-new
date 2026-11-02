@@ -241,5 +241,8 @@ export interface DashboardStats {
   totalChallans: number;
   challansToday: number;
   challansThisMonth: number;
+  challansLastMonth?: number;
+  thisMonthName?: string;
+  lastMonthName?: string;
   recentChallans: Challan[];
 }

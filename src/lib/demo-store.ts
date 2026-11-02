@@ -1066,17 +1066,32 @@ export function getActivityLog(challanId: string): ChallanActivityLog[] {
 export function getDashboardStats(): DashboardStats {
   const today = getTodayISO();
   const thisMonthStart = today.slice(0, 7); // YYYY-MM
+  const now = new Date();
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthStart = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
-  const activeChallans = state.challans.filter((c) => c.status !== 'void');
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const thisMonthName = monthNames[now.getMonth()];
+  const lastMonthName = monthNames[prevDate.getMonth()];
+
+  const activeChallans = state.challans.filter((c) => c.status !== 'void' && !c.is_deleted);
 
   return {
     totalChallans: activeChallans.length,
     challansToday: activeChallans.filter((c) => c.challan_date === today).length,
     challansThisMonth: activeChallans.filter((c) =>
-      c.challan_date.startsWith(thisMonthStart)
+      c.challan_date && c.challan_date.startsWith(thisMonthStart)
     ).length,
+    challansLastMonth: activeChallans.filter((c) =>
+      c.challan_date && c.challan_date.startsWith(prevMonthStart)
+    ).length,
+    thisMonthName,
+    lastMonthName,
     recentChallans: activeChallans
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
       .slice(0, 10),
   };
 }

@@ -62,6 +62,34 @@ export default function DeliveryBillsPage() {
 
   React.useEffect(() => {
     setMounted(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const filterParam = params.get('filter');
+      const monthParam = params.get('month');
+      if (monthParam) {
+        setDateFilter({
+          preset: 'specific_month',
+          selectedMonth: monthParam,
+          singleDate: '',
+          fromDate: '',
+          toDate: '',
+        });
+      } else if (filterParam === 'previous_month' || filterParam === 'last_month') {
+        setDateFilter({
+          preset: 'previous_month',
+          singleDate: '',
+          fromDate: '',
+          toDate: '',
+        });
+      } else if (filterParam === 'month' || filterParam === 'this_month') {
+        setDateFilter({
+          preset: 'month',
+          singleDate: '',
+          fromDate: '',
+          toDate: '',
+        });
+      }
+    }
   }, []);
 
   const allChallans = useMemo(() => {
@@ -339,6 +367,7 @@ export default function DeliveryBillsPage() {
           <DateFilter
             value={dateFilter}
             onChange={setDateFilter}
+            availableChallans={allChallans}
             filteredCount={filteredBills.length}
             totalCount={allChallans.length}
           />

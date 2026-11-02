@@ -151,34 +151,60 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Compact Stat Cards (Zero Oversized Whitespace) */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs">
+      {/* Compact Stat Cards (Clickable Direct Filters) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+        <Link
+          href="/challans"
+          className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs hover:border-surface-400 transition-colors block"
+          title="View all challans"
+        >
           <div className="text-[10px] sm:text-xs font-semibold text-surface-500 uppercase tracking-wider truncate">
             Total Challans
           </div>
           <div className="text-xl sm:text-3xl font-extrabold text-surface-900 mt-1">
             {stats.totalChallans}
           </div>
-        </div>
+        </Link>
 
-        <div className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs">
+        <Link
+          href="/challans?filter=today"
+          className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs hover:border-emerald-400 transition-colors block"
+          title="View today's challans"
+        >
           <div className="text-[10px] sm:text-xs font-semibold text-surface-500 uppercase tracking-wider truncate">
             Today
           </div>
           <div className="text-xl sm:text-3xl font-extrabold text-emerald-600 mt-1">
             {stats.challansToday}
           </div>
-        </div>
+        </Link>
 
-        <div className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs">
+        <Link
+          href="/challans?filter=month"
+          className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs hover:border-primary-400 transition-colors block"
+          title={`View this month (${stats.thisMonthName || 'Current'}) challans`}
+        >
           <div className="text-[10px] sm:text-xs font-semibold text-surface-500 uppercase tracking-wider truncate">
-            This Month
+            This Month ({stats.thisMonthName ? stats.thisMonthName.slice(0, 3) : 'Nov'})
           </div>
           <div className="text-xl sm:text-3xl font-extrabold text-primary-600 mt-1">
             {stats.challansThisMonth}
           </div>
-        </div>
+        </Link>
+
+        <Link
+          href="/challans?filter=previous_month"
+          className="card p-3 sm:p-4 bg-blue-50/40 border border-blue-200 shadow-xs hover:border-blue-400 transition-colors block"
+          title={`View previous month (${stats.lastMonthName || 'October'}) challans`}
+        >
+          <div className="text-[10px] sm:text-xs font-bold text-blue-800 uppercase tracking-wider truncate flex items-center justify-between">
+            <span>Last Month ({stats.lastMonthName ? stats.lastMonthName.slice(0, 3) : 'Oct'})</span>
+            <span className="text-[9px] bg-blue-100 text-blue-700 px-1 py-0.2 rounded font-bold">Prev</span>
+          </div>
+          <div className="text-xl sm:text-3xl font-extrabold text-blue-700 mt-1">
+            {stats.challansLastMonth ?? 0}
+          </div>
+        </Link>
       </div>
 
       {/* Fast Navigation Shortcuts */}
