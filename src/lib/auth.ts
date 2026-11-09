@@ -3,6 +3,8 @@
  * All actual credential checks are strictly performed server-side via /api/auth/login
  */
 
+import { UserRole } from '@/types';
+
 const AUTH_STORAGE_KEY = 'showhouse_admin_authenticated';
 const AUTH_TOKEN_KEY = 'showhouse_admin_token';
 
@@ -12,7 +14,7 @@ export interface LoginResult {
   user?: {
     username: string;
     name: string;
-    role: 'admin' | 'employee';
+    role: UserRole;
   };
 }
 
@@ -120,7 +122,7 @@ export function isAdminAuthenticated(): boolean {
   }
 }
 
-export function getCurrentUser(): { username: string; name: string; role: 'admin' | 'employee' } | null {
+export function getCurrentUser(): { username: string; name: string; role: UserRole } | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -129,8 +131,8 @@ export function getCurrentUser(): { username: string; name: string; role: 'admin
     if (!session?.authenticated) return null;
     return {
       username: session.username || 'adminsh',
-      name: session.name || (session.username === 'adminsh' ? 'Admin SH' : session.username),
-      role: session.role || 'admin',
+      name: session.name || (session.username === 'adminsh' ? 'Admin BO' : session.username),
+      role: (session.role as UserRole) || 'admin',
     };
   } catch {
     return null;
@@ -142,9 +144,24 @@ export function isEmployee(): boolean {
   return u?.role === 'employee';
 }
 
+export function isAccountant(): boolean {
+  const u = getCurrentUser();
+  return u?.role === 'accountant';
+}
+
 export function isAdmin(): boolean {
   const u = getCurrentUser();
   return u?.role === 'admin' || !u; // default to true if legacy session
+}
+
+export function canManageAccounting(): boolean {
+  const u = getCurrentUser();
+  return u?.role === 'admin' || u?.role === 'accountant';
+}
+
+export function canManageTally(): boolean {
+  const u = getCurrentUser();
+  return u?.role === 'admin';
 }
 
 /**

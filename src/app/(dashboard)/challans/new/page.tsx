@@ -20,10 +20,14 @@ import {
   Phone,
   MapPin,
   CheckCircle2,
+  Sparkles,
+  AlertTriangle,
+  Tag,
+  Percent,
 } from 'lucide-react';
-import { getTodayISO, cn } from '@/lib/utils';
+import { getTodayISO, cn, formatCurrency, formatDate } from '@/lib/utils';
 import { UNIT_OPTIONS } from '@/lib/validations';
-import { ChallanItemFormData, UnitType, Customer, Product } from '@/types';
+import { ChallanItemFormData, UnitType, Customer, Product, CustomerSite, CustomerCreditStatus, Challan } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
 import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
@@ -37,6 +41,9 @@ const emptyItem = (): ChallanItemFormData => ({
   unit: 'sheets',
   quantity: '',
   rate: '',
+  discount_type: 'percent',
+  discount_value: '',
+  discount_amount: '',
   amount: '',
   length: '',
   width: '',
@@ -79,8 +86,23 @@ function CreateChallanContent() {
   const [createdBy, setCreatedBy] = useState('');
   const [showExtraDetails, setShowExtraDetails] = useState(false);
 
+  // Site Management State
+  const [availableSites, setAvailableSites] = useState<CustomerSite[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState('');
+  const [selectedSiteName, setSelectedSiteName] = useState('');
+
+  // Credit Control & 45-Day Block State
+  const [creditStatus, setCreditStatus] = useState<CustomerCreditStatus | null>(null);
+
+  // Intelligent Previous Order Detection
+  const [previousChallan, setPreviousChallan] = useState<Challan | null>(null);
+
   // Items
   const [items, setItems] = useState<ChallanItemFormData[]>([emptyItem()]);
+
+  // Overall Challan Discount State
+  const [overallDiscountType, setOverallDiscountType] = useState<'percent' | 'amount'>('percent');
+  const [overallDiscountValue, setOverallDiscountValue] = useState('');
 
   // Additional Charges & GST
   const [transportCharges, setTransportCharges] = useState('');
@@ -90,6 +112,90 @@ function CreateChallanContent() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  // Fetch sites and credit control whenever customer changes
+  useEffect(() => {
+    const custId =
+      selectedCustomerId ||
+      customers.find(
+        (c) => c.business_name.toLowerCase() === customerName.trim().toLowerCase()
+      )?.id;
+
+    if (custId) {
+      // 1. Fetch Sites
+      fetch(`/api/sites?customerId=${custId}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && d.sites) {
+            setAvailableSites(d.sites);
+          } else {
+            setAvailableSites([]);
+          }
+        })
+        .catch(() => setAvailableSites([]));
+
+      // 2. Fetch Credit Status
+      fetch(`/api/credit-control?customerId=${custId}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && d.status) {
+            setCreditStatus(d.status);
+          } else {
+            setCreditStatus(null);
+          }
+        })
+        .catch(() => setCreditStatus(null));
+    } else {
+      setAvailableSites([]);
+      setCreditStatus(null);
+      setSelectedSiteId('');
+      setSelectedSiteName('');
+    }
+
+    // 3. Find Previous Order for this Customer
+    if (custId || customerName.trim()) {
+      const prev = liveChallans
+        .filter(
+          (c) =>
+            (c.customer_id === custId ||
+              c.customer_name?.toLowerCase() === customerName.trim().toLowerCase()) &&
+            c.status !== 'cancelled' &&
+            c.status !== 'void'
+        )
+        .sort((a, b) => new Date(b.challan_date).getTime() - new Date(a.challan_date).getTime())[0];
+
+      setPreviousChallan(prev || null);
+    } else {
+      setPreviousChallan(null);
+    }
+  }, [selectedCustomerId, customerName, customers, liveChallans]);
+
+  const handleUsePreviousItems = () => {
+    if (!previousChallan || !previousChallan.items || previousChallan.items.length === 0) return;
+    const cloned: ChallanItemFormData[] = previousChallan.items.map((it) => ({
+      product_id: it.product_id || '',
+      item_description: it.item_description,
+      brand: it.brand || '',
+      colour_finish: it.colour_finish || '',
+      size: it.size || '',
+      unit: it.unit || 'sheets',
+      quantity: String(it.quantity || '1'),
+      rate: it.rate != null ? String(it.rate) : '',
+      discount_type: 'percent',
+      discount_value: '',
+      discount_amount: '',
+      amount: it.amount != null ? String(it.amount) : '',
+      length: '',
+      width: '',
+      dimension_unit: 'ft',
+      calculated_sqft: '',
+    }));
+    setItems(cloned);
+    showToast(
+      `Loaded ${cloned.length} item(s) from previous order ${previousChallan.challan_number} with last rates!`,
+      'success'
+    );
+  };
 
   const employeeList: string[] = useMemo(() => {
     if (profile?.employees && profile.employees.length > 0) {
@@ -239,33 +345,35 @@ function CreateChallanContent() {
     const wid = Number(it.width) || 0;
     const dimUnit = it.dimension_unit || 'ft';
 
+    let baseAmount = 0;
     // Dimension calculation for sq.ft & running ft
     if (it.unit === 'sq.ft' && len > 0 && wid > 0) {
       // Area in sq.ft: if in inches (L*W)/144, if in feet L*W
       const sqftPerPc = dimUnit === 'in' ? (len * wid) / 144 : len * wid;
       const totalSqft = Math.round(qty * sqftPerPc * 100) / 100;
       it.calculated_sqft = String(totalSqft);
-      if (rate > 0) {
-        it.amount = String(Math.round(totalSqft * rate));
-      } else {
-        it.amount = '';
-      }
+      baseAmount = rate > 0 ? Math.round(totalSqft * rate) : 0;
     } else if (it.unit === 'running ft' && len > 0) {
       const totalRft = Math.round(qty * len * 100) / 100;
       it.calculated_sqft = String(totalRft);
-      if (rate > 0) {
-        it.amount = String(Math.round(totalRft * rate));
-      } else {
-        it.amount = '';
-      }
+      baseAmount = rate > 0 ? Math.round(totalRft * rate) : 0;
     } else {
       it.calculated_sqft = '';
-      if (rate > 0 && qty > 0) {
-        it.amount = String(Math.round(qty * rate * 100) / 100);
+      baseAmount = rate > 0 && qty > 0 ? Math.round(qty * rate * 100) / 100 : 0;
+    }
+
+    // Apply item level discount
+    const discVal = Number(it.discount_value) || 0;
+    let discAmt = 0;
+    if (discVal > 0 && baseAmount > 0) {
+      if (it.discount_type === 'percent') {
+        discAmt = Math.round(((baseAmount * discVal) / 100) * 100) / 100;
       } else {
-        it.amount = '';
+        discAmt = Math.min(baseAmount, discVal);
       }
     }
+    it.discount_amount = discAmt > 0 ? String(discAmt) : '';
+    it.amount = baseAmount > 0 ? String(Math.max(0, Math.round((baseAmount - discAmt) * 100) / 100)) : '';
 
     newItems[index] = it;
     setItems(newItems);
@@ -282,7 +390,18 @@ function CreateChallanContent() {
 
   const transport = Number(transportCharges) || 0;
   const loading = Number(loadingCharges) || 0;
-  const taxableSubtotal = itemsSubtotal + transport + loading;
+  const grossSubtotal = itemsSubtotal + transport + loading;
+
+  const overallDiscountAmount = useMemo(() => {
+    const val = Number(overallDiscountValue) || 0;
+    if (val <= 0 || grossSubtotal <= 0) return 0;
+    if (overallDiscountType === 'percent') {
+      return Math.round(((grossSubtotal * val) / 100) * 100) / 100;
+    }
+    return Math.min(grossSubtotal, val);
+  }, [grossSubtotal, overallDiscountValue, overallDiscountType]);
+
+  const taxableSubtotal = Math.max(0, grossSubtotal - overallDiscountAmount);
 
   const cgstAmount = useMemo(() => {
     return applyGst && taxableSubtotal > 0
@@ -326,6 +445,15 @@ function CreateChallanContent() {
   const handleSave = async (status: 'final' | 'draft', action?: 'print' | 'whatsapp') => {
     if (!validate()) {
       showToast('Please enter customer name and item quantity', 'error');
+      return;
+    }
+
+    // 45-day overdue / credit limit company-wide guard for employees
+    if (creditStatus?.isBlocked && isEmployee) {
+      showToast(
+        'BILLING RESTRICTED: Customer has invoices overdue for >45 days or credit limit exceeded. Staff cannot create challans.',
+        'error'
+      );
       return;
     }
 
@@ -379,11 +507,15 @@ function CreateChallanContent() {
           customer_phone: finalPhone,
           customer_address: deliveryAddress.trim(),
           delivery_address: deliveryAddress.trim(),
+          site_id: selectedSiteId || undefined,
+          site_name: selectedSiteName || undefined,
           reference_number: referenceNumber.trim() || getNextStaffPONumber(createdBy),
           prepared_by: createdBy.trim() || employeeList[0] || 'Neal',
           created_by: createdBy.trim() || employeeList[0] || 'Neal',
           status,
           total_quantity: totalQuantity,
+          discount_percent: overallDiscountType === 'percent' && Number(overallDiscountValue) > 0 ? Number(overallDiscountValue) : null,
+          discount_amount: overallDiscountAmount > 0 ? overallDiscountAmount : null,
           subtotal_amount: taxableSubtotal > 0 ? taxableSubtotal : null,
           transportation_charges: transport > 0 ? transport : null,
           loading_charges: loading > 0 ? loading : null,
@@ -410,6 +542,8 @@ function CreateChallanContent() {
             unit: it.unit as UnitType,
             quantity: Number(it.quantity),
             rate: it.rate ? Number(it.rate) : null,
+            discount_percent: it.discount_type === 'percent' && Number(it.discount_value) > 0 ? Number(it.discount_value) : null,
+            discount_amount: it.discount_amount ? Number(it.discount_amount) : null,
             amount: it.amount ? Number(it.amount) : null,
             length: it.length ? Number(it.length) : null,
             width: it.width ? Number(it.width) : null,
@@ -586,6 +720,92 @@ function CreateChallanContent() {
             )}
             {errors.customer && <p className="error-text text-xs mt-1">{errors.customer}</p>}
           </div>
+
+          {/* Customer Site Selector (if registered sites exist) */}
+          {availableSites.length > 0 && (
+            <div className="sm:col-span-6">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-zinc-700 flex items-center gap-1">
+                  <Building2 size={13} className="text-primary-600" />
+                  <span>Target Site / Project</span>
+                </label>
+                <span className="text-[10px] text-zinc-400">{availableSites.length} registered</span>
+              </div>
+              <select
+                value={selectedSiteId}
+                onChange={(e) => {
+                  const sid = e.target.value;
+                  setSelectedSiteId(sid);
+                  const match = availableSites.find((s) => s.id === sid);
+                  setSelectedSiteName(match?.name || '');
+                  if (match?.location) {
+                    setDeliveryAddress(match.location);
+                  }
+                }}
+                className="input text-xs font-semibold text-zinc-900 bg-white cursor-pointer h-9 w-full"
+              >
+                <option value="">-- General Account (No specific site) --</option>
+                {availableSites.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.location ? `— ${s.location}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Credit Block Warning Banner */}
+          {creditStatus?.isBlocked && (
+            <div className="sm:col-span-12 p-3 bg-red-50 border border-red-300 rounded-xl text-xs text-red-800 flex items-start gap-2.5">
+              <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-extrabold block text-sm">
+                  ⚠️ BILLING RESTRICTED: Customer Credit Block
+                </span>
+                <p className="mt-0.5">
+                  {creditStatus.isOverdue
+                    ? `Payment overdue for more than 45 days (${creditStatus.daysOverdue} days past due).`
+                    : 'Customer outstanding balance exceeds credit limit.'}{' '}
+                  Total Outstanding: <strong>₹{creditStatus.totalOutstanding.toLocaleString('en-IN')}</strong>.
+                  {isEmployee
+                    ? ' Staff cannot create challans for this customer.'
+                    : ' Admin override authority active.'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Previous Order Suggestion Banner */}
+          {previousChallan && (
+            <div className="sm:col-span-12 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-start gap-2">
+                <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-zinc-900">
+                    Previous Order Detected: {previousChallan.challan_number} ({formatDate(previousChallan.challan_date)})
+                  </span>
+                  <p className="text-[11px] text-zinc-600 mt-0.5">
+                    Last used items:{' '}
+                    <span className="font-medium text-zinc-800">
+                      {(previousChallan.items || [])
+                        .map((it) => `${it.item_description} @ ₹${it.rate || '—'}`)
+                        .slice(0, 3)
+                        .join(', ')}
+                      {(previousChallan.items || []).length > 3 ? '...' : ''}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleUsePreviousItems}
+                className="btn-secondary py-1.5 px-3 text-xs font-bold bg-white text-amber-800 border-amber-300 hover:bg-amber-50 shrink-0 self-start sm:self-auto shadow-2xs"
+              >
+                <Sparkles size={13} className="text-amber-600" />
+                <span>Use Previous Challan Items</span>
+              </button>
+            </div>
+          )}
 
           {/* Challan Date */}
           <div className="sm:col-span-3">
@@ -817,8 +1037,8 @@ function CreateChallanContent() {
                 )}
               </div>
 
-              {/* Quantity, Unit, Rate, and Amount */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pl-7">
+              {/* Quantity, Unit, Rate, Discount, and Amount */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pl-7">
                 <div>
                   <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-1">
                     Qty *
@@ -852,7 +1072,7 @@ function CreateChallanContent() {
 
                 <div>
                   <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-1">
-                    Rate (₹) <span className="text-[9px] text-surface-400 font-normal lowercase">(optional)</span>
+                    Rate (₹)
                   </label>
                   <input
                     type="number"
@@ -865,8 +1085,39 @@ function CreateChallanContent() {
                 </div>
 
                 <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-semibold text-surface-500 uppercase">
+                      Discount
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextType = item.discount_type === 'percent' ? 'amount' : 'percent';
+                        updateItem(idx, 'discount_type', nextType);
+                      }}
+                      className="text-[9px] font-bold text-primary-600 hover:text-primary-800"
+                    >
+                      {item.discount_type === 'percent' ? '%' : '₹'}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      value={item.discount_value || ''}
+                      onChange={(e) => updateItem(idx, 'discount_value', e.target.value)}
+                      placeholder={item.discount_type === 'percent' ? '0%' : '₹0'}
+                      className="input text-xs py-1.5 font-mono pr-5"
+                    />
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-surface-400">
+                      {item.discount_type === 'percent' ? '%' : '₹'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
                   <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-1">
-                    Amount (₹)
+                    Net Amount (₹)
                   </label>
                   <div className="text-xs font-mono font-bold text-surface-800 bg-surface-100/70 border border-surface-200 rounded px-2.5 py-1.5 h-[34px] flex items-center">
                     {item.amount ? `₹${Number(item.amount).toLocaleString('en-IN')}` : '—'}
@@ -983,6 +1234,52 @@ function CreateChallanContent() {
           </div>
         </div>
 
+        {/* Overall Challan Level Discount */}
+        <div className="pt-2 border-t border-surface-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50/30 p-2.5 rounded-lg border border-amber-200/60">
+          <div className="flex items-center gap-2">
+            <Tag size={16} className="text-amber-600" />
+            <div>
+              <span className="text-xs font-bold text-zinc-900 block">Overall Challan Discount</span>
+              <span className="text-[10px] text-zinc-500">Apply cash (₹) or percentage (%) discount on entire challan</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-lg border border-surface-300 bg-white overflow-hidden text-xs">
+              <button
+                type="button"
+                onClick={() => setOverallDiscountType('percent')}
+                className={`px-2.5 py-1 font-bold ${
+                  overallDiscountType === 'percent' ? 'bg-primary-500 text-white' : 'text-zinc-600 hover:bg-zinc-100'
+                }`}
+              >
+                %
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverallDiscountType('amount')}
+                className={`px-2.5 py-1 font-bold ${
+                  overallDiscountType === 'amount' ? 'bg-primary-500 text-white' : 'text-zinc-600 hover:bg-zinc-100'
+                }`}
+              >
+                ₹
+              </button>
+            </div>
+            <input
+              type="number"
+              min="0"
+              value={overallDiscountValue}
+              onChange={(e) => setOverallDiscountValue(e.target.value)}
+              placeholder={overallDiscountType === 'percent' ? 'e.g. 10%' : 'e.g. 1000'}
+              className="input text-xs py-1.5 font-mono w-28 bg-white"
+            />
+            {overallDiscountAmount > 0 && (
+              <span className="text-xs font-bold text-amber-700 font-mono whitespace-nowrap bg-amber-100/80 px-2 py-1 rounded">
+                - ₹{overallDiscountAmount.toLocaleString('en-IN')}
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* GST Toggle Option */}
         <div className="pt-2 border-t border-surface-100">
           <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-surface-50 transition-colors border border-surface-200">
@@ -1049,6 +1346,12 @@ function CreateChallanContent() {
                 <div className="flex justify-between text-surface-600">
                   <span>Loading Charges:</span>
                   <span>+ ₹{loading.toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              {overallDiscountAmount > 0 && (
+                <div className="flex justify-between text-amber-700 font-semibold">
+                  <span>Challan Discount ({overallDiscountType === 'percent' ? `${overallDiscountValue}%` : 'Cash'}):</span>
+                  <span>- ₹{overallDiscountAmount.toLocaleString('en-IN')}</span>
                 </div>
               )}
               <div className="flex justify-between font-semibold text-surface-800 pt-1 border-t border-surface-200">

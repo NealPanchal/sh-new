@@ -272,3 +272,104 @@ export function exportMonthSalesToExcel({
 
   XLSX.writeFile(wb, filename);
 }
+
+export interface ExportLedgerExcelOptions {
+  customerName: string;
+  openingBalance: number;
+  totalDebit: number;
+  totalCredit: number;
+  closingBalance: number;
+  entries: Array<{
+    date: string;
+    particulars: string;
+    reference: string;
+    site_name?: string;
+    debit: number;
+    credit: number;
+    running_balance: number;
+  }>;
+  dateRangeLabel?: string;
+  customFilename?: string;
+}
+
+export function exportCustomerLedgerToExcel(opts: ExportLedgerExcelOptions): void {
+  const wb = XLSX.utils.book_new();
+
+  const data: (string | number)[][] = [
+    ['SHOWHOUSE DECOR STUDIO — OFFICIAL PARTY STATEMENT OF ACCOUNT / LEDGER'],
+    [`Party / Customer: ${opts.customerName}`],
+    [`Period: ${opts.dateRangeLabel || 'All Transactions'}`],
+    [`Generated Date: ${formatDateIndian(new Date().toISOString())}`],
+    [],
+    [
+      'Date',
+      'Particulars',
+      'Site / Project',
+      'Voucher / Ref No.',
+      'Debit (₹)',
+      'Credit (₹)',
+      'Balance (₹)',
+    ],
+    [
+      '',
+      'Opening Balance b/f',
+      '',
+      '',
+      opts.openingBalance > 0 ? opts.openingBalance : 0,
+      opts.openingBalance < 0 ? Math.abs(opts.openingBalance) : 0,
+      opts.openingBalance,
+    ],
+  ];
+
+  opts.entries.forEach((row) => {
+    data.push([
+      formatDateIndian(row.date),
+      row.particulars,
+      row.site_name || 'General',
+      row.reference || '',
+      row.debit > 0 ? row.debit : '',
+      row.credit > 0 ? row.credit : '',
+      row.running_balance,
+    ]);
+  });
+
+  // Total summary footer
+  data.push([]);
+  data.push([
+    'TOTALS',
+    'Summary of Debit / Credit Totals',
+    '',
+    '',
+    opts.totalDebit,
+    opts.totalCredit,
+    opts.closingBalance,
+  ]);
+  data.push([
+    'CLOSING OUTSTANDING',
+    `Net Balance Due: ₹${opts.closingBalance.toLocaleString('en-IN')}`,
+    '',
+    '',
+    '',
+    '',
+    opts.closingBalance,
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [
+    { wch: 14 },
+    { wch: 38 },
+    { wch: 22 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Party Ledger');
+
+  const safeName = opts.customerName.replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = opts.customFilename || `Ledger_${safeName}_${new Date().toISOString().substring(0, 10)}.xlsx`;
+
+  XLSX.writeFile(wb, filename);
+}
+

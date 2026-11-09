@@ -30,9 +30,11 @@ import {
   Trash2,
   Truck,
   FileSpreadsheet,
+  Lock,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, ShareStatus } from '@/types';
+import { getCurrentUser, isEmployee } from '@/lib/auth';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
 import { exportMonthSalesToExcel } from '@/lib/excel-export';
@@ -48,12 +50,28 @@ import { DateFilter, DateFilterState, filterChallansByDate } from '@/components/
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
   const badgeClasses: Record<ChallanStatus, string> = {
-    final: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    pending: 'bg-amber-50 text-amber-700 border-amber-200',
+    approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    out_for_delivery: 'bg-purple-50 text-purple-700 border-purple-200',
     delivered: 'bg-blue-50 text-blue-700 border-blue-200',
+    partially_delivered: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    goods_returned: 'bg-orange-50 text-orange-700 border-orange-200',
+    final: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     draft: 'bg-amber-50 text-amber-700 border-amber-200',
     cancelled: 'bg-red-50 text-red-700 border-red-200',
     void: 'bg-surface-100 text-surface-500 border-surface-200',
   };
+
+  const statusLabels: Partial<Record<ChallanStatus, string>> = {
+    pending: '⏳ Pending',
+    approved: '✓ Approved',
+    out_for_delivery: '📦 Out for Delivery',
+    delivered: '🚚 Delivered',
+    partially_delivered: '🔄 Part. Delivered',
+    goods_returned: '↩ Goods Returned',
+    cancelled: '✕ Cancelled',
+  };
+
   return (
     <span
       className={cn(
@@ -61,7 +79,7 @@ function StatusBadge({ status }: { status: ChallanStatus }) {
         badgeClasses[status] || 'bg-surface-100 text-surface-600 border-surface-200'
       )}
     >
-      {status === 'delivered' ? '🚚 Delivered' : status.charAt(0).toUpperCase() + status.slice(1)}
+      {statusLabels[status] || status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
 }
@@ -140,10 +158,24 @@ export default function ChallansPage() {
     }
   }, []);
 
+  const currentUser = useMemo(() => getCurrentUser(), []);
+  const isEmp = currentUser?.role === 'employee';
+
   const allChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
-    return getChallans();
-  }, [mounted, isLoading, getChallans, dataVersion, liveChallans]);
+    let list = getChallans();
+    if (isEmp && currentUser) {
+      const uName = (currentUser.name || '').toLowerCase();
+      const uUser = (currentUser.username || '').toLowerCase();
+      list = list.filter((c) => {
+        const prep = (c.prepared_by || '').toLowerCase();
+        const cr = (c.created_by || '').toLowerCase();
+        return (uName && (prep.includes(uName) || cr.includes(uName))) ||
+               (uUser && (prep === uUser || cr === uUser));
+      });
+    }
+    return list;
+  }, [mounted, isLoading, getChallans, dataVersion, liveChallans, isEmp, currentUser]);
 
   const uniqueCompanies = useMemo(() => {
     const names = Array.from(new Set(allChallans.map((c) => c.customer_name).filter(Boolean)));
@@ -165,6 +197,16 @@ export default function ChallansPage() {
       search: search || undefined,
       status: statusFilter !== 'all' ? (statusFilter as ChallanStatus) : undefined,
     });
+    if (isEmp && currentUser) {
+      const uName = (currentUser.name || '').toLowerCase();
+      const uUser = (currentUser.username || '').toLowerCase();
+      list = list.filter((c) => {
+        const prep = (c.prepared_by || '').toLowerCase();
+        const cr = (c.created_by || '').toLowerCase();
+        return (uName && (prep.includes(uName) || cr.includes(uName))) ||
+               (uUser && (prep === uUser || cr === uUser));
+      });
+    }
     if (companyFilter !== 'all') {
       list = list.filter((c) => c.customer_name.toLowerCase() === companyFilter.toLowerCase());
     }
@@ -176,7 +218,7 @@ export default function ChallansPage() {
     }
     list = filterChallansByDate(list, dateFilter);
     return list;
-  }, [mounted, isLoading, getChallans, search, statusFilter, companyFilter, creatorFilter, dateFilter, dataVersion, liveChallans]);
+  }, [mounted, isLoading, getChallans, search, statusFilter, companyFilter, creatorFilter, dateFilter, dataVersion, liveChallans, isEmp, currentUser]);
 
   const counts = useMemo(() => {
     return {
@@ -236,6 +278,18 @@ export default function ChallansPage() {
       profile,
     });
     showToast(`Print opened for ${challan.challan_number}`);
+  };
+
+  const handlePrintWithoutRate = (challan: Challan, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!profile) return;
+    printChallanPDF({
+      challan,
+      items: challan.items || [],
+      profile,
+      hideRate: true,
+    });
+    showToast(`Print (No Rate) opened for ${challan.challan_number}`);
   };
 
   const handleDownload = (challan: Challan, e: React.MouseEvent) => {
@@ -452,7 +506,7 @@ export default function ChallansPage() {
         </div>
 
         {/* Segregation Filters (Company + Creator Dropdowns) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-surface-100">
+        <div className={cn("grid gap-2 pt-1 border-t border-surface-100", isEmp ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
           {/* Company / Customer Segregation Filter */}
           <div className="flex items-center gap-1.5">
             <Building2 size={15} className="text-[#b8860b] shrink-0" />
@@ -475,27 +529,29 @@ export default function ChallansPage() {
             </select>
           </div>
 
-          {/* Created By / Staff Segregation Filter */}
-          <div className="flex items-center gap-1.5">
-            <UserCheck size={15} className="text-primary-600 shrink-0" />
-            <select
-              value={creatorFilter}
-              onChange={(e) => setCreatorFilter(e.target.value)}
-              className="input text-xs py-1.5 flex-1 bg-surface-50/60 font-medium"
-            >
-              <option value="all">👤 All Creators / Billed By ({uniqueCreators.length})</option>
-              {uniqueCreators.map((creator) => {
-                const count = allChallans.filter(
-                  (c) => (c.created_by || c.prepared_by || 'Unassigned').toLowerCase() === creator.toLowerCase()
-                ).length;
-                return (
-                  <option key={creator} value={creator}>
-                    Billed by {creator} ({count} challans)
-                  </option>
-                );
-              })}
-            </select>
-          </div>
+          {/* Created By / Staff Segregation Filter (Admin & Accountant only) */}
+          {!isEmp && (
+            <div className="flex items-center gap-1.5">
+              <UserCheck size={15} className="text-primary-600 shrink-0" />
+              <select
+                value={creatorFilter}
+                onChange={(e) => setCreatorFilter(e.target.value)}
+                className="input text-xs py-1.5 flex-1 bg-surface-50/60 font-medium"
+              >
+                <option value="all">👤 All Creators / Billed By ({uniqueCreators.length})</option>
+                {uniqueCreators.map((creator) => {
+                  const count = allChallans.filter(
+                    (c) => (c.created_by || c.prepared_by || 'Unassigned').toLowerCase() === creator.toLowerCase()
+                  ).length;
+                  return (
+                    <option key={creator} value={creator}>
+                      Billed by {creator} ({count} challans)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* View Mode Switcher & Status Filter Pills */}
@@ -672,7 +728,14 @@ export default function ChallansPage() {
                         key={challan.id}
                         challan={challan}
                         resolvedPhone={resolveCustomerPhone(challan, customers, allChallans)}
-                        onDelete={(c) => setDeleteModalChallan(c)}
+                        canDelete={!isEmp}
+                        onDelete={(c) => {
+                          if (isEmp) {
+                            showToast('Staff members cannot delete challan records', 'error');
+                            return;
+                          }
+                          setDeleteModalChallan(c);
+                        }}
                         onPrint={handlePrint}
                         onWhatsApp={handleWhatsApp}
                       />
@@ -752,7 +815,14 @@ export default function ChallansPage() {
                         key={challan.id}
                         challan={challan}
                         resolvedPhone={resolveCustomerPhone(challan, customers, allChallans)}
-                        onDelete={(c) => setDeleteModalChallan(c)}
+                        canDelete={!isEmp}
+                        onDelete={(c) => {
+                          if (isEmp) {
+                            showToast('Staff members cannot delete challan records', 'error');
+                            return;
+                          }
+                          setDeleteModalChallan(c);
+                        }}
                         onPrint={handlePrint}
                         onWhatsApp={handleWhatsApp}
                       />
@@ -772,7 +842,14 @@ export default function ChallansPage() {
                 key={challan.id}
                 challan={challan}
                 resolvedPhone={resolveCustomerPhone(challan, customers, allChallans)}
-                onDelete={(c) => setDeleteModalChallan(c)}
+                canDelete={!isEmp}
+                onDelete={(c) => {
+                  if (isEmp) {
+                    showToast('Staff members cannot delete challan records', 'error');
+                    return;
+                  }
+                  setDeleteModalChallan(c);
+                }}
                 onPrint={handlePrint}
                 onWhatsApp={handleWhatsApp}
               />
@@ -895,6 +972,13 @@ export default function ChallansPage() {
                             <Printer size={15} />
                           </button>
                           <button
+                            title="Print Without Rate (Delivery Slip - No Price)"
+                            onClick={(e) => handlePrintWithoutRate(challan, e)}
+                            className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-md transition-colors"
+                          >
+                            <FileText size={15} />
+                          </button>
+                          <button
                             title="Download PDF"
                             onClick={(e) => handleDownload(challan, e)}
                             className="p-1.5 text-surface-500 hover:text-primary-600 hover:bg-surface-100 rounded-md transition-colors"
@@ -922,16 +1006,25 @@ export default function ChallansPage() {
                               </button>
                             );
                           })()}
-                          <button
-                            title="Edit"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/challans/${challan.id}/edit`);
-                            }}
-                            className="p-1.5 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded-md transition-colors"
-                          >
-                            <Edit size={15} />
-                          </button>
+                          {(!isEmp || (!challan.is_approved && challan.status !== 'approved' && challan.status !== 'delivered' && challan.status !== 'final')) ? (
+                            <button
+                              title="Edit"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/challans/${challan.id}/edit`);
+                              }}
+                              className="p-1.5 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded-md transition-colors"
+                            >
+                              <Edit size={15} />
+                            </button>
+                          ) : (
+                            <span
+                              title="Locked for staff (Approved)"
+                              className="p-1.5 text-surface-300 cursor-not-allowed"
+                            >
+                              <Lock size={14} />
+                            </span>
+                          )}
                           <button
                             title="Duplicate"
                             onClick={(e) => handleDuplicate(challan.id, e)}
@@ -939,16 +1032,18 @@ export default function ChallansPage() {
                           >
                             <Copy size={15} />
                           </button>
-                          <button
-                            title="Delete Challan"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteModalChallan(challan);
-                            }}
-                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          {!isEmp && (
+                            <button
+                              title="Delete Challan"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteModalChallan(challan);
+                              }}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

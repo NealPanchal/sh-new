@@ -14,10 +14,16 @@ import {
   ChevronDown,
   Layers,
   AlertCircle,
+  Lock,
+  ShieldAlert,
+  Building2,
+  Tag,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getCurrentUser, isEmployee, isAdmin } from '@/lib/auth';
 import { UNIT_OPTIONS } from '@/lib/validations';
-import { ChallanItemFormData, UnitType, Customer, Product } from '@/types';
+import { ChallanItemFormData, UnitType, Customer, Product, CustomerSite } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { resolveCustomerPhone } from '@/lib/whatsapp';
 
@@ -60,6 +66,17 @@ export default function EditChallanPage() {
   const [challanNumber, setChallanNumber] = useState('');
   const [piNumber, setPiNumber] = useState('');
 
+  // Raw Challan & Role Restriction State
+  const [rawChallan, setRawChallan] = useState<any>(null);
+  const [isEmployeeUser, setIsEmployeeUser] = useState(false);
+  const [isReasonModalOpen, setIsReasonModalOpen] = useState(false);
+  const [modificationReason, setModificationReason] = useState('');
+
+  // Site state
+  const [siteId, setSiteId] = useState('');
+  const [siteName, setSiteName] = useState('');
+  const [customerSites, setCustomerSites] = useState<CustomerSite[]>([]);
+
   // Form state
   const [challanDate, setChallanDate] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -71,6 +88,10 @@ export default function EditChallanPage() {
   const [referenceNumber, setReferenceNumber] = useState('');
   const [createdBy, setCreatedBy] = useState('');
   const [showExtraDetails, setShowExtraDetails] = useState(false);
+
+  // Overall Discount state
+  const [overallDiscountType, setOverallDiscountType] = useState<'percent' | 'amount'>('percent');
+  const [overallDiscountValue, setOverallDiscountValue] = useState('');
 
   const [items, setItems] = useState<ChallanItemFormData[]>([emptyItem()]);
 
@@ -86,6 +107,10 @@ export default function EditChallanPage() {
   const [saving, setSaving] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
 
+  useEffect(() => {
+    setIsEmployeeUser(isEmployee());
+  }, []);
+
   const employeeList: string[] = useMemo(() => {
     const list: string[] =
       profile?.employees && profile.employees.length > 0
@@ -98,10 +123,13 @@ export default function EditChallanPage() {
   }, [profile?.employees, createdBy]);
 
   const populateChallan = (c: any) => {
+    setRawChallan(c);
     setChallanNumber(c.challan_number);
     setPiNumber(c.pi_number || c.challan_number?.replace(/^SH\//, 'PI/') || '');
     setChallanDate(c.challan_date);
     setSelectedCustomerId(c.customer_id || '');
+    setSiteId(c.site_id || '');
+    setSiteName(c.site_name || '');
     setCustomerName(c.customer_name);
     const resolved = c.customer_phone || resolveCustomerPhone(c, customers, liveChallans);
     setCustomerPhone(resolved || '');
@@ -112,6 +140,14 @@ export default function EditChallanPage() {
     setLoadingCharges(c.loading_charges ? String(c.loading_charges) : '');
     setApplyGst(Boolean(c.apply_gst));
     setApplyAdditional9(Boolean(c.apply_additional_9));
+
+    if (c.discount_percent) {
+      setOverallDiscountType('percent');
+      setOverallDiscountValue(String(c.discount_percent));
+    } else if (c.discount_amount) {
+      setOverallDiscountType('amount');
+      setOverallDiscountValue(String(c.discount_amount));
+    }
 
     if (c.customer_phone || c.delivery_address || c.reference_number || c.transportation_charges || c.loading_charges || c.apply_gst || c.apply_additional_9 || c.created_by) {
       setShowExtraDetails(true);
@@ -128,6 +164,9 @@ export default function EditChallanPage() {
           unit: it.unit,
           quantity: it.quantity,
           rate: it.rate ? String(it.rate) : '',
+          discount_type: it.discount_percent ? 'percent' : 'amount',
+          discount_value: it.discount_percent ? String(it.discount_percent) : it.discount_amount ? String(it.discount_amount) : '',
+          discount_amount: it.discount_amount ? String(it.discount_amount) : '',
           amount: it.amount ? String(it.amount) : '',
           length: it.length ? String(it.length) : '',
           width: it.width ? String(it.width) : '',
@@ -318,9 +357,18 @@ export default function EditChallanPage() {
   const transport = useMemo(() => Number(transportCharges) || 0, [transportCharges]);
   const loading = useMemo(() => Number(loadingCharges) || 0, [loadingCharges]);
 
+  const overallDiscountAmount = useMemo(() => {
+    const val = Number(overallDiscountValue) || 0;
+    if (val <= 0) return 0;
+    if (overallDiscountType === 'percent') {
+      return Math.round((itemsSubtotal * (val / 100)) * 100) / 100;
+    }
+    return Math.min(val, itemsSubtotal);
+  }, [itemsSubtotal, overallDiscountType, overallDiscountValue]);
+
   const taxableSubtotal = useMemo(() => {
-    return itemsSubtotal + transport + loading;
-  }, [itemsSubtotal, transport, loading]);
+    return Math.max(0, itemsSubtotal - overallDiscountAmount) + transport + loading;
+  }, [itemsSubtotal, overallDiscountAmount, transport, loading]);
 
   const cgstAmount = useMemo(() => {
     return applyGst && taxableSubtotal > 0
@@ -365,6 +413,30 @@ export default function EditChallanPage() {
       return;
     }
 
+    const isApprovedOrDelivered = Boolean(
+      rawChallan?.is_approved ||
+      rawChallan?.status === 'approved' ||
+      rawChallan?.status === 'delivered' ||
+      rawChallan?.status === 'final'
+    );
+
+    if (isEmployeeUser && isApprovedOrDelivered) {
+      showToast(
+        'Permission denied. Approved or delivered challans can only be edited by an Administrator.',
+        'error'
+      );
+      return;
+    }
+
+    if (isApprovedOrDelivered && !modificationReason.trim()) {
+      setIsReasonModalOpen(true);
+      return;
+    }
+
+    await executeSave(modificationReason);
+  };
+
+  const executeSave = async (reason?: string) => {
     setSaving(true);
     try {
       const validItems = items.filter(
@@ -390,10 +462,14 @@ export default function EditChallanPage() {
           customer_phone: finalPhone,
           customer_address: deliveryAddress.trim(),
           delivery_address: deliveryAddress.trim(),
+          site_id: siteId || undefined,
+          site_name: siteName || undefined,
           reference_number: referenceNumber.trim(),
           prepared_by: createdBy.trim() || employeeList[0] || 'Neal',
           created_by: createdBy.trim() || employeeList[0] || 'Neal',
           total_quantity: totalQuantity,
+          discount_percent: overallDiscountType === 'percent' && Number(overallDiscountValue) > 0 ? Number(overallDiscountValue) : null,
+          discount_amount: overallDiscountAmount > 0 ? overallDiscountAmount : null,
           transportation_charges: transport > 0 ? transport : null,
           loading_charges: loading > 0 ? loading : null,
           apply_gst: applyGst,
@@ -420,6 +496,8 @@ export default function EditChallanPage() {
             unit: it.unit,
             quantity: Number(it.quantity) || 0,
             rate: it.rate ? Number(it.rate) : null,
+            discount_percent: it.discount_type === 'percent' && Number(it.discount_value) > 0 ? Number(it.discount_value) : null,
+            discount_amount: it.discount_amount ? Number(it.discount_amount) : null,
             amount: it.amount ? Number(it.amount) : null,
             length: it.length ? Number(it.length) : null,
             width: it.width ? Number(it.width) : null,
@@ -429,8 +507,27 @@ export default function EditChallanPage() {
         })
       );
 
+      // Trigger server audit log
+      try {
+        const { getClientAuthToken } = await import('@/lib/auth');
+        const token = getClientAuthToken();
+        await fetch('/api/challans', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            challan: { ...(updated || rawChallan), id: challanId },
+            modification_reason: reason || 'Administrative correction',
+          }),
+        });
+      } catch (logErr) {
+        console.warn('Audit log trigger note:', logErr);
+      }
+
       if (updated) {
-        showToast(`Challan ${challanNumber} updated`);
+        showToast(`Challan ${challanNumber} updated successfully`);
         router.push(`/challans/${challanId}`);
       } else {
         showToast('Failed to update challan', 'error');
@@ -465,8 +562,29 @@ export default function EditChallanPage() {
     );
   }
 
+  const isApprovedRecord = Boolean(
+    rawChallan?.is_approved ||
+    rawChallan?.status === 'approved' ||
+    rawChallan?.status === 'delivered' ||
+    rawChallan?.status === 'final'
+  );
+  const isLockedForEmployee = isEmployeeUser && isApprovedRecord;
+
   return (
     <div className="space-y-4 pb-28 sm:pb-16 max-w-4xl mx-auto">
+      {/* Locked Notice for Staff Members */}
+      {isLockedForEmployee && (
+        <div className="p-4 bg-red-50 border border-red-300 rounded-xl text-xs text-red-900 flex items-start gap-3">
+          <Lock size={18} className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-sm block">Accounting Control: Record Locked for Staff</span>
+            <p className="mt-0.5">
+              This challan is marked as <strong>{(rawChallan?.status || 'APPROVED').toUpperCase()}</strong>. In accordance with strict accounting and data leakage prevention controls, approved records cannot be modified by staff accounts. Please ask an Administrator to apply corrections.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex items-center justify-between pb-2 border-b border-surface-200">
         <div className="flex items-center gap-2">
@@ -494,11 +612,20 @@ export default function EditChallanPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
-            className="btn-primary text-xs py-2 px-4 font-semibold"
+            disabled={saving || isLockedForEmployee}
+            className="btn-primary text-xs py-2 px-4 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save size={14} />
-            <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+            {isLockedForEmployee ? (
+              <>
+                <Lock size={14} />
+                <span>Locked</span>
+              </>
+            ) : (
+              <>
+                <Save size={14} />
+                <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1075,12 +1202,21 @@ export default function EditChallanPage() {
         <div className="hidden sm:flex items-center gap-2">
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || isLockedForEmployee}
             onClick={handleSave}
-            className="btn-primary py-2 px-5 text-xs font-semibold shadow-md"
+            className="btn-primary py-2 px-5 text-xs font-semibold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save size={15} />
-            <span>Save Changes</span>
+            {isLockedForEmployee ? (
+              <>
+                <Lock size={15} />
+                <span>Locked (Admin Only)</span>
+              </>
+            ) : (
+              <>
+                <Save size={15} />
+                <span>Save Changes</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1113,15 +1249,88 @@ export default function EditChallanPage() {
           </button>
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || isLockedForEmployee}
             onClick={handleSave}
-            className="btn-primary py-2 px-4 text-xs font-bold rounded-lg shadow-sm"
+            className="btn-primary py-2 px-4 text-xs font-bold rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save size={14} />
-            <span>Save</span>
+            {isLockedForEmployee ? (
+              <>
+                <Lock size={14} />
+                <span>Locked</span>
+              </>
+            ) : (
+              <>
+                <Save size={14} />
+                <span>Save</span>
+              </>
+            )}
           </button>
         </div>
       </div>
+
+      {/* Admin Modification Audit Reason Modal */}
+      {isReasonModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-surface-200 text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
+                  <ShieldAlert size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900">Admin Modification Audit Log</h3>
+                  <p className="text-[11px] text-zinc-500">Challan: {challanNumber}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsReasonModalOpen(false)}
+                className="p-1 text-surface-400 hover:text-surface-700 rounded-md"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px]">
+                Modifications to approved or delivered delivery records are tracked permanently with your admin credentials.
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-zinc-700">Reason for Modification *</label>
+                <textarea
+                  rows={3}
+                  value={modificationReason}
+                  onChange={(e) => setModificationReason(e.target.value)}
+                  placeholder="e.g. Corrected rate as per revised party quotation / adjusted delivered quantity"
+                  className="input text-xs w-full py-2"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-surface-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsReasonModalOpen(false)}
+                className="btn-secondary py-1.5 px-3 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!modificationReason.trim() || saving}
+                onClick={() => {
+                  setIsReasonModalOpen(false);
+                  executeSave(modificationReason);
+                }}
+                className="btn-primary py-1.5 px-4 text-xs font-bold disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Authorize & Save Edit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         isOpen={showCancel}

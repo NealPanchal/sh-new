@@ -10,6 +10,11 @@ export function formatDateIndian(dateStr: string): string {
   return format(date, 'dd/MM/yyyy');
 }
 
+export function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—';
+  return formatDateIndian(dateStr);
+}
+
 /**
  * Format a date for display with time
  */
@@ -38,6 +43,15 @@ export function formatINR(amount: number | null | undefined): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+export function formatCurrency(amount: number | null | undefined): string {
+  if (amount == null || isNaN(Number(amount))) return '₹0';
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2,
+  }).format(Number(amount));
 }
 
 /**
@@ -80,15 +94,28 @@ export function getFinancialYear(date: Date = new Date(), startMonth: number = 4
 }
 
 /**
- * Generate the next challan number
+ * Generate monthly challan number in format: [PREFIX][MM]/[001]
+ * e.g., SH/11/001, SH/12/001
  */
 export function generateChallanNumber(
-  prefix: string,
-  financialYear: string,
-  sequenceNumber: number
+  prefix: string = 'SH/',
+  dateOrFy: string | Date = new Date(),
+  sequenceNumber: number = 1
 ): string {
-  const paddedSeq = String(sequenceNumber).padStart(4, '0');
-  return `${prefix}/${financialYear}/${paddedSeq}`;
+  const cleanPrefix = (prefix || 'SH/').endsWith('/') ? (prefix || 'SH/') : `${prefix}/`;
+  let monthPadded = String(new Date().getMonth() + 1).padStart(2, '0');
+
+  if (dateOrFy instanceof Date) {
+    monthPadded = String(dateOrFy.getMonth() + 1).padStart(2, '0');
+  } else if (typeof dateOrFy === 'string' && dateOrFy.includes('-')) {
+    const d = new Date(dateOrFy);
+    if (!isNaN(d.getTime())) {
+      monthPadded = String(d.getMonth() + 1).padStart(2, '0');
+    }
+  }
+
+  const paddedSeq = String(sequenceNumber).padStart(3, '0');
+  return `${cleanPrefix}${monthPadded}/${paddedSeq}`;
 }
 
 /**

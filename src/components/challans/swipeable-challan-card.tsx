@@ -16,6 +16,7 @@ import {
 interface SwipeableChallanCardProps {
   challan: Challan;
   resolvedPhone?: string;
+  canDelete?: boolean;
   onDelete: (challan: Challan) => void;
   onPrint: (challan: Challan, e: React.MouseEvent) => void;
   onWhatsApp: (challan: Challan, e: React.MouseEvent) => void;
@@ -24,6 +25,7 @@ interface SwipeableChallanCardProps {
 export function SwipeableChallanCard({
   challan,
   resolvedPhone,
+  canDelete = true,
   onDelete,
   onPrint,
   onWhatsApp,
@@ -50,6 +52,7 @@ export function SwipeableChallanCard({
   // Handle Touch Move with Apple rubber-banding
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isDragging) return;
+    if (!canDelete) return;
     const currentX = e.touches[0].clientX;
     const deltaX = currentX - startXRef.current;
 
@@ -113,34 +116,36 @@ export function SwipeableChallanCard({
   return (
     <div className="relative overflow-hidden rounded-xl touch-pan-y select-none group">
       {/* Background Action: Red Apple Trash Panel */}
-      <div
-        onClick={(e) => {
-          e.stopPropagation();
-          setOffsetX(0);
-          setIsOpen(false);
-          onDelete(challan);
-        }}
-        className={cn(
-          'absolute inset-y-0 right-0 w-[84px] bg-[#FF3B30] flex flex-col items-center justify-center text-white cursor-pointer transition-opacity z-0',
-          Math.abs(offsetX) > 5 ? 'opacity-100' : 'opacity-0'
-        )}
-        style={{
-          boxShadow: 'inset 4px 0 8px rgba(0,0,0,0.15)',
-        }}
-      >
+      {canDelete && (
         <div
-          className="flex flex-col items-center gap-1 active:scale-90 transition-transform"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOffsetX(0);
+            setIsOpen(false);
+            onDelete(challan);
+          }}
+          className={cn(
+            'absolute inset-y-0 right-0 w-[84px] bg-[#FF3B30] flex flex-col items-center justify-center text-white cursor-pointer transition-opacity z-0',
+            Math.abs(offsetX) > 5 ? 'opacity-100' : 'opacity-0'
+          )}
           style={{
-            transform: `scale(${Math.min(1.2, Math.max(0.7, Math.abs(offsetX) / REVEAL_WIDTH))})`,
-            transition: 'transform 0.1s ease',
+            boxShadow: 'inset 4px 0 8px rgba(0,0,0,0.15)',
           }}
         >
-          <Trash2 size={20} className="stroke-[2.2] animate-pulse" />
-          <span className="text-[10px] font-bold uppercase tracking-wider">
-            {Math.abs(offsetX) >= FULL_SWIPE_THRESHOLD ? 'Release' : 'Delete'}
-          </span>
+          <div
+            className="flex flex-col items-center gap-1 active:scale-90 transition-transform"
+            style={{
+              transform: `scale(${Math.min(1.2, Math.max(0.7, Math.abs(offsetX) / REVEAL_WIDTH))})`,
+              transition: 'transform 0.1s ease',
+            }}
+          >
+            <Trash2 size={20} className="stroke-[2.2] animate-pulse" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              {Math.abs(offsetX) >= FULL_SWIPE_THRESHOLD ? 'Release' : 'Delete'}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Front Card Layer with Hardware Acceleration */}
       <div

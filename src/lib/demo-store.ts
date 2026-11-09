@@ -397,18 +397,20 @@ export function syncProductsFromFirebase(remoteProducts: Product[]): void {
 // Challans
 // ============================================================
 
-export function peekNextChallanNumber(): string {
+export function peekNextChallanNumber(targetDate?: Date | string): string {
   const profile = state.profile;
-  const prefix = profile?.challan_prefix || 'SH';
-  const startMonth = profile?.financial_year_start_month || 4;
-  const fy = getFinancialYear(new Date(), startMonth);
+  const rawPrefix = profile?.challan_prefix || 'SH/';
+  const cleanPrefix = rawPrefix.endsWith('/') ? rawPrefix : `${rawPrefix}/`;
+  const d = targetDate ? new Date(targetDate) : new Date();
+  const monthPadded = String(!isNaN(d.getTime()) ? d.getMonth() + 1 : new Date().getMonth() + 1).padStart(2, '0');
 
   let maxSeq = 0;
-  const prefixFyPattern = new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i');
+  const escapedPrefix = cleanPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const monthPattern = new RegExp(`^${escapedPrefix}${monthPadded}\\/(\\d+)$`, 'i');
 
   for (const c of state.challans) {
-    if (c.challan_number) {
-      const m = c.challan_number.match(prefixFyPattern);
+    if (c.challan_number && !c.is_deleted) {
+      const m = c.challan_number.match(monthPattern);
       if (m && m[1]) {
         const num = parseInt(m[1], 10);
         if (!isNaN(num) && num > maxSeq) {
@@ -418,30 +420,32 @@ export function peekNextChallanNumber(): string {
     }
   }
 
-  if (state.challanSequence > maxSeq) {
-    maxSeq = state.challanSequence;
-  }
-
   let nextSeq = maxSeq + 1;
-  while (state.challans.some((c) => c.challan_number === generateChallanNumber(prefix, fy, nextSeq) && !c.is_deleted)) {
+  while (
+    state.challans.some(
+      (c) => c.challan_number === generateChallanNumber(cleanPrefix, d, nextSeq) && !c.is_deleted
+    )
+  ) {
     nextSeq++;
   }
 
-  return generateChallanNumber(prefix, fy, nextSeq);
+  return generateChallanNumber(cleanPrefix, d, nextSeq);
 }
 
-export function getNextChallanNumber(): string {
+export function getNextChallanNumber(targetDate?: Date | string): string {
   const profile = state.profile;
-  const prefix = profile?.challan_prefix || 'SH';
-  const startMonth = profile?.financial_year_start_month || 4;
-  const fy = getFinancialYear(new Date(), startMonth);
+  const rawPrefix = profile?.challan_prefix || 'SH/';
+  const cleanPrefix = rawPrefix.endsWith('/') ? rawPrefix : `${rawPrefix}/`;
+  const d = targetDate ? new Date(targetDate) : new Date();
+  const monthPadded = String(!isNaN(d.getTime()) ? d.getMonth() + 1 : new Date().getMonth() + 1).padStart(2, '0');
 
   let maxSeq = 0;
-  const prefixFyPattern = new RegExp(`^${prefix}\\/${fy}\\/(\\d+)$`, 'i');
+  const escapedPrefix = cleanPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const monthPattern = new RegExp(`^${escapedPrefix}${monthPadded}\\/(\\d+)$`, 'i');
 
   for (const c of state.challans) {
-    if (c.challan_number) {
-      const m = c.challan_number.match(prefixFyPattern);
+    if (c.challan_number && !c.is_deleted) {
+      const m = c.challan_number.match(monthPattern);
       if (m && m[1]) {
         const num = parseInt(m[1], 10);
         if (!isNaN(num) && num > maxSeq) {
@@ -451,18 +455,18 @@ export function getNextChallanNumber(): string {
     }
   }
 
-  if (state.challanSequence > maxSeq) {
-    maxSeq = state.challanSequence;
-  }
-
   let nextSeq = maxSeq + 1;
-  while (state.challans.some((c) => c.challan_number === generateChallanNumber(prefix, fy, nextSeq) && !c.is_deleted)) {
+  while (
+    state.challans.some(
+      (c) => c.challan_number === generateChallanNumber(cleanPrefix, d, nextSeq) && !c.is_deleted
+    )
+  ) {
     nextSeq++;
   }
 
   state.challanSequence = nextSeq;
   saveState(state);
-  return generateChallanNumber(prefix, fy, nextSeq);
+  return generateChallanNumber(cleanPrefix, d, nextSeq);
 }
 
 export function peekNextPINumber(): string {
@@ -667,9 +671,17 @@ export function createChallan(
     const qty = Number(item.quantity) || 0;
     totalQuantity += qty;
     const rate = Number(item.rate) || 0;
-    const amount = rate > 0 ? qty * rate : null;
-    if (amount !== null) {
-      totalAmount = (totalAmount || 0) + amount;
+    const discPct = Number(item.discount_percent) || 0;
+    const discAmt =
+      item.discount_amount != null && Number(item.discount_amount) > 0
+        ? Number(item.discount_amount)
+        : discPct > 0
+        ? Math.round(((qty * rate * discPct) / 100) * 100) / 100
+        : 0;
+    const rawAmount = rate > 0 ? qty * rate : 0;
+    const itemAmount = item.amount != null ? Number(item.amount) : rawAmount > 0 ? Math.max(0, rawAmount - discAmt) : null;
+    if (itemAmount !== null) {
+      totalAmount = (totalAmount || 0) + itemAmount;
     }
 
     return {
@@ -684,18 +696,27 @@ export function createChallan(
       unit: item.unit || 'sheets',
       quantity: qty,
       rate: rate > 0 ? rate : null,
-      amount: amount,
+      discount_percent: discPct > 0 ? discPct : null,
+      discount_amount: discAmt > 0 ? discAmt : null,
+      amount: itemAmount,
       created_at: now,
     } as ChallanItem;
   });
 
   const transport = Number(data.transportation_charges) || 0;
   const loading = Number(data.loading_charges) || 0;
+  const overallDiscPct = Number(data.discount_percent) || 0;
+  const rawSubtotal = (totalAmount || 0) + transport + loading;
+  const overallDiscAmt =
+    data.discount_amount != null && Number(data.discount_amount) > 0
+      ? Number(data.discount_amount)
+      : overallDiscPct > 0
+      ? Math.round(((rawSubtotal * overallDiscPct) / 100) * 100) / 100
+      : 0;
+  const subtotal = Math.max(0, rawSubtotal - overallDiscAmt);
+
   const applyGst = Boolean(data.apply_gst);
   const applyAdditional9 = Boolean(data.apply_additional_9);
-
-  const itemsTotal = totalAmount || 0;
-  const subtotal = itemsTotal + transport + loading;
   const cgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const sgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const additional9 = applyAdditional9 && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
@@ -719,13 +740,24 @@ export function createChallan(
     customer_address: data.customer_address || '',
     customer_gstin: data.customer_gstin || null,
     delivery_address: data.delivery_address || data.customer_address || '',
+    site_id: data.site_id || null,
+    site_name: data.site_name || null,
     reference_number: refNumber,
     notes: data.notes || null,
     prepared_by: data.prepared_by || data.created_by || state.profile?.employees?.[0] || 'Neal',
     created_by: data.created_by || data.prepared_by || state.profile?.employees?.[0] || 'Neal',
     status: data.status || 'draft',
+    delivery_status: data.delivery_status || 'pending',
+    delivery_confirmed_at: data.delivery_confirmed_at || null,
+    delivery_confirmed_by: data.delivery_confirmed_by || null,
+    delivery_remarks: data.delivery_remarks || null,
+    is_approved: data.is_approved || false,
+    approved_by: data.approved_by || null,
+    approved_at: data.approved_at || null,
     share_status: data.share_status || 'not_shared',
     total_quantity: totalQuantity,
+    discount_percent: overallDiscPct > 0 ? overallDiscPct : null,
+    discount_amount: overallDiscAmt > 0 ? overallDiscAmt : null,
     subtotal_amount: subtotal > 0 ? subtotal : null,
     transportation_charges: transport > 0 ? transport : null,
     loading_charges: loading > 0 ? loading : null,
@@ -784,9 +816,17 @@ export function updateChallan(
       const qty = Number(item.quantity) || 0;
       totalQuantity += qty;
       const rate = Number(item.rate) || 0;
-      const amount = rate > 0 ? qty * rate : null;
-      if (amount !== null) {
-        totalAmount = (totalAmount || 0) + amount;
+      const discPct = Number(item.discount_percent) || 0;
+      const discAmt =
+        item.discount_amount != null && Number(item.discount_amount) > 0
+          ? Number(item.discount_amount)
+          : discPct > 0
+          ? Math.round(((qty * rate * discPct) / 100) * 100) / 100
+          : 0;
+      const rawAmt = rate > 0 ? qty * rate : 0;
+      const itemAmount = item.amount != null ? Number(item.amount) : rawAmt > 0 ? Math.max(0, rawAmt - discAmt) : null;
+      if (itemAmount !== null) {
+        totalAmount = (totalAmount || 0) + itemAmount;
       }
       return {
         id: generateId(),
@@ -800,7 +840,9 @@ export function updateChallan(
         unit: item.unit || 'sheets',
         quantity: qty,
         rate: rate > 0 ? rate : null,
-        amount: amount,
+        discount_percent: discPct > 0 ? discPct : null,
+        discount_amount: discAmt > 0 ? discAmt : null,
+        amount: itemAmount,
         created_at: now,
       } as ChallanItem;
     });
@@ -813,6 +855,20 @@ export function updateChallan(
       data.loading_charges !== undefined
         ? Number(data.loading_charges) || 0
         : Number(state.challans[idx].loading_charges) || 0;
+    const overallDiscPct =
+      data.discount_percent !== undefined
+        ? Number(data.discount_percent) || 0
+        : Number(state.challans[idx].discount_percent) || 0;
+
+    const rawSubtotal = (totalAmount !== null ? totalAmount : 0) + transport + loading;
+    const overallDiscAmt =
+      data.discount_amount !== undefined && data.discount_amount !== null && Number(data.discount_amount) > 0
+        ? Number(data.discount_amount)
+        : overallDiscPct > 0
+        ? Math.round(((rawSubtotal * overallDiscPct) / 100) * 100) / 100
+        : 0;
+    const subtotal = Math.max(0, rawSubtotal - overallDiscAmt);
+
     const applyGst =
       data.apply_gst !== undefined
         ? Boolean(data.apply_gst)
@@ -822,8 +878,6 @@ export function updateChallan(
         ? Boolean(data.apply_additional_9)
         : Boolean(state.challans[idx].apply_additional_9);
 
-    const itemsTotal = totalAmount !== null ? totalAmount : 0;
-    const subtotal = itemsTotal + transport + loading;
     const cgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
     const sgst = applyGst && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
     const additional9 = applyAdditional9 && subtotal > 0 ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
@@ -836,6 +890,8 @@ export function updateChallan(
 
     state.challanItems.push(...newItems);
     data.total_quantity = totalQuantity;
+    data.discount_percent = overallDiscPct > 0 ? overallDiscPct : null;
+    data.discount_amount = overallDiscAmt > 0 ? overallDiscAmt : null;
     data.subtotal_amount = subtotal > 0 ? subtotal : null;
     data.transportation_charges = transport > 0 ? transport : null;
     data.loading_charges = loading > 0 ? loading : null;

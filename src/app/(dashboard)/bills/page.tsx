@@ -26,6 +26,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DateFilter, DateFilterState, filterChallansByDate } from '@/components/challans/date-filter';
 import { exportMonthSalesToExcel } from '@/lib/excel-export';
+import { getCurrentUser, isEmployee } from '@/lib/auth';
 
 export default function DeliveryBillsPage() {
   const router = useRouter();
@@ -41,6 +42,8 @@ export default function DeliveryBillsPage() {
     dataVersion,
   } = useApp();
   const [mounted, setMounted] = useState(false);
+  const currentUser = useMemo(() => getCurrentUser(), []);
+  const isEmp = currentUser?.role === 'employee';
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
   const [creatorFilter, setCreatorFilter] = useState<string>('all');
@@ -96,8 +99,19 @@ export default function DeliveryBillsPage() {
 
   const allChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
-    return getChallans();
-  }, [mounted, isLoading, getChallans, dataVersion, liveChallans]);
+    let list = getChallans();
+    if (isEmp && currentUser) {
+      const uName = (currentUser.name || '').toLowerCase();
+      const uUser = (currentUser.username || '').toLowerCase();
+      list = list.filter((c) => {
+        const prep = (c.prepared_by || '').toLowerCase();
+        const cr = (c.created_by || '').toLowerCase();
+        return (uName && (prep.includes(uName) || cr.includes(uName))) ||
+               (uUser && (prep === uUser || cr === uUser));
+      });
+    }
+    return list;
+  }, [mounted, isLoading, getChallans, dataVersion, liveChallans, isEmp, currentUser]);
 
   const uniqueCompanies = useMemo(() => {
     const names = Array.from(new Set(allChallans.map((c) => c.customer_name).filter(Boolean)));
@@ -118,6 +132,16 @@ export default function DeliveryBillsPage() {
     let list = getChallans({
       search: search.trim() || undefined,
     });
+    if (isEmp && currentUser) {
+      const uName = (currentUser.name || '').toLowerCase();
+      const uUser = (currentUser.username || '').toLowerCase();
+      list = list.filter((c) => {
+        const prep = (c.prepared_by || '').toLowerCase();
+        const cr = (c.created_by || '').toLowerCase();
+        return (uName && (prep.includes(uName) || cr.includes(uName))) ||
+               (uUser && (prep === uUser || cr === uUser));
+      });
+    }
     if (companyFilter !== 'all') {
       list = list.filter((c) => c.customer_name.toLowerCase() === companyFilter.toLowerCase());
     }
@@ -129,7 +153,7 @@ export default function DeliveryBillsPage() {
     }
     list = filterChallansByDate(list, dateFilter);
     return list;
-  }, [mounted, isLoading, getChallans, search, companyFilter, creatorFilter, dateFilter, dataVersion, liveChallans]);
+  }, [mounted, isLoading, getChallans, search, companyFilter, creatorFilter, dateFilter, dataVersion, liveChallans, isEmp, currentUser]);
 
   // Grouped by Company
   const groupedByCompany = useMemo(() => {
@@ -423,7 +447,7 @@ export default function DeliveryBillsPage() {
         </div>
 
         {/* Segregation Dropdowns: Company & Creator */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-surface-100">
+        <div className={cn("grid gap-2 pt-1 border-t border-surface-100", isEmp ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
           {/* Company Filter Dropdown */}
           <div className="flex items-center gap-1.5">
             <Building2 size={15} className="text-[#b8860b] shrink-0" />
@@ -446,27 +470,29 @@ export default function DeliveryBillsPage() {
             </select>
           </div>
 
-          {/* Creator Filter Dropdown */}
-          <div className="flex items-center gap-1.5">
-            <UserCheck size={15} className="text-primary-600 shrink-0" />
-            <select
-              value={creatorFilter}
-              onChange={(e) => setCreatorFilter(e.target.value)}
-              className="input text-xs py-1.5 flex-1 bg-surface-50/60 font-medium"
-            >
-              <option value="all">👤 All Creators / Billed By ({uniqueCreators.length})</option>
-              {uniqueCreators.map((creator) => {
-                const count = allChallans.filter(
-                  (c) => (c.created_by || c.prepared_by || 'Unassigned').toLowerCase() === creator.toLowerCase()
-                ).length;
-                return (
-                  <option key={creator} value={creator}>
-                    Billed by {creator} ({count} bills)
-                  </option>
-                );
-              })}
-            </select>
-          </div>
+          {/* Creator Filter Dropdown (Admin & Accountant only) */}
+          {!isEmp && (
+            <div className="flex items-center gap-1.5">
+              <UserCheck size={15} className="text-primary-600 shrink-0" />
+              <select
+                value={creatorFilter}
+                onChange={(e) => setCreatorFilter(e.target.value)}
+                className="input text-xs py-1.5 flex-1 bg-surface-50/60 font-medium"
+              >
+                <option value="all">👤 All Creators / Billed By ({uniqueCreators.length})</option>
+                {uniqueCreators.map((creator) => {
+                  const count = allChallans.filter(
+                    (c) => (c.created_by || c.prepared_by || 'Unassigned').toLowerCase() === creator.toLowerCase()
+                  ).length;
+                  return (
+                    <option key={creator} value={creator}>
+                      Billed by {creator} ({count} bills)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* View Mode Segregation Switcher */}

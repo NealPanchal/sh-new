@@ -17,16 +17,30 @@ import {
   ArrowRight,
   X,
   Receipt,
+  RotateCcw,
+  WalletCards,
+  BookOpen,
+  Building2,
+  ShieldAlert,
+  ArrowLeftRight,
+  AlertTriangle,
+  Lock,
 } from 'lucide-react';
-import { formatDateIndian, formatINR, cn } from '@/lib/utils';
-import { Challan, ChallanStatus } from '@/types';
+import { formatDateIndian, formatINR, formatCurrency, cn } from '@/lib/utils';
+import { Challan, ChallanStatus, PaymentRecord, CustomerCreditStatus } from '@/types';
 import { printChallanPDF } from '@/lib/pdf';
 import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
+import { getCurrentUser, isEmployee } from '@/lib/auth';
 
 function StatusBadge({ status }: { status: ChallanStatus }) {
   const badgeClasses: Record<ChallanStatus, string> = {
-    final: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    pending: 'bg-amber-50 text-amber-700 border-amber-200',
+    approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    out_for_delivery: 'bg-purple-50 text-purple-700 border-purple-200',
     delivered: 'bg-blue-50 text-blue-700 border-blue-200',
+    partially_delivered: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    goods_returned: 'bg-orange-50 text-orange-700 border-orange-200',
+    final: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     draft: 'bg-amber-50 text-amber-700 border-amber-200',
     cancelled: 'bg-red-50 text-red-700 border-red-200',
     void: 'bg-surface-100 text-surface-500 border-surface-200',
@@ -38,7 +52,7 @@ function StatusBadge({ status }: { status: ChallanStatus }) {
         badgeClasses[status] || 'bg-surface-100 text-surface-600 border-surface-200'
       )}
     >
-      {status}
+      {status.replace(/_/g, ' ')}
     </span>
   );
 }
@@ -57,25 +71,145 @@ export default function DashboardPage() {
     dataVersion,
   } = useApp();
   const [mounted, setMounted] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [search, setSearch] = useState('');
+
+  const isEmp = currentUser?.role === 'employee';
+
+  // Accounting Overview State
+  const [accountingStats, setAccountingStats] = useState({
+    totalCollections: 0,
+    monthCollections: 0,
+    totalOutstanding: 0,
+    overdueCount: 0,
+    blockedCount: 0,
+  });
 
   useEffect(() => {
     setMounted(true);
+    const user = getCurrentUser();
+    setCurrentUser(user);
+
+    // Fetch accounting metrics only if not employee
+    if (user?.role === 'employee') return;
+
+    const fetchAccounting = async () => {
+      try {
+        const { getClientAuthToken } = await import('@/lib/auth');
+        const token = getClientAuthToken();
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+        const [resPay, resCredit] = await Promise.all([
+          fetch('/api/payments', { headers }),
+          fetch('/api/credit-control', { headers }),
+        ]);
+
+        let colTotal = 0;
+        let curMonthCol = 0;
+        const curMonthStr = new Date().toISOString().substring(0, 7);
+
+        if (resPay.ok) {
+          const pd = await resPay.json();
+          const pays: PaymentRecord[] = pd.payments || [];
+          colTotal = pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          curMonthCol = pays
+            .filter((p) => (p.payment_date || p.created_at || '').startsWith(curMonthStr))
+            .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        }
+
+        let outTotal = 0;
+        let odCount = 0;
+        let blCount = 0;
+
+        if (resCredit.ok) {
+          const cd = await resCredit.json();
+          const stList: CustomerCreditStatus[] = cd.statuses || [];
+          outTotal = stList.reduce((s, c) => s + (c.totalOutstanding || 0), 0);
+          odCount = stList.filter((c) => c.isOverdue).length;
+          blCount = stList.filter((c) => c.isBlocked).length;
+        }
+
+        setAccountingStats({
+          totalCollections: colTotal,
+          monthCollections: curMonthCol,
+          totalOutstanding: outTotal,
+          overdueCount: odCount,
+          blockedCount: blCount,
+        });
+      } catch (err) {
+        console.warn('Accounting dashboard fetch note:', err);
+      }
+    };
+
+    fetchAccounting();
   }, []);
+
+  const accessibleChallans = useMemo(() => {
+    if (!mounted || isLoading) return [];
+    let list = (liveChallans || []).filter((c) => c.status !== 'void' && !c.is_deleted);
+    if (isEmp && currentUser) {
+      const myName = (currentUser.name || '').trim().toLowerCase();
+      const myUser = (currentUser.username || '').trim().toLowerCase();
+      list = list.filter((c) => {
+        const creator = (c.created_by || c.prepared_by || '').trim().toLowerCase();
+        return (
+          creator === myName ||
+          creator === myUser ||
+          (myName && creator.includes(myName)) ||
+          (myUser && creator.includes(myUser))
+        );
+      });
+    }
+    return list;
+  }, [mounted, isLoading, liveChallans, isEmp, currentUser]);
 
   const stats = useMemo(() => {
     if (!mounted || isLoading) {
-      return { totalChallans: 0, challansToday: 0, challansThisMonth: 0, recentChallans: [] };
+      return { totalChallans: 0, challansToday: 0, challansThisMonth: 0, challansLastMonth: 0, recentChallans: [] };
+    }
+    if (isEmp) {
+      const today = new Date().toISOString().slice(0, 10);
+      const now = new Date();
+      const thisMonthStart = today.slice(0, 7);
+      const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonthStart = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      return {
+        totalChallans: accessibleChallans.length,
+        challansToday: accessibleChallans.filter((c) => (c.challan_date || '').startsWith(today)).length,
+        challansThisMonth: accessibleChallans.filter((c) => (c.challan_date || '').startsWith(thisMonthStart)).length,
+        challansLastMonth: accessibleChallans.filter((c) => (c.challan_date || '').startsWith(prevMonthStart)).length,
+        thisMonthName: monthNames[now.getMonth()],
+        lastMonthName: monthNames[prevDate.getMonth()],
+        recentChallans: accessibleChallans.slice(0, 10),
+      };
     }
     return getDashboardStats();
-  }, [mounted, isLoading, getDashboardStats, dataVersion, liveChallans]);
+  }, [mounted, isLoading, isEmp, accessibleChallans, getDashboardStats, dataVersion]);
 
   const recentChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
-    return getChallans({
-      search: search || undefined,
-    }).slice(0, 10);
-  }, [mounted, isLoading, getChallans, search, dataVersion, liveChallans]);
+    let list = accessibleChallans;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((c) =>
+        c.challan_number.toLowerCase().includes(q) ||
+        c.customer_name.toLowerCase().includes(q) ||
+        (c.reference_number && c.reference_number.toLowerCase().includes(q))
+      );
+    }
+    return list.slice(0, 10);
+  }, [mounted, isLoading, accessibleChallans, search]);
+
+  const monthBilledAmount = useMemo(() => {
+    const curYearMonth = new Date().toISOString().substring(0, 7);
+    return accessibleChallans
+      .filter((c) => (c.challan_date || c.created_at || '').startsWith(curYearMonth) && c.status !== 'cancelled' && c.status !== 'void')
+      .reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0);
+  }, [accessibleChallans]);
 
   const handlePrint = (challan: Challan, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -207,73 +341,215 @@ export default function DashboardPage() {
         </Link>
       </div>
 
+      {/* Showhouse ERP Financial & Accounting Overview (Admin & Accountant Only) */}
+      {!isEmp && (
+        <div className="card p-4 bg-white border border-surface-200 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-surface-100">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-amber-500/10 text-amber-600 rounded-lg">
+                <WalletCards size={16} />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-zinc-900 tracking-tight">
+                  Financial & Accounting Control
+                </h2>
+                <span className="text-[10px] text-zinc-500">Live ledger balances, billing, and credit limits</span>
+              </div>
+            </div>
+            <Link
+              href="/ledger"
+              className="text-[11px] font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1"
+            >
+              <span>Open Party Ledger</span>
+              <ArrowRight size={13} />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-surface-50 p-3 rounded-xl border border-surface-200">
+              <span className="text-[10px] text-zinc-500 font-semibold uppercase block">Billed This Month</span>
+              <p className="text-lg font-black text-zinc-900 mt-1">{formatCurrency(monthBilledAmount)}</p>
+              <span className="text-[10px] text-zinc-400">Total invoice value</span>
+            </div>
+
+            <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-200/60">
+              <span className="text-[10px] text-emerald-800 font-semibold uppercase block">Collections This Month</span>
+              <p className="text-lg font-black text-emerald-600 mt-1">{formatCurrency(accountingStats.monthCollections)}</p>
+              <span className="text-[10px] text-emerald-700">UPI, Bank, Cash, Cheque</span>
+            </div>
+
+            <div className="bg-surface-50 p-3 rounded-xl border border-surface-200">
+              <span className="text-[10px] text-zinc-500 font-semibold uppercase block">Gross Receivables</span>
+              <p className="text-lg font-black text-zinc-900 mt-1">{formatCurrency(accountingStats.totalOutstanding)}</p>
+              <span className="text-[10px] text-zinc-400">Net outstanding balance</span>
+            </div>
+
+            <Link
+              href="/ledger?tab=credit"
+              className="bg-red-50/50 p-3 rounded-xl border border-red-200/60 hover:bg-red-50 transition-colors block"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-red-800 font-bold uppercase">Overdue (&gt;45 Days)</span>
+                <AlertTriangle size={13} className="text-red-600" />
+              </div>
+              <p className="text-lg font-black text-red-600 mt-1">{accountingStats.overdueCount} parties</p>
+              <span className="text-[10px] text-red-700 font-semibold">
+                {accountingStats.blockedCount} dispatch blocked →
+              </span>
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Fast Navigation Shortcuts */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        <Link
-          href="/challans/new"
-          className="p-2.5 rounded-lg border border-primary-200 bg-primary-50/60 hover:bg-primary-100/70 transition-colors flex items-center gap-2"
-        >
-          <div className="w-8 h-8 rounded-md bg-primary-500 text-white flex items-center justify-center shrink-0">
-            <Plus size={16} />
-          </div>
-          <div className="truncate">
-            <span className="font-bold text-xs text-primary-900 block leading-tight">Create Challan</span>
-            <span className="text-[10px] text-primary-700">Quick dispatch</span>
-          </div>
-        </Link>
+      {isEmp ? (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <Link
+            href="/challans/new"
+            className="p-2.5 rounded-lg border border-primary-200 bg-primary-50/60 hover:bg-primary-100/70 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-primary-500 text-white flex items-center justify-center shrink-0">
+              <Plus size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-primary-900 block leading-tight">New Challan</span>
+              <span className="text-[10px] text-primary-700">Quick dispatch</span>
+            </div>
+          </Link>
 
-        <Link
-          href="/bills"
-          className="p-2.5 rounded-lg border border-[#b8860b]/30 bg-[#b8860b]/10 hover:bg-[#b8860b]/20 transition-colors flex items-center gap-2"
-        >
-          <div className="w-8 h-8 rounded-md bg-[#b8860b] text-white flex items-center justify-center shrink-0">
-            <Receipt size={16} />
-          </div>
-          <div className="truncate">
-            <span className="font-bold text-xs text-surface-900 block leading-tight">Delivery Bills</span>
-            <span className="text-[10px] text-[#b8860b] font-medium">Showhouse slips</span>
-          </div>
-        </Link>
+          <Link
+            href="/challans"
+            className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
+              <FileText size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-surface-900 block leading-tight">All Challans</span>
+              <span className="text-[10px] text-surface-400">My dispatches</span>
+            </div>
+          </Link>
 
-        <Link
-          href="/challans"
-          className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
-        >
-          <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
-            <FileText size={16} />
-          </div>
-          <div className="truncate">
-            <span className="font-bold text-xs text-surface-900 block leading-tight">All Challans</span>
-            <span className="text-[10px] text-surface-400">Search & reprint</span>
-          </div>
-        </Link>
+          <Link
+            href="/bills"
+            className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
+              <Receipt size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-surface-900 block leading-tight">Delivery Bills</span>
+              <span className="text-[10px] text-surface-400">Billed memos</span>
+            </div>
+          </Link>
 
-        <Link
-          href="/customers"
-          className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
-        >
-          <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
-            <Users size={16} />
-          </div>
-          <div className="truncate">
-            <span className="font-bold text-xs text-surface-900 block leading-tight">Customers</span>
-            <span className="text-[10px] text-surface-400">Customer records</span>
-          </div>
-        </Link>
+          <Link
+            href="/customers"
+            className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
+              <Users size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-surface-900 block leading-tight">Customers</span>
+              <span className="text-[10px] text-surface-400">Directory</span>
+            </div>
+          </Link>
 
-        <Link
-          href="/products"
-          className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
-        >
-          <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
-            <Package size={16} />
-          </div>
-          <div className="truncate">
-            <span className="font-bold text-xs text-surface-900 block leading-tight">Catalogue</span>
-            <span className="text-[10px] text-surface-400">Laminates & mica</span>
-          </div>
-        </Link>
-      </div>
+          <Link
+            href="/products"
+            className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
+              <Package size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-surface-900 block leading-tight">Products</span>
+              <span className="text-[10px] text-surface-400">Catalog items</span>
+            </div>
+          </Link>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+          <Link
+            href="/challans/new"
+            className="p-2.5 rounded-lg border border-primary-200 bg-primary-50/60 hover:bg-primary-100/70 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-primary-500 text-white flex items-center justify-center shrink-0">
+              <Plus size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-primary-900 block leading-tight">New Challan</span>
+              <span className="text-[10px] text-primary-700">Quick dispatch</span>
+            </div>
+          </Link>
+
+          <Link
+            href="/payments"
+            className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/70 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <WalletCards size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-emerald-900 block leading-tight">Payments</span>
+              <span className="text-[10px] text-emerald-700">Record receipt</span>
+            </div>
+          </Link>
+
+          <Link
+            href="/returns"
+            className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-amber-600 text-white flex items-center justify-center shrink-0">
+              <RotateCcw size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-amber-900 block leading-tight">Goods Return</span>
+              <span className="text-[10px] text-amber-700">Credit memo</span>
+            </div>
+          </Link>
+
+          <Link
+            href="/ledger"
+            className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
+              <BookOpen size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-surface-900 block leading-tight">Party Ledger</span>
+              <span className="text-[10px] text-surface-400">Tally statement</span>
+            </div>
+          </Link>
+
+          <Link
+            href="/ledger?tab=sites"
+            className="p-2.5 rounded-lg border border-surface-200 bg-white hover:bg-surface-50 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-surface-100 text-surface-700 flex items-center justify-center shrink-0">
+              <Building2 size={16} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-surface-900 block leading-tight">Site Ledger</span>
+              <span className="text-[10px] text-surface-400">Plus / Minus (+/-)</span>
+            </div>
+          </Link>
+
+          <Link
+            href="/ledger?tab=tally"
+            className="p-2.5 rounded-lg border border-zinc-300 bg-zinc-900 text-white hover:bg-zinc-800 transition-colors flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-amber-500 text-zinc-950 flex items-center justify-center shrink-0 font-black text-xs">
+              XML
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-xs text-white block leading-tight">Tally Sync</span>
+              <span className="text-[10px] text-zinc-400">Admin prime push</span>
+            </div>
+          </Link>
+        </div>
+      )}
 
       {/* Recent Challans Card */}
       <div className="card p-3 sm:p-4 space-y-3">

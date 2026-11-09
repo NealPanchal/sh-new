@@ -10,6 +10,11 @@ import {
   saveChallanToFirestoreRest,
   deleteChallanFromFirestoreRest,
 } from '@/lib/server-firestore';
+import {
+  recordAuditLog,
+  hasActiveCreditException,
+  checkCustomerCreditStatus,
+} from '@/lib/server-accounting';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
@@ -38,6 +43,9 @@ const challanItemSchema = z.object({
   unit: z.string().nullish().default('sheets'),
   quantity: z.coerce.number().nonnegative().default(0),
   rate: z.coerce.number().nullish(),
+  discount_type: z.enum(['percent', 'amount']).nullish(),
+  discount_value: z.coerce.number().nullish(),
+  discount_amount: z.coerce.number().nullish(),
   amount: z.coerce.number().nullish(),
   created_at: z.string().nullish(),
 });
@@ -55,16 +63,42 @@ const challanSchema = z.object({
   customer_address: z.string().nullish().default(''),
   customer_gstin: z.string().nullish(),
   delivery_address: z.string().nullish(),
+  site_id: z.string().nullish(),
+  site_name: z.string().nullish(),
   reference_number: z.string().nullish(),
   notes: z.string().nullish(),
   prepared_by: z.string().nullish(),
   created_by: z.string().nullish(),
-  status: z.enum(['draft', 'final', 'delivered', 'cancelled', 'void']).nullish().default('draft'),
-  share_status: z.enum(['not_shared', 'share_initiated', 'user_marked_sent', 'failed']).nullish().default('not_shared'),
+  status: z
+    .enum([
+      'pending',
+      'approved',
+      'out_for_delivery',
+      'delivered',
+      'partially_delivered',
+      'cancelled',
+      'goods_returned',
+      'draft',
+      'final',
+      'void',
+    ])
+    .nullish()
+    .default('pending'),
+  share_status: z
+    .enum(['not_shared', 'share_initiated', 'user_marked_sent', 'failed'])
+    .nullish()
+    .default('not_shared'),
   is_delivered: z.boolean().nullish(),
   delivered_at: z.string().nullish(),
   delivered_by: z.string().nullish(),
+  delivery_remarks: z.string().nullish(),
+  proof_of_delivery: z.string().nullish(),
+  approved_at: z.string().nullish(),
+  approved_by: z.string().nullish(),
   total_quantity: z.coerce.number().nonnegative().default(0),
+  discount_type: z.enum(['percent', 'amount']).nullish(),
+  discount_value: z.coerce.number().nullish(),
+  discount_amount: z.coerce.number().nullish(),
   total_amount: z.coerce.number().nullish(),
   subtotal_amount: z.coerce.number().nullish(),
   transportation_charges: z.coerce.number().nullish(),
@@ -126,7 +160,10 @@ function writeDb(challans: any[]): void {
   try {
     ensureDirs();
     createTimestampedBackup(challans);
-    fs.writeFileSync(DATA_FILE, JSON.stringify(challans, null, 2), 'utf-8');
+    const content = JSON.stringify(challans, null, 2);
+    const tempFile = `${DATA_FILE}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    fs.writeFileSync(tempFile, content, 'utf-8');
+    fs.renameSync(tempFile, DATA_FILE);
   } catch (err) {
     console.error('Error writing data/challans.json:', err);
   }
@@ -155,6 +192,17 @@ export async function GET(req: NextRequest) {
       (c) => (c.id === targetId || c.challan_number === targetId) && (includeDeleted || !c.is_deleted)
     );
     if (foundLocal) {
+      if (session.role === 'employee') {
+        const uName = (session.name || '').toLowerCase();
+        const uUser = (session.username || '').toLowerCase();
+        const prep = (foundLocal.prepared_by || '').toLowerCase();
+        const cr = (foundLocal.created_by || '').toLowerCase();
+        const belongs = (uName && (prep.includes(uName) || cr.includes(uName))) ||
+                        (uUser && (prep === uUser || cr === uUser));
+        if (!belongs) {
+          return NextResponse.json({ success: false, error: 'Access denied. Employees can only view their own challans.' }, { status: 403 });
+        }
+      }
       return NextResponse.json({ success: true, challan: foundLocal });
     }
 
@@ -162,6 +210,17 @@ export async function GET(req: NextRequest) {
     try {
       const remote = await fetchSingleChallanFromFirestore(targetId);
       if (remote && (includeDeleted || !remote.is_deleted)) {
+        if (session.role === 'employee') {
+          const uName = (session.name || '').toLowerCase();
+          const uUser = (session.username || '').toLowerCase();
+          const prep = (remote.prepared_by || '').toLowerCase();
+          const cr = (remote.created_by || '').toLowerCase();
+          const belongs = (uName && (prep.includes(uName) || cr.includes(uName))) ||
+                          (uUser && (prep === uUser || cr === uUser));
+          if (!belongs) {
+            return NextResponse.json({ success: false, error: 'Access denied. Employees can only view their own challans.' }, { status: 403 });
+          }
+        }
         return NextResponse.json({ success: true, challan: remote });
       }
     } catch (err) {
@@ -204,11 +263,23 @@ export async function GET(req: NextRequest) {
     console.warn('API GET all challans remote merge note:', err);
   }
 
-  const list = Array.from(map.values()).sort((a, b) => {
+  let list = Array.from(map.values()).sort((a, b) => {
     const da = new Date(b.challan_date || b.created_at || 0).getTime();
     const db = new Date(a.challan_date || a.created_at || 0).getTime();
     return da - db;
   });
+
+  // Strict Data Leakage Protection: Employees can ONLY view challans they created
+  if (session.role === 'employee') {
+    const uName = (session.name || '').toLowerCase();
+    const uUser = (session.username || '').toLowerCase();
+    list = list.filter((c) => {
+      const prep = (c.prepared_by || '').toLowerCase();
+      const cr = (c.created_by || '').toLowerCase();
+      return (uName && (prep.includes(uName) || cr.includes(uName))) ||
+             (uUser && (prep === uUser || cr === uUser));
+    });
+  }
 
   return NextResponse.json({ success: true, challans: list });
 }
@@ -243,6 +314,127 @@ export async function POST(req: NextRequest) {
     const challans = readDb();
     const idx = challans.findIndex((c) => c.id === validChallan.id);
 
+    // 1. Role-Based Permission Check: Employees CANNOT edit approved or delivered challans (Requirement 3)
+    if (idx >= 0) {
+      const existingStatus = challans[idx].status;
+      const isApprovedOrDelivered =
+        challans[idx].is_approved ||
+        existingStatus === 'approved' ||
+        existingStatus === 'delivered' ||
+        existingStatus === 'final';
+
+      if (isApprovedOrDelivered && session.role !== 'admin') {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Permission denied. Approved or delivered challans can only be edited or modified by an Administrator.',
+          },
+          { status: 403 }
+        );
+      }
+
+      if (session.role === 'employee') {
+        const uName = (session.name || '').toLowerCase();
+        const uUser = (session.username || '').toLowerCase();
+        const prep = (challans[idx].prepared_by || '').toLowerCase();
+        const cr = (challans[idx].created_by || '').toLowerCase();
+        const belongs = (uName && (prep.includes(uName) || cr.includes(uName))) ||
+                        (uUser && (prep === uUser || cr === uUser));
+        if (!belongs) {
+          return NextResponse.json(
+            { success: false, error: 'Permission denied. Employees can only edit their own challans.' },
+            { status: 403 }
+          );
+        }
+      }
+
+      // If Admin edits an approved challan, record an audit log (Requirement 3)
+      if (
+        session.role === 'admin' &&
+        isApprovedOrDelivered
+      ) {
+        recordAuditLog({
+          entity_type: 'challan',
+          entity_id: validChallan.id,
+          reference_no: validChallan.challan_number,
+          user_id: session.username,
+          user_name: session.name,
+          action: 'ADMIN_EDIT_APPROVED_CHALLAN',
+          previous_values: challans[idx],
+          updated_values: validChallan,
+          reason: body.modification_reason || 'Administrative correction/adjustment',
+        });
+      }
+    }
+
+    // 2. 45-Day Payment Limit & Credit Control Check on new challan creation (Requirement 11)
+    if (idx < 0 && validChallan.customer_id && session.role !== 'admin') {
+      const hasException = hasActiveCreditException(validChallan.customer_id);
+      if (!hasException) {
+        // Read customer profile if exists
+        try {
+          const custPath = path.join(DATA_DIR, 'customers.json');
+          if (fs.existsSync(custPath)) {
+            const customersList = JSON.parse(fs.readFileSync(custPath, 'utf-8'));
+            const matchedCust = customersList.find((c: any) => c.id === validChallan.customer_id);
+            if (matchedCust) {
+              const creditStatus = checkCustomerCreditStatus(matchedCust, challans);
+              if (creditStatus.isBlocked) {
+                return NextResponse.json(
+                  {
+                    success: false,
+                    error: `Customer is blocked from new challan creation: ${creditStatus.blockReason}. Only an Administrator can approve an exception.`,
+                  },
+                  { status: 403 }
+                );
+              }
+            }
+          }
+        } catch (creditErr) {
+          console.warn('Credit check note:', creditErr);
+        }
+      }
+    }
+
+    // 3. Concurrency Safety: Monthly Challan Numbering Conflict Prevention (Requirement 1)
+    let assignedChallanNumber = validChallan.challan_number;
+    if (
+      idx < 0 &&
+      challans.some((c) => c.challan_number === assignedChallanNumber && !c.is_deleted)
+    ) {
+      // Conflict detected! Auto-advance to the next unique sequence for this month
+      const match = assignedChallanNumber.match(/^(.*?\/)(\d{2})\/(\d+)$/);
+      if (match) {
+        const prefix = match[1];
+        const monthStr = match[2];
+        let maxSeq = 0;
+        const monthPattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${monthStr}\\/(\\d+)$`, 'i');
+
+        challans.forEach((c) => {
+          if (!c.is_deleted && c.challan_number) {
+            const m = c.challan_number.match(monthPattern);
+            if (m && m[1]) {
+              const n = parseInt(m[1], 10);
+              if (!isNaN(n) && n > maxSeq) maxSeq = n;
+            }
+          }
+        });
+
+        let nextSeq = maxSeq + 1;
+        while (
+          challans.some(
+            (c) =>
+              c.challan_number === `${prefix}${monthStr}/${String(nextSeq).padStart(3, '0')}` &&
+              !c.is_deleted
+          )
+        ) {
+          nextSeq++;
+        }
+        assignedChallanNumber = `${prefix}${monthStr}/${String(nextSeq).padStart(3, '0')}`;
+      }
+    }
+
     const now = new Date().toISOString();
     const cleanItems = (validChallan.items || []).map((it, i) => ({
       ...it,
@@ -258,6 +450,7 @@ export async function POST(req: NextRequest) {
 
     const finalRecord = {
       ...validChallan,
+      challan_number: assignedChallanNumber,
       customer_id: validChallan.customer_id || '',
       customer_name: validChallan.customer_name || 'Walk-in Customer',
       customer_phone: validChallan.customer_phone || '',
@@ -321,8 +514,37 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
+    if (session.role === 'employee') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Permission denied. Staff members cannot delete challan records. Please contact an Administrator.',
+        },
+        { status: 403 }
+      );
+    }
+
     const challans = readDb();
     const targetIdx = challans.findIndex((c) => c.id === id);
+
+    if (targetIdx >= 0) {
+      const existingStatus = challans[targetIdx].status;
+      const isApprovedOrDelivered =
+        challans[targetIdx].is_approved ||
+        existingStatus === 'approved' ||
+        existingStatus === 'delivered' ||
+        existingStatus === 'final';
+
+      if (isApprovedOrDelivered && session.role !== 'admin') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Permission denied. Approved or delivered challans cannot be deleted by employees.',
+          },
+          { status: 403 }
+        );
+      }
+    }
 
     let deletedItem: any = targetIdx >= 0 ? challans[targetIdx] : null;
 

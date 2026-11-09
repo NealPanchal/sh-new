@@ -22,9 +22,17 @@ import {
   Receipt,
   Trash2,
   Truck,
+  WalletCards,
+  RotateCcw,
+  CheckSquare,
+  Square,
+  Building2,
+  Lock,
+  X,
 } from 'lucide-react';
 import { formatDateIndian, formatINR, formatPhone, amountToWords, cn } from '@/lib/utils';
-import { Challan, ChallanStatus } from '@/types';
+import { Challan, ChallanStatus, PaymentMode } from '@/types';
+import { getCurrentUser, isEmployee, isAdmin } from '@/lib/auth';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
 import {
   openWhatsApp,
@@ -36,6 +44,7 @@ import {
 } from '@/lib/whatsapp';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DeliveryMemoBill } from '@/components/challans/delivery-memo-bill';
+import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
 
 export default function ChallanDetailPage() {
   const params = useParams();
@@ -66,6 +75,148 @@ export default function ChallanDetailPage() {
   const [phoneInput, setPhoneInput] = useState('');
   const [viewMode, setViewMode] = useState<'challan' | 'pi' | 'bill'>('challan');
   const [activeDocType, setActiveDocType] = useState<'DELIVERY CHALLAN' | 'PROFORMA INVOICE'>('DELIVERY CHALLAN');
+
+  // Payment Received Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMode, setPayMode] = useState<PaymentMode>('upi');
+  const [payRef, setPayRef] = useState('');
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [payNotes, setPayNotes] = useState('');
+  const [recordingPay, setRecordingPay] = useState(false);
+
+  // Delivery status management
+  const [deliveryRemarks, setDeliveryRemarks] = useState('');
+  const [updatingDelivery, setUpdatingDelivery] = useState(false);
+
+  const currentUser = getCurrentUser();
+  const isEmp = currentUser?.role === 'employee';
+  const isApproved = Boolean(
+    challan?.is_approved ||
+    challan?.status === 'approved' ||
+    challan?.status === 'delivered' ||
+    challan?.status === 'final'
+  );
+  const isChallanPaid = Boolean(
+    challan?.payment_status === 'paid' ||
+    (challan?.total_amount && challan.paid_amount && challan.paid_amount >= challan.total_amount)
+  );
+  const canEdit = !isEmp || !isApproved;
+
+  const handleUpdateDeliveryStatus = async (
+    newStatus: ChallanStatus,
+    confirmed?: boolean,
+    remarks?: string
+  ) => {
+    if (!challan) return;
+    try {
+      setUpdatingDelivery(true);
+      const now = new Date().toISOString();
+      const confirmedBy = currentUser?.name || challan.prepared_by || 'Staff';
+
+      const updatePayload: Partial<Challan> = {
+        status: newStatus,
+        delivery_status: newStatus,
+        updated_at: now,
+      };
+
+      if (newStatus === 'delivered' || confirmed) {
+        updatePayload.is_delivered = true;
+        updatePayload.delivered_at = now;
+        updatePayload.delivery_confirmed_at = now;
+        updatePayload.delivery_confirmed_by = confirmedBy;
+        updatePayload.delivered_by = confirmedBy;
+        if (remarks) updatePayload.delivery_remarks = remarks;
+      }
+
+      const updated = await updateChallan(challan.id, updatePayload);
+      if (updated) {
+        setChallan({ ...challan, ...updated });
+        showToast(`Delivery status updated to ${newStatus.replace('_', ' ').toUpperCase()}!`, 'success');
+      }
+    } catch (err: any) {
+      showToast('Error updating delivery status', 'error');
+    } finally {
+      setUpdatingDelivery(false);
+    }
+  };
+
+  const handleRecordPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!challan) return;
+    const numAmt = Number(payAmount);
+    if (!numAmt || numAmt <= 0) {
+      showToast('Please enter a valid positive payment amount', 'error');
+      return;
+    }
+
+    try {
+      setRecordingPay(true);
+      const { getClientAuthToken } = await import('@/lib/auth');
+      const token = getClientAuthToken();
+
+      const payload = {
+        customer_id: challan.customer_id,
+        customer_name: challan.customer_name,
+        site_id: challan.site_id || undefined,
+        site_name: challan.site_name || undefined,
+        challan_id: challan.id,
+        challan_number: challan.challan_number,
+        amount: numAmt,
+        payment_mode: payMode,
+        payment_date: payDate,
+        reference_no: payRef.trim() || undefined,
+        notes: payNotes.trim() || undefined,
+      };
+
+      const res = await fetch('/api/payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const d = await res.json();
+      if (!res.ok || !d.success) {
+        showToast(d.error || 'Failed to record payment', 'error');
+        return;
+      }
+
+      showToast(`Payment of ₹${numAmt.toLocaleString('en-IN')} recorded & credited to ledger!`, 'success');
+      setIsPaymentModalOpen(false);
+      setPayAmount('');
+      setPayRef('');
+      setPayNotes('');
+
+      // Immediately update local state with payment status & paid amount so the big PAID stamp appears instantly
+      if (d.challan) {
+        setChallan({ ...challan, ...d.challan });
+        try {
+          updateChallan(challan.id, d.challan);
+        } catch {}
+      } else {
+        const newPaid = (challan.paid_amount || 0) + numAmt;
+        const total = Number(challan.total_amount) || 0;
+        const isPaid = total > 0 && newPaid >= total;
+        const updatedPartial = {
+          ...challan,
+          paid_amount: newPaid,
+          payment_status: isPaid ? ('paid' as const) : ('partial' as const),
+          paid_at: payDate,
+        };
+        setChallan(updatedPartial);
+        try {
+          updateChallan(challan.id, updatedPartial);
+        } catch {}
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Network error recording payment', 'error');
+    } finally {
+      setRecordingPay(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -235,6 +386,30 @@ export default function ChallanDetailPage() {
     showToast(`PDF downloaded: ${label}`);
   };
 
+  const handlePrintWithoutRate = () => {
+    if (!profile || !challan) return;
+    printChallanPDF({
+      challan,
+      items: challan.items || [],
+      profile,
+      documentType: 'DELIVERY CHALLAN',
+      hideRate: true,
+    });
+    showToast(`Print opened (Without Rate) for ${challan.challan_number}`);
+  };
+
+  const handleDownloadWithoutRate = () => {
+    if (!profile || !challan) return;
+    downloadChallanPDF({
+      challan,
+      items: challan.items || [],
+      profile,
+      documentType: 'DELIVERY CHALLAN',
+      hideRate: true,
+    });
+    showToast(`PDF downloaded (Without Rate): ${challan.challan_number}`);
+  };
+
   const handleWhatsApp = async (typeOverride?: 'DELIVERY CHALLAN' | 'PROFORMA INVOICE') => {
     if (!profile || !challan) return;
     const docType = typeOverride || activeDocType;
@@ -378,6 +553,10 @@ export default function ChallanDetailPage() {
                 >
                   {challan.status === 'delivered' ? '🚚 Delivered' : challan.status}
                 </span>
+
+                {isChallanPaid && (
+                  <PaidRubberStamp size="xs" title="PAID" color="emerald" angle={0} />
+                )}
               </div>
               <p className="text-[11px] text-surface-500 mt-0.5">
                 Date: {formatDateIndian(challan.challan_date)}
@@ -390,6 +569,29 @@ export default function ChallanDetailPage() {
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            {/* Record Payment Received Button */}
+            <button
+              onClick={() => {
+                setPayAmount(challan.total_amount ? String(challan.total_amount) : '');
+                setIsPaymentModalOpen(true);
+              }}
+              className="btn-primary py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs whitespace-nowrap cursor-pointer"
+              title="Record Payment Received against this challan"
+            >
+              <WalletCards size={14} />
+              <span>Payment Received</span>
+            </button>
+
+            {/* Goods Return shortcut */}
+            <Link
+              href="/returns"
+              className="btn-secondary py-1.5 px-3 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap"
+              title="Record Goods Return against this challan"
+            >
+              <RotateCcw size={14} />
+              <span>Goods Return</span>
+            </Link>
+
             {/* Mark as Delivered / Re-notify Button */}
             <button
               onClick={handleMarkDelivered}
@@ -442,6 +644,16 @@ export default function ChallanDetailPage() {
               <span>Print {viewMode === 'pi' ? 'PI' : 'Challan'}</span>
             </button>
 
+            {/* Print Without Rate Option */}
+            <button
+              onClick={handlePrintWithoutRate}
+              className="btn-secondary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-2xs"
+              title="Print Delivery Slip without Rate or Prices (Item, Brand, Quantity & Unit only)"
+            >
+              <Printer size={14} className="text-amber-700" />
+              <span>Print (No Rate)</span>
+            </button>
+
             <button
               onClick={() => handleDownload(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
               className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
@@ -451,13 +663,23 @@ export default function ChallanDetailPage() {
               <span>PDF ({viewMode === 'pi' ? 'PI' : 'Challan'})</span>
             </button>
 
-            <Link
-              href={`/challans/${challan.id}/edit`}
-              className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
-            >
-              <Edit size={14} />
-              <span>Edit</span>
-            </Link>
+            {canEdit ? (
+              <Link
+                href={`/challans/${challan.id}/edit`}
+                className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
+              >
+                <Edit size={14} />
+                <span>Edit</span>
+              </Link>
+            ) : (
+              <span
+                className="py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 text-surface-400 bg-surface-100 rounded-lg cursor-not-allowed border border-surface-200 select-none"
+                title="Approved records are locked. Only an Administrator can edit."
+              >
+                <Lock size={13} />
+                <span>Locked</span>
+              </span>
+            )}
 
             <button
               onClick={handleDuplicate}
@@ -467,7 +689,7 @@ export default function ChallanDetailPage() {
               <Copy size={14} />
             </button>
 
-            {challan.status !== 'cancelled' && (
+            {(!isEmp || !isApproved) && challan.status !== 'cancelled' && (
               <button
                 onClick={() => setShowCancelModal(true)}
                 className="btn-ghost py-1.5 px-2 text-xs font-medium text-amber-600 hover:bg-amber-50"
@@ -477,13 +699,15 @@ export default function ChallanDetailPage() {
               </button>
             )}
 
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="btn-ghost py-1.5 px-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
-              title="Delete Challan Permanently"
-            >
-              <Trash2 size={15} />
-            </button>
+            {!isEmp && (
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="btn-ghost py-1.5 px-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                title="Delete Challan Permanently"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -539,13 +763,76 @@ export default function ChallanDetailPage() {
         </button>
       </div>
 
+      {/* Delivery Tracking & Confirmation Action Box */}
+      <div className="card p-3.5 bg-gradient-to-r from-surface-50 to-emerald-50/30 border border-surface-200 text-xs space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer font-bold text-zinc-900 select-none">
+              <input
+                type="checkbox"
+                checked={challan.status === 'delivered' || challan.is_delivered}
+                onChange={(e) => {
+                  const isChecked = e.target.checked;
+                  handleUpdateDeliveryStatus(isChecked ? 'delivered' : 'pending', isChecked);
+                }}
+                className="w-4 h-4 rounded text-primary-600 focus:ring-primary-400 cursor-pointer"
+              />
+              <span className="text-xs">Mark as Delivered</span>
+            </label>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-zinc-500 font-semibold">Status:</span>
+              <select
+                value={challan.status}
+                onChange={(e) => handleUpdateDeliveryStatus(e.target.value as ChallanStatus)}
+                className="px-2.5 py-1 rounded-md bg-white border border-surface-300 text-xs font-bold text-zinc-800 shadow-2xs cursor-pointer"
+              >
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="out_for_delivery">Out for Delivery</option>
+                <option value="delivered">Delivered</option>
+                <option value="partially_delivered">Partially Delivered</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="goods_returned">Goods Returned</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Delivery Confirmation Audit Record */}
+          {challan.delivered_at && (
+            <div className="text-[11px] text-zinc-700 bg-white px-2.5 py-1 rounded-lg border border-surface-200 flex items-center gap-1.5 shadow-2xs">
+              <CheckCircle2 size={13} className="text-emerald-600" />
+              <span>
+                Delivered: <strong>{formatDateIndian(challan.delivered_at)}</strong>
+                {challan.delivery_confirmed_by && ` • Verified by ${challan.delivery_confirmed_by}`}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Conditionally render the selected view */}
       {viewMode === 'bill' ? (
         <div className="printable-delivery-bill">
           <DeliveryMemoBill challan={challan} profile={profile} />
         </div>
       ) : (
-        <div className="card p-4 sm:p-8 bg-white shadow-xs border border-surface-200 printable-challan">
+        <div className="card p-4 sm:p-8 bg-white shadow-xs border border-surface-200 printable-challan relative">
+          {/* Compact Transparent Rubber Stamp: PAID */}
+          {isChallanPaid && (
+            <div className="absolute top-4 right-6 sm:top-5 sm:right-10 pointer-events-none select-none z-10 print:top-3 print:right-6">
+              <PaidRubberStamp
+                size="md"
+                title="PAID"
+                subtitle="SHOWHOUSE"
+                date={challan.paid_at ? formatDateIndian(challan.paid_at) : formatDateIndian(challan.challan_date)}
+                amount={challan.total_amount ?? undefined}
+                refNo={challan.challan_number}
+                color="emerald"
+                angle={-6}
+              />
+            </div>
+          )}
         {/* Business Header */}
         <div className="border-b-2 border-primary-500 pb-4 mb-4">
           <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
@@ -1005,6 +1292,124 @@ export default function ChallanDetailPage() {
                 >
                   <Send size={13} />
                   <span>Share Now</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Received Modal */}
+      {isPaymentModalOpen && challan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-surface-200 text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                  <WalletCards size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-zinc-900">Record Payment Received</h3>
+                  <p className="text-[11px] text-zinc-500">Challan: {challan.challan_number}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="p-1 text-surface-400 hover:text-surface-700 rounded-md"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRecordPayment} className="py-4 space-y-3.5">
+              <div className="p-3 bg-surface-50 rounded-xl border border-surface-200">
+                <span className="text-[10px] text-zinc-400 font-semibold uppercase block">Customer / Party</span>
+                <span className="font-bold text-zinc-900 text-sm block">{challan.customer_name}</span>
+                {challan.site_name && (
+                  <span className="text-[11px] text-zinc-500 block mt-0.5">Site: {challan.site_name}</span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-zinc-700">Amount Received (₹) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    placeholder="e.g. 25000"
+                    className="input text-xs font-bold text-emerald-600 w-full"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-zinc-700">Payment Mode</label>
+                  <select
+                    value={payMode}
+                    onChange={(e) => setPayMode(e.target.value as PaymentMode)}
+                    className="input text-xs font-medium w-full"
+                  >
+                    <option value="upi">UPI</option>
+                    <option value="bank_transfer">Bank Transfer (NEFT)</option>
+                    <option value="cash">Cash</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-zinc-700">Payment Date</label>
+                  <input
+                    type="date"
+                    value={payDate}
+                    onChange={(e) => setPayDate(e.target.value)}
+                    className="input text-xs font-medium w-full"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-zinc-700">Ref / UTR / Cheque #</label>
+                  <input
+                    type="text"
+                    value={payRef}
+                    onChange={(e) => setPayRef(e.target.value)}
+                    placeholder="e.g. UTR12345"
+                    className="input text-xs font-mono w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-zinc-700">Notes / Remarks</label>
+                <input
+                  type="text"
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                  placeholder="e.g. Received via PhonePe"
+                  className="input text-xs font-medium w-full"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-surface-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPaymentModalOpen(false)}
+                  className="btn-secondary py-1.5 px-3 text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={recordingPay}
+                  className="btn-primary py-1.5 px-4 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                >
+                  {recordingPay ? 'Recording...' : 'Record Payment & Credit Ledger'}
                 </button>
               </div>
             </form>

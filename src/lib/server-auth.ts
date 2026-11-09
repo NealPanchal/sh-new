@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { findEmployeeByUsername } from '@/lib/employee-accounts';
-import { AuthUser } from '@/types';
+import { AuthUser, UserRole } from '@/types';
 
 export const AUTH_COOKIE_NAME = 'sh_admin_session';
 
@@ -108,17 +108,17 @@ export function verifyServerCredentials(
 export interface SessionPayload {
   username: string;
   name: string;
-  role: 'admin' | 'employee';
+  role: UserRole;
   exp: number;
   iat: number;
 }
 
 export function createSignedSessionToken(
-  user: { username: string; name?: string; role?: 'admin' | 'employee' } | string = 'adminsh'
+  user: { username: string; name?: string; role?: UserRole } | string = 'adminsh'
 ): string {
   const now = Math.floor(Date.now() / 1000);
   const username = typeof user === 'string' ? user : user.username;
-  const role = typeof user === 'string' ? 'admin' : (user.role || 'admin');
+  const role: UserRole = typeof user === 'string' ? 'admin' : (user.role || 'admin');
   const name = typeof user === 'string' ? (username === 'adminsh' ? 'Admin SH' : username) : (user.name || username);
 
   const payload: SessionPayload = {

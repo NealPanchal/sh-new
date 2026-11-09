@@ -4,6 +4,7 @@ import React from 'react';
 import { Challan, BusinessProfile } from '@/types';
 import { formatPhone } from '@/lib/utils';
 import { MapPin, Phone, Mail } from 'lucide-react';
+import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
 
 interface DeliveryMemoBillProps {
   challan: Challan;
@@ -77,10 +78,31 @@ export function DeliveryMemoBill({
       ? `Confirm By ${challan.created_by || challan.prepared_by}`
       : '');
 
+  const isChallanPaid = Boolean(
+    challan?.payment_status === 'paid' ||
+    (challan?.total_amount && challan.paid_amount && challan.paid_amount >= challan.total_amount)
+  );
+
   return (
     <div className="w-full max-w-[680px] mx-auto bg-white border border-surface-300 shadow-md print:shadow-none print:border-none rounded-sm overflow-hidden text-surface-900 font-sans print:p-0">
       {/* Outer Paper Slip Box */}
       <div className="p-4 sm:p-6 bg-white relative">
+        {/* Compact Transparent Rubber Stamp: PAID */}
+        {isChallanPaid && (
+          <div className="absolute top-3 right-4 sm:top-3 sm:right-6 pointer-events-none select-none z-10 print:top-2 print:right-4">
+            <PaidRubberStamp
+              size="sm"
+              title="PAID"
+              subtitle="SHOWHOUSE"
+              date={shortDate}
+              amount={calculatedGrandTotal > 0 ? calculatedGrandTotal : undefined}
+              refNo={displayMemoNo}
+              color="emerald"
+              angle={-6}
+            />
+          </div>
+        )}
+
         {/* Top Header */}
         <div className="flex items-start justify-between border-b-2 border-[#b8860b] pb-3 mb-2">
           {/* Left Brand */}

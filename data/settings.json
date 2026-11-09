@@ -24,7 +24,7 @@
   "bank_account": "",
   "bank_ifsc": "",
   "bank_branch": "",
-  "terms_conditions": "1. Goods once delivered and verified will not be taken back.\n2. Discrepancies if any must be reported within 24 hours.\n3. This is a Delivery Challan acknowledging goods receipt and not a tax invoice.\n4. Subject to local jurisdiction.",
+  "terms_conditions": "1. Goods once delivered and verified will not be taken back.\n2. Discrepancies if any must be reported within 24 hours.\n3. This is a Delivery Challan acknowledging goods receipt and not a tax invoice.\n4. Payment must be cleared within 45 days from the transaction date or as per the agreed credit terms. If the outstanding balance exceeds the approved credit limit or payment remains overdue beyond the agreed credit period, the account may be temporarily blocked from further challan generation. Only authorized administration can approve exceptions or restore challan creation privileges.\n5. Subject to local jurisdiction.",
   "show_rate_column": true,
   "show_amount_column": true,
   "show_signature_area": true,
