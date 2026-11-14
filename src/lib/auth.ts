@@ -81,6 +81,9 @@ export async function logoutAdmin(): Promise<void> {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem(AUTH_TOKEN_KEY);
+    try {
+      sessionStorage.removeItem('sh_stealth_unlocked');
+    } catch {}
     window.location.href = '/login';
   }
 }
@@ -92,6 +95,9 @@ export function clearAdminSession(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem(AUTH_TOKEN_KEY);
+    try {
+      sessionStorage.removeItem('sh_stealth_unlocked');
+    } catch {}
   }
 }
 

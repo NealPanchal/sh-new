@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, User, Eye, EyeOff, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, ShieldCheck, ArrowRight, ShieldAlert } from 'lucide-react';
 import { loginAdmin, isAdminAuthenticated } from '@/lib/auth';
+import { Stealth404Decoy } from '@/components/auth/stealth-404-decoy';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,13 +14,41 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+
+    // If previously unlocked in this browser tab session, restore visibility
+    if (typeof window !== 'undefined' && sessionStorage.getItem('sh_stealth_unlocked') === 'true') {
+      setIsUnlocked(true);
+    }
+
     if (isAdminAuthenticated()) {
       router.replace('/');
     }
   }, [router]);
+
+  useEffect(() => {
+    if (mounted) {
+      if (isUnlocked) {
+        document.title = 'Showhouse — Login';
+      } else {
+        document.title = '404 - Page Not Found';
+      }
+    }
+  }, [isUnlocked, mounted]);
+
+  const handleUnlock = () => {
+    setIsUnlocked(true);
+  };
+
+  const handleLockBack = () => {
+    setIsUnlocked(false);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('sh_stealth_unlocked');
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,14 +81,30 @@ export default function LoginPage() {
 
   if (!mounted) return null;
 
+  // By default, display realistic 404 Not Found error until user taps/clicks 8 times
+  if (!isUnlocked) {
+    return <Stealth404Decoy onUnlock={handleUnlock} />;
+  }
+
+  // Once unlocked with 8 taps/clicks on error, display Showhouse Login Card
   return (
-    <div className="min-h-screen bg-surface-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none">
+    <div className="min-h-screen bg-surface-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none animate-in fade-in duration-300">
       {/* Background Subtle Gradient Blobs */}
       <div className="absolute top-1/4 -left-20 w-80 h-80 bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-[#b8860b]/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Login Card */}
-      <div className="w-full max-w-sm sm:max-w-md bg-surface-900 border border-surface-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 text-white">
+      <div className="w-full max-w-sm sm:max-w-md bg-surface-900 border border-surface-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 text-white animate-in zoom-in-95 duration-200">
+        {/* Stealth Quick Lock / Hide button */}
+        <button
+          type="button"
+          onClick={handleLockBack}
+          className="absolute right-4 top-4 p-1.5 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-colors"
+          title="Lock & Hide to 404"
+        >
+          <Lock size={15} />
+        </button>
+
         {/* Brand Logo & Header */}
         <div className="text-center mb-6">
           <div className="w-20 h-20 mx-auto rounded-2xl bg-white p-2.5 shadow-xl shadow-amber-500/10 border border-amber-200/40 mb-3.5 flex items-center justify-center">
@@ -132,7 +177,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300 transition-colors p-0.5"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300 transition-colors p-0.5 cursor-pointer"
                 title={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
