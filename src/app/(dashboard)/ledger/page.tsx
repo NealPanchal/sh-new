@@ -183,7 +183,9 @@ export default function MasterPartyLedgerPage() {
   const [showAddEntryModal, setShowAddEntryModal] = useState(false);
   const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
   const [entryParticulars, setEntryParticulars] = useState('');
-  const [entryType, setEntryType] = useState<'Receipt' | 'Sales GST' | 'Payment' | 'Journal' | 'Party Challan'>('Receipt');
+  const [entryType, setEntryType] = useState<
+    'Receipt' | 'Sales GST' | 'Payment' | 'Journal' | 'Party Challan' | 'UPI' | 'Bank Transfer' | 'Cash' | 'Cheque'
+  >('Receipt');
   const [entryVoucherNo, setEntryVoucherNo] = useState('');
   const [entryAmount, setEntryAmount] = useState('');
   const [entrySiteName, setEntrySiteName] = useState('');
@@ -307,19 +309,49 @@ export default function MasterPartyLedgerPage() {
       const token = getClientAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-      const custObj = customers.find((c) => c.id === custId || c.name === custId);
-      const custName = custObj?.name || custObj?.business_name || '';
+      const custObj =
+        customers.find((c) => c.id === custId || c.name === custId) ||
+        (contextCustomers || []).find((c: Customer) => c.id === custId || c.name === custId);
+      const custName = custObj?.name || custObj?.business_name || (custId.length < 30 ? custId : '');
 
       const queryParams = new URLSearchParams({ customerId: custId });
       if (custName) queryParams.set('customerName', custName);
 
+      const targetId = custId.toLowerCase();
+      const targetName = custName.toLowerCase();
+
+      // Immediate pre-population from in-memory contextChallans so UI is NEVER empty
+      const localMatches = (contextChallans || []).filter((c: any) => {
+        const cId = (c.customer_id || '').toLowerCase();
+        const cName = (c.customer_name || '').toLowerCase();
+        if (targetId && (cId === targetId || cName === targetId)) return true;
+        if (targetName && (cName === targetName || cName.includes(targetName))) return true;
+        if (
+          (targetId === 'cust_rk_sales' || targetId.includes('rk') || targetName.includes('rk')) &&
+          (cName.includes('r k') || cName.includes('rk sales'))
+        ) {
+          return true;
+        }
+        return false;
+      }).map((c: any) => ({
+        id: c.id,
+        challan_number: c.challan_number || c.reference_number || 'CH',
+        date: c.challan_date || c.created_at,
+        amount: Number(c.total_amount) || 0,
+        status: c.status || 'delivered',
+        items_count: Array.isArray(c.items) ? c.items.length : 0,
+        site_name: c.site_name || c.delivery_address || '',
+      }));
+
+      if (localMatches.length > 0) {
+        setCustomerChallans(localMatches);
+      }
+
+      // Fetch from API to get all latest server-side challans
       const res = await fetch(`/api/challans?${queryParams.toString()}`, { headers });
       if (res.ok) {
         const d = await res.json();
-        const targetId = custId.toLowerCase();
-        const targetName = custName.toLowerCase();
-
-        const list = (d.challans || [])
+        const serverList = (d.challans || [])
           .filter((c: any) => {
             const cId = (c.customer_id || '').toLowerCase();
             const cName = (c.customer_name || '').toLowerCase();
@@ -342,7 +374,12 @@ export default function MasterPartyLedgerPage() {
             items_count: Array.isArray(c.items) ? c.items.length : 0,
             site_name: c.site_name || c.delivery_address || '',
           }));
-        setCustomerChallans(list);
+
+        // Merge serverList and localMatches by unique ID
+        const chMap = new Map<string, any>();
+        localMatches.forEach((c: any) => chMap.set(c.id, c));
+        serverList.forEach((c: any) => chMap.set(c.id, c));
+        setCustomerChallans(Array.from(chMap.values()));
       }
     } catch (err) {
       console.warn('Failed to fetch customer challans:', err);
@@ -354,12 +391,13 @@ export default function MasterPartyLedgerPage() {
     if (selectedCustomerId) {
       fetchCustomerChallans(selectedCustomerId);
     }
-  }, [selectedCustomerId, fromDate, toDate, typeFilter, siteFilter]);
+  }, [selectedCustomerId, fromDate, toDate, typeFilter, siteFilter, customers, contextCustomers, contextChallans]);
 
   // Selected customer object
   const selectedCustomer = useMemo<Customer>(() => {
     return (
-      customers.find((c) => c.id === selectedCustomerId || c.name === selectedCustomerId) || {
+      customers.find((c) => c.id === selectedCustomerId || c.name === selectedCustomerId) ||
+      (contextCustomers || []).find((c: Customer) => c.id === selectedCustomerId || c.name === selectedCustomerId) || {
         id: 'cust_rk_sales',
         user_id: 'admin',
         name: 'R K Sales',
@@ -377,7 +415,7 @@ export default function MasterPartyLedgerPage() {
         updated_at: '2024-02-01T00:00:00.000Z',
       }
     );
-  }, [customers, selectedCustomerId]);
+  }, [customers, contextCustomers, selectedCustomerId]);
 
   // Filtered entries by search input
   const displayEntries = useMemo(() => {
@@ -393,37 +431,142 @@ export default function MasterPartyLedgerPage() {
     return list;
   }, [ledgerData.entries, searchChallanNo]);
 
-  // Customer Challans for attaching to Sites
-  const availableChallans = useMemo(() => {
-    const list: Array<{ id: string; challan_number: string; date: string; amount: number; site_name?: string }> = [];
+  // Comprehensive Customer Transactions & Challans for Auto-Fill
+  const availableCustomerTransactions = useMemo(() => {
+    const list: Array<{
+      id: string;
+      label: string;
+      voucher_no: string;
+      date: string;
+      amount: number;
+      particulars: string;
+      site_name?: string;
+      type: 'Party Challan' | 'Sales GST' | 'Receipt' | 'Payment' | 'UPI' | 'Bank Transfer' | 'Cash' | 'Cheque';
+      effect: 'debit' | 'credit';
+      isChallan: boolean;
+    }> = [];
     const seen = new Set<string>();
 
+    const targetId = (selectedCustomerId || '').trim().toLowerCase();
+    const custName = (selectedCustomer?.name || '').trim().toLowerCase();
+    const custBiz = (selectedCustomer?.business_name || '').trim().toLowerCase();
+
+    const isMatchThisCust = (cId?: string | null, cName?: string | null) => {
+      const cid = (cId || '').trim().toLowerCase();
+      const cname = (cName || '').trim().toLowerCase();
+      if (targetId && (cid === targetId || cname === targetId)) return true;
+      if (custName && (cname === custName || cname.includes(custName))) return true;
+      if (custBiz && (cname === custBiz || cname.includes(custBiz))) return true;
+      if (
+        (targetId === 'cust_rk_sales' || targetId.includes('rk') || custName.includes('rk')) &&
+        (cname.includes('r k') || cname.includes('rk sales'))
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    // 1. From customerChallans (API fetched)
     customerChallans.forEach((c) => {
-      const key = (c.challan_number || c.id).trim().toLowerCase();
+      const key = `ch_${c.id}`;
       if (!seen.has(key)) {
         seen.add(key);
-        list.push(c);
+        const vch = c.challan_number || 'CH';
+        const dStr = c.date ? formatDateDisplay(c.date) : 'No date';
+        list.push({
+          id: c.id,
+          label: `Challan #${vch} — ₹${Number(c.amount).toLocaleString('en-IN')} (${dStr}) [Debit]`,
+          voucher_no: vch,
+          date: c.date ? c.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+          amount: Number(c.amount) || 0,
+          particulars: `To SALE GST 18% - Challan ${vch}`,
+          site_name: c.site_name || '',
+          type: 'Party Challan',
+          effect: 'debit',
+          isChallan: true,
+        });
       }
     });
 
-    (ledgerData.entries || []).forEach((e) => {
-      if ((e.voucher_type === 'sales_gst' || e.challan_id || e.debit > 0) && e.reference) {
-        const key = e.reference.trim().toLowerCase();
+    // 2. From contextChallans (useApp / client store)
+    (contextChallans || []).forEach((c) => {
+      if (isMatchThisCust(c.customer_id, c.customer_name) && !c.is_deleted && c.status !== 'void') {
+        const key = `ch_${c.id}`;
         if (!seen.has(key)) {
           seen.add(key);
+          const vch = c.challan_number || c.reference_number || 'CH';
+          const amt = Number(c.total_amount) || 0;
+          const dStr = c.challan_date ? formatDateDisplay(c.challan_date) : 'No date';
           list.push({
-            id: e.challan_id || `vch_${key}`,
-            challan_number: e.reference,
-            date: e.date,
-            amount: e.debit || 0,
-            site_name: e.site_name,
+            id: c.id,
+            label: `Challan #${vch} — ₹${amt.toLocaleString('en-IN')} (${dStr}) [Debit]`,
+            voucher_no: vch,
+            date: c.challan_date ? c.challan_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            amount: amt,
+            particulars: c.apply_gst ? `To SALE GST 18% - Challan ${vch}` : `To SALE - Challan ${vch}`,
+            site_name: c.site_name || c.delivery_address || '',
+            type: 'Party Challan',
+            effect: 'debit',
+            isChallan: true,
           });
         }
       }
     });
 
+    // 3. From ledgerData.entries (existing sales, receipts, payments, vouchers)
+    (ledgerData.entries || []).forEach((e) => {
+      const isSales = e.voucher_type === 'sales_gst' || (e.debit > 0 && e.credit === 0);
+      const isReceipt = e.voucher_type === 'receipt' || (e.credit > 0 && e.debit === 0);
+      const amt = isSales ? e.debit : e.credit;
+      const ref = e.reference || e.particulars || 'VCH';
+      const key = `entry_${e.id || ref}_${amt}`;
+
+      if (!seen.has(key) && (amt > 0 || ref)) {
+        seen.add(key);
+        const tag = isSales ? 'Sales / Challan' : 'Payment / Receipt';
+        const eff = isSales ? 'Debit' : 'Credit';
+        const dStr = e.date ? formatDateDisplay(e.date) : '';
+        list.push({
+          id: e.id || key,
+          label: `[${tag}] ${ref} — ₹${Number(amt).toLocaleString('en-IN')} (${dStr}) [${eff}]`,
+          voucher_no: e.reference || '',
+          date: e.date ? e.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+          amount: Number(amt) || 0,
+          particulars: e.particulars || (isSales ? `To SALE GST 18% - ${ref}` : `By Payment - ${ref}`),
+          site_name: e.site_name || '',
+          type: isSales ? 'Sales GST' : 'Receipt',
+          effect: isSales ? 'debit' : 'credit',
+          isChallan: isSales,
+        });
+      }
+    });
+
+    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [customerChallans, contextChallans, ledgerData.entries, selectedCustomerId, selectedCustomer]);
+
+  // Customer Challans for attaching to Sites
+  const availableChallans = useMemo(() => {
+    const list: Array<{ id: string; challan_number: string; date: string; amount: number; site_name?: string }> = [];
+    const seen = new Set<string>();
+
+    availableCustomerTransactions
+      .filter((t) => t.isChallan)
+      .forEach((t) => {
+        const key = (t.voucher_no || t.id).trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push({
+            id: t.id,
+            challan_number: t.voucher_no,
+            date: t.date,
+            amount: t.amount,
+            site_name: t.site_name,
+          });
+        }
+      });
+
     return list;
-  }, [customerChallans, ledgerData.entries]);
+  }, [availableCustomerTransactions]);
 
   // Unique available sites for filter dropdown (deduplicated across ledger sites and customer challans)
   const availableSites = useMemo(() => {
@@ -2286,16 +2429,16 @@ export default function MasterPartyLedgerPage() {
             </div>
 
             <form onSubmit={handleCreateManualEntry} className="space-y-3 text-xs">
-              {/* Select Customer's Challans (Auto-Fill) */}
-              <div className="space-y-1 p-2.5 bg-amber-500/10 border border-amber-300/70 rounded-xl">
+              {/* Select Customer's Transactions / Challans (Auto-Fill) */}
+              <div className="space-y-1.5 p-2.5 bg-amber-500/10 border border-amber-300/70 rounded-xl">
                 <label className="font-bold text-amber-950 flex items-center justify-between text-[11px]">
                   <span className="flex items-center gap-1.5">
                     <FileText size={13} className="text-[#ea580c]" />
-                    <span>Select from Customer&apos;s Challans (Optional)</span>
+                    <span>Select Customer&apos;s Transaction / Challan (Auto-Fill)</span>
                   </span>
-                  {availableChallans.length > 0 && (
-                    <span className="text-[10px] text-amber-800 font-semibold">
-                      {availableChallans.length} Challan(s)
+                  {availableCustomerTransactions.length > 0 && (
+                    <span className="text-[10px] text-amber-900 font-bold px-2 py-0.5 bg-amber-200/70 rounded-full">
+                      {availableCustomerTransactions.length} Available
                     </span>
                   )}
                 </label>
@@ -2304,26 +2447,29 @@ export default function MasterPartyLedgerPage() {
                   onChange={(e) => {
                     const cId = e.target.value;
                     setSelectedChallanForEntry(cId);
-                    const match = availableChallans.find((c) => c.id === cId || c.challan_number === cId);
+                    const match = availableCustomerTransactions.find((c) => c.id === cId || c.voucher_no === cId);
                     if (match) {
-                      setEntryVoucherNo(match.challan_number);
+                      setEntryVoucherNo(match.voucher_no);
                       setEntryAmount(String(match.amount || ''));
-                      if (match.date) setEntryDate(match.date.slice(0, 10));
-                      if ((match as any).site_name) setEntrySiteName((match as any).site_name);
-                      setEntryParticulars(`To SALE GST 18% - Challan ${match.challan_number}`);
-                      setEntryType('Party Challan');
-                      setEntryDebitOrCredit('debit');
+                      if (match.date) setEntryDate(match.date);
+                      if (match.site_name) setEntrySiteName(match.site_name);
+                      setEntryParticulars(match.particulars);
+                      setEntryType(match.type);
+                      setEntryDebitOrCredit(match.effect);
                     }
                   }}
                   className="input text-xs w-full font-bold bg-white border-amber-300"
                 >
-                  <option value="">-- Choose Challan to Auto-Fill --</option>
-                  {availableChallans.map((ch) => (
-                    <option key={ch.id} value={ch.id}>
-                      Challan #{ch.challan_number} — ₹{Number(ch.amount).toLocaleString('en-IN')} ({ch.date ? formatDateDisplay(ch.date) : 'No date'})
+                  <option value="">-- Choose Transaction / Challan to Auto-Fill --</option>
+                  {availableCustomerTransactions.map((tx) => (
+                    <option key={tx.id} value={tx.id}>
+                      {tx.label}
                     </option>
                   ))}
                 </select>
+                <p className="text-[10px] text-amber-800/80">
+                  Selecting any challan or transaction will auto-fill voucher details, amount, and debit/credit effect.
+                </p>
               </div>
 
               {/* Accounting Effect: Debit vs Credit Toggle */}
