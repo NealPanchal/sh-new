@@ -84,57 +84,90 @@ function writeJsonFile<T>(filename: string, data: T, backup = false): void {
 // ----------------------------------------------------
 export function getAllCustomers(): Customer[] {
   let custs = readJsonFile<Customer[]>('customers.json', []);
-  if (!custs || custs.length === 0) {
+  if (!Array.isArray(custs)) custs = [];
+
+  let modified = false;
+
+  // 1. Ensure R K Sales is always anchored as primary master account
+  const hasRKSales = custs.some(
+    (c) => c.id === 'cust_rk_sales' || (c.name && c.name.toLowerCase().includes('r k sales'))
+  );
+  if (!hasRKSales) {
+    custs.unshift({
+      id: 'cust_rk_sales',
+      user_id: 'admin',
+      name: 'R K Sales',
+      business_name: 'R K Sales',
+      company_name: 'R K Sales',
+      contact_person: 'Ramesh Kumar',
+      phone: '02225387687',
+      billing_address: '3rd Floor, Building No. A-4,\nFlat No 307,\nAvadh Complex, Kasheli Village,\nBhiwandi Railway Station,\nKasheli Bhiwandi\nThane-421302',
+      delivery_address: 'Kasheli Bhiwandi, Thane-421302',
+      gstin: '27AABCR1234F1ZP',
+      notes: 'Premium commercial & residential project customer',
+      is_active: true,
+      opening_balance: 0,
+      credit_days: 45,
+      credit_limit: 500000,
+      created_at: '2024-02-01T00:00:00.000Z',
+      updated_at: '2024-02-01T00:00:00.000Z',
+    });
+    modified = true;
+  }
+
+  // 2. Dynamic Scan: Auto-detect any missing party from all delivery challans
+  try {
     const challans = getAllChallans();
-    const seen = new Set<string>();
-    custs = [
-      {
-        id: 'cust_rk_sales',
-        user_id: 'admin',
-        name: 'R K Sales',
-        business_name: 'R K Sales',
-        company_name: 'R K Sales',
-        contact_person: 'Ramesh Kumar',
-        phone: '02225387687',
-        billing_address: '3rd Floor, Building No. A-4,\nFlat No 307,\nAvadh Complex, Kasheli Village,\nBhiwandi Railway Station,\nKasheli Bhiwandi\nThane-421302',
-        delivery_address: 'Kasheli Bhiwandi, Thane-421302',
-        gstin: '27AABCR1234F1ZP',
-        notes: 'Premium commercial & residential project customer',
-        is_active: true,
-        opening_balance: 0,
-        credit_days: 45,
-        credit_limit: 500000,
-        created_at: '2024-02-01T00:00:00.000Z',
-        updated_at: '2024-02-01T00:00:00.000Z',
-      },
-    ];
-    seen.add('r k sales');
+    const existingKeys = new Set<string>();
+
+    custs.forEach((c) => {
+      if (c.id) existingKeys.add(c.id.toLowerCase());
+      if (c.name) existingKeys.add(c.name.trim().toLowerCase());
+      if (c.business_name) existingKeys.add(c.business_name.trim().toLowerCase());
+    });
 
     challans.forEach((c) => {
       const name = (c.customer_name || '').trim();
-      if (!name || seen.has(name.toLowerCase())) return;
-      seen.add(name.toLowerCase());
-      custs.push({
-        id: c.customer_id || `cust_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        user_id: 'admin',
-        name,
-        business_name: name,
-        company_name: name,
-        contact_person: name,
-        phone: c.customer_phone || '',
-        billing_address: c.customer_address || c.delivery_address || 'Thane (W)',
-        delivery_address: c.delivery_address || c.customer_address || 'Thane (W)',
-        gstin: c.customer_gstin || null,
-        notes: null,
-        is_active: true,
-        opening_balance: 0,
-        credit_days: 45,
-        credit_limit: 200000,
-        created_at: c.created_at || new Date().toISOString(),
-        updated_at: c.updated_at || new Date().toISOString(),
-      });
-    });
+      if (!name) return;
+      const lowerName = name.toLowerCase();
+      const cId = (c.customer_id || '').trim();
 
+      const isKnown =
+        (cId && existingKeys.has(cId.toLowerCase())) ||
+        existingKeys.has(lowerName) ||
+        (lowerName.includes('r k') && existingKeys.has('r k sales'));
+
+      if (!isKnown) {
+        existingKeys.add(lowerName);
+        if (cId) existingKeys.add(cId.toLowerCase());
+        const newCust: Customer = {
+          id: cId || `cust_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          user_id: 'admin',
+          name,
+          business_name: name,
+          company_name: name,
+          contact_person: name,
+          phone: c.customer_phone || '',
+          billing_address: c.customer_address || c.delivery_address || 'Thane (W)',
+          delivery_address: c.delivery_address || c.customer_address || 'Thane (W)',
+          gstin: c.customer_gstin || null,
+          notes: null,
+          is_active: true,
+          opening_balance: 0,
+          credit_days: 45,
+          credit_limit: 200000,
+          created_at: c.created_at || new Date().toISOString(),
+          updated_at: c.updated_at || new Date().toISOString(),
+        };
+        custs.push(newCust);
+        modified = true;
+      }
+    });
+  } catch (err) {
+    console.warn('Auto-detect customers from challans note:', err);
+  }
+
+  if (modified) {
     saveCustomers(custs);
   }
   return custs;
@@ -154,34 +187,76 @@ export function saveCustomerSites(sites: CustomerSite[]): void {
 
 export function getSitesByCustomerId(customerId: string): CustomerSite[] {
   const all = getCustomerSites();
-  let sites = all.filter((s) => s.customer_id === customerId);
+  const allCusts = getAllCustomers();
+  const cust = allCusts.find(
+    (c) =>
+      c.id === customerId ||
+      c.name?.toLowerCase() === customerId.toLowerCase() ||
+      c.business_name?.toLowerCase() === customerId.toLowerCase()
+  );
 
-  // Auto-fetch sites from customer's challans if not already added
+  const targetId = (customerId || '').trim().toLowerCase();
+  const custId = (cust?.id || '').trim().toLowerCase();
+  const custName = (cust?.name || '').trim().toLowerCase();
+  const custBiz = (cust?.business_name || '').trim().toLowerCase();
+
+  let sites = all.filter(
+    (s) =>
+      s.customer_id === customerId ||
+      (custId && s.customer_id.toLowerCase() === custId) ||
+      (targetId && s.customer_id.toLowerCase() === targetId)
+  );
+
+  // Auto-fetch and detect all sites from customer's challans
   try {
     const challans = getAllChallans();
-    const custChallans = challans.filter(
-      (c) =>
-        (c.customer_id === customerId ||
-          (c.customer_name && customerId && c.customer_name.toLowerCase().includes(customerId.toLowerCase())) ||
-          (customerId === 'cust_rk_sales' && (c.customer_name || '').toLowerCase().includes('r k sales'))) &&
-        !c.is_deleted
-    );
+    const isMatchThisCust = (c: Challan) => {
+      const cCustId = (c.customer_id || '').trim().toLowerCase();
+      const cCustName = (c.customer_name || '').trim().toLowerCase();
+
+      if (targetId && (cCustId === targetId || cCustName === targetId)) return true;
+      if (custId && (cCustId === custId || cCustName === custId)) return true;
+      if (custName && (cCustName === custName || cCustName.includes(custName))) return true;
+      if (custBiz && (cCustName === custBiz || cCustName.includes(custBiz))) return true;
+      if (
+        (targetId === 'cust_rk_sales' || targetId.includes('rk') || custName.includes('rk')) &&
+        (cCustName.includes('r k') || cCustName.includes('rk sales'))
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    const custChallans = challans.filter((c) => isMatchThisCust(c) && !c.is_deleted);
 
     const existingSiteNames = new Set(sites.map((s) => s.site_name.trim().toLowerCase()));
     let modified = false;
 
     custChallans.forEach((c) => {
-      let sName = (c.site_name || '').trim();
-      if (!sName && c.delivery_address) {
-        sName = c.delivery_address.split(',')[0].trim();
+      const detectedNames: string[] = [];
+      if (c.site_name && c.site_name.trim()) {
+        detectedNames.push(c.site_name.trim());
       }
-      if (sName) {
-        const found = sites.find((s) => s.site_name.trim().toLowerCase() === sName.toLowerCase());
-        if (!found) {
-          existingSiteNames.add(sName.toLowerCase());
+      if (c.delivery_address && c.delivery_address.trim()) {
+        const parts = c.delivery_address.split(',').map((p) => p.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          const firstPart = parts[0];
+          if (!c.site_name || !firstPart.toLowerCase().includes(c.site_name.toLowerCase())) {
+            detectedNames.push(firstPart);
+          }
+        }
+      }
+
+      detectedNames.forEach((sName) => {
+        if (!sName || sName.length < 2) return;
+        const lowerSite = sName.toLowerCase();
+        const found = sites.find((s) => s.site_name.trim().toLowerCase() === lowerSite);
+
+        if (!found && !existingSiteNames.has(lowerSite)) {
+          existingSiteNames.add(lowerSite);
           const newSite: CustomerSite = {
-            id: `site_${customerId}_${sName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
-            customer_id: customerId,
+            id: `site_${cust?.id || customerId}_${sName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+            customer_id: cust?.id || customerId,
             site_name: sName,
             site_address: c.delivery_address || `${sName} Site`,
             opening_balance: 0,
@@ -200,7 +275,7 @@ export function getSitesByCustomerId(customerId: string): CustomerSite[] {
           sites.push(newSite);
           all.push(newSite);
           modified = true;
-        } else if (!found.challan_number || found.challan_number.startsWith('SH/')) {
+        } else if (found && (!found.challan_number || found.challan_number.startsWith('SH/'))) {
           found.challan_id = c.id;
           found.challan_number = c.challan_number;
           if (c.delivery_address) found.site_address = c.delivery_address;
@@ -208,7 +283,7 @@ export function getSitesByCustomerId(customerId: string): CustomerSite[] {
           if (allIdx >= 0) all[allIdx] = found;
           modified = true;
         }
-      }
+      });
     });
 
     if (modified) {

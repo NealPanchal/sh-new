@@ -148,3 +148,4 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
   const safeName = (customerName || 'Customer').replace(/[^a-z0-9]/gi, '_');
   doc.save(`${safeName}_Material_Rates.pdf`);
 }
+

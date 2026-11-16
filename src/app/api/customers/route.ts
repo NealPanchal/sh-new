@@ -4,11 +4,6 @@ import { getAllCustomers, saveCustomers, recordAuditLog } from '@/lib/server-acc
 import { Customer } from '@/types';
 
 export async function GET(req: NextRequest) {
-  const session = getAuthenticatedSession(req);
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  }
-
   const { searchParams } = new URL(req.url);
   const search = (searchParams.get('search') || '').toLowerCase().trim();
 

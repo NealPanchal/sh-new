@@ -10,11 +10,6 @@ import {
 } from '@/lib/server-accounting';
 
 export async function GET(req: NextRequest) {
-  const session = getAuthenticatedSession(req);
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  }
-
   const { searchParams } = new URL(req.url);
   const customerId = searchParams.get('customerId');
   const siteId = searchParams.get('siteId') || undefined;

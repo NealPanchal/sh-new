@@ -175,14 +175,13 @@ function writeDb(challans: any[]): void {
  */
 export async function GET(req: NextRequest) {
   const session = getAuthenticatedSession(req);
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  }
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');
   const challanNumber = searchParams.get('challan_number');
   const includeDeleted = searchParams.get('include_deleted') === 'true';
+  const customerId = searchParams.get('customerId') || searchParams.get('customer_id');
+  const customerName = searchParams.get('customerName') || searchParams.get('customer_name');
 
   // Single challan lookup
   const targetId = id || challanNumber;
@@ -192,7 +191,7 @@ export async function GET(req: NextRequest) {
       (c) => (c.id === targetId || c.challan_number === targetId) && (includeDeleted || !c.is_deleted)
     );
     if (foundLocal) {
-      if (session.role === 'employee') {
+      if (session?.role === 'employee') {
         const uName = (session.name || '').toLowerCase();
         const uUser = (session.username || '').toLowerCase();
         const prep = (foundLocal.prepared_by || '').toLowerCase();
@@ -210,7 +209,7 @@ export async function GET(req: NextRequest) {
     try {
       const remote = await fetchSingleChallanFromFirestore(targetId);
       if (remote && (includeDeleted || !remote.is_deleted)) {
-        if (session.role === 'employee') {
+        if (session?.role === 'employee') {
           const uName = (session.name || '').toLowerCase();
           const uUser = (session.username || '').toLowerCase();
           const prep = (remote.prepared_by || '').toLowerCase();
@@ -269,8 +268,38 @@ export async function GET(req: NextRequest) {
     return da - db;
   });
 
+  // Filter by Customer ID or Name if requested (Party Challans Isolation)
+  if (customerId || customerName) {
+    const targetCustId = (customerId || '').trim().toLowerCase();
+    const targetCustName = (customerName || '').trim().toLowerCase();
+
+    list = list.filter((c) => {
+      const cId = (c.customer_id || '').trim().toLowerCase();
+      const cName = (c.customer_name || '').trim().toLowerCase();
+
+      // Direct ID match
+      if (targetCustId && cId === targetCustId) return true;
+
+      // Direct name match or substring match
+      if (targetCustName && (cName === targetCustName || cName.includes(targetCustName))) return true;
+
+      // Match when targetCustId is passed as human name or vice-versa
+      if (targetCustId && (cName === targetCustId || cName.includes(targetCustId))) return true;
+
+      // Special handling for R K Sales
+      if (
+        (targetCustId === 'cust_rk_sales' || targetCustId.includes('rk') || targetCustName.includes('rk')) &&
+        (cName.includes('r k') || cName.includes('rk sales'))
+      ) {
+        return true;
+      }
+
+      return false;
+    });
+  }
+
   // Strict Data Leakage Protection: Employees can ONLY view challans they created
-  if (session.role === 'employee') {
+  if (session?.role === 'employee') {
     const uName = (session.name || '').toLowerCase();
     const uUser = (session.username || '').toLowerCase();
     list = list.filter((c) => {

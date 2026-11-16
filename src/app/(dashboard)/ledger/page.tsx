@@ -37,6 +37,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { Customer, CustomerSite, CustomerLedgerEntry, PaymentMode } from '@/types';
+import { useApp } from '@/lib/context';
 import { getClientAuthToken, getCurrentUser, isAdmin, canManageAccounting } from '@/lib/auth';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { exportLedgerToPDF } from '@/lib/pdf-ledger';
@@ -102,6 +103,7 @@ function renderPaymentTypeBadge(type?: string, isDebit?: boolean) {
 
 export default function MasterPartyLedgerPage() {
   const router = useRouter();
+  const { customers: contextCustomers, challans: contextChallans } = useApp();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'ledger' | 'sites' | 'credit' | 'tally'>('ledger');
 
@@ -224,7 +226,7 @@ export default function MasterPartyLedgerPage() {
     }
   }, []);
 
-  // Fetch customers on mount
+  // Fetch customers on mount and merge with context customers
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
@@ -234,17 +236,44 @@ export default function MasterPartyLedgerPage() {
         if (res.ok) {
           const data = await res.json();
           const list: Customer[] = data.customers || [];
-          setCustomers(list);
-          if (list.length > 0 && !selectedCustomerId) {
-            setSelectedCustomerId(list[0].id);
+          const map = new Map<string, Customer>();
+
+          list.forEach((c) => {
+            const key = (c.id || c.name || '').trim().toLowerCase();
+            if (key) map.set(key, c);
+          });
+
+          (contextCustomers || []).forEach((c) => {
+            const key = (c.id || c.name || '').trim().toLowerCase();
+            if (key && !map.has(key)) map.set(key, c);
+          });
+
+          const merged = Array.from(map.values());
+          if (merged.length > 0) {
+            setCustomers(merged);
+            if (!selectedCustomerId) {
+              setSelectedCustomerId(merged[0].id);
+            }
           }
+        } else if (contextCustomers && contextCustomers.length > 0) {
+          setCustomers(contextCustomers);
         }
       } catch (err) {
         console.error('Failed to load customers:', err);
+        if (contextCustomers && contextCustomers.length > 0) {
+          setCustomers(contextCustomers);
+        }
       }
     };
     fetchCustomers();
-  }, []);
+  }, [contextCustomers]);
+
+  // Fallback to context customers if customers list is initially empty
+  useEffect(() => {
+    if (customers.length === 0 && contextCustomers && contextCustomers.length > 0) {
+      setCustomers(contextCustomers);
+    }
+  }, [contextCustomers, customers.length]);
 
   // Fetch ledger data whenever selected customer, date filters, or triggers change
   const fetchLedger = async () => {
@@ -277,18 +306,42 @@ export default function MasterPartyLedgerPage() {
     try {
       const token = getClientAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch(`/api/challans?customerId=${encodeURIComponent(custId)}`, { headers });
+
+      const custObj = customers.find((c) => c.id === custId || c.name === custId);
+      const custName = custObj?.name || custObj?.business_name || '';
+
+      const queryParams = new URLSearchParams({ customerId: custId });
+      if (custName) queryParams.set('customerName', custName);
+
+      const res = await fetch(`/api/challans?${queryParams.toString()}`, { headers });
       if (res.ok) {
         const d = await res.json();
-        const list = (d.challans || []).map((c: any) => ({
-          id: c.id,
-          challan_number: c.challan_number || c.reference_number || 'CH',
-          date: c.challan_date || c.created_at,
-          amount: Number(c.total_amount) || 0,
-          status: c.status || 'delivered',
-          items_count: Array.isArray(c.items) ? c.items.length : 0,
-          site_name: c.site_name || c.delivery_address || '',
-        }));
+        const targetId = custId.toLowerCase();
+        const targetName = custName.toLowerCase();
+
+        const list = (d.challans || [])
+          .filter((c: any) => {
+            const cId = (c.customer_id || '').toLowerCase();
+            const cName = (c.customer_name || '').toLowerCase();
+            if (targetId && (cId === targetId || cName === targetId)) return true;
+            if (targetName && (cName === targetName || cName.includes(targetName))) return true;
+            if (
+              (targetId === 'cust_rk_sales' || targetId.includes('rk') || targetName.includes('rk')) &&
+              (cName.includes('r k') || cName.includes('rk sales'))
+            ) {
+              return true;
+            }
+            return false;
+          })
+          .map((c: any) => ({
+            id: c.id,
+            challan_number: c.challan_number || c.reference_number || 'CH',
+            date: c.challan_date || c.created_at,
+            amount: Number(c.total_amount) || 0,
+            status: c.status || 'delivered',
+            items_count: Array.isArray(c.items) ? c.items.length : 0,
+            site_name: c.site_name || c.delivery_address || '',
+          }));
         setCustomerChallans(list);
       }
     } catch (err) {
@@ -342,7 +395,7 @@ export default function MasterPartyLedgerPage() {
 
   // Customer Challans for attaching to Sites
   const availableChallans = useMemo(() => {
-    const list: Array<{ id: string; challan_number: string; date: string; amount: number }> = [];
+    const list: Array<{ id: string; challan_number: string; date: string; amount: number; site_name?: string }> = [];
     const seen = new Set<string>();
 
     customerChallans.forEach((c) => {
@@ -363,6 +416,7 @@ export default function MasterPartyLedgerPage() {
             challan_number: e.reference,
             date: e.date,
             amount: e.debit || 0,
+            site_name: e.site_name,
           });
         }
       }
@@ -370,6 +424,21 @@ export default function MasterPartyLedgerPage() {
 
     return list;
   }, [customerChallans, ledgerData.entries]);
+
+  // Unique available sites for filter dropdown (deduplicated across ledger sites and customer challans)
+  const availableSites = useMemo(() => {
+    const set = new Set<string>();
+    (ledgerData.sites || []).forEach((s) => {
+      if (s.site_name && s.site_name.trim()) set.add(s.site_name.trim());
+    });
+    customerChallans.forEach((c) => {
+      if (c.site_name && c.site_name.trim()) {
+        const s = c.site_name.split(',')[0].trim();
+        if (s) set.add(s);
+      }
+    });
+    return Array.from(set);
+  }, [ledgerData.sites, customerChallans]);
 
   // Split entries into Period 1 (Feb 2024) and Period 2 (Apr 2024 onwards) if R K Sales
   const isRKSales =
@@ -986,11 +1055,17 @@ export default function MasterPartyLedgerPage() {
             }}
             className="input text-xs py-1.5 px-2.5 font-bold text-surface-900 bg-surface-50 border-surface-300 rounded-lg min-w-[210px]"
           >
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name || c.business_name} {c.company_name ? `(${c.company_name})` : ''}
-              </option>
-            ))}
+            {customers.map((c) => {
+              const custTitle = c.name || c.business_name || 'Customer';
+              const showComp =
+                c.company_name &&
+                c.company_name.trim().toLowerCase() !== custTitle.trim().toLowerCase();
+              return (
+                <option key={c.id} value={c.id}>
+                  {custTitle} {showComp ? `(${c.company_name})` : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>
@@ -1209,9 +1284,9 @@ export default function MasterPartyLedgerPage() {
                   className="input text-xs py-1.5 px-2.5 w-full font-medium"
                 >
                   <option value="all">All Sites</option>
-                  {ledgerData.sites?.map((s) => (
-                    <option key={s.id} value={s.site_name}>
-                      {s.site_name}
+                  {availableSites.map((sName) => (
+                    <option key={sName} value={sName}>
+                      {sName}
                     </option>
                   ))}
                 </select>
