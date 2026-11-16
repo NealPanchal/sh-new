@@ -13,15 +13,24 @@ import {
   Plus,
   Building2,
   Calendar,
+  Layers,
+  Send,
+  Download,
+  Trash2,
+  ShieldCheck,
 } from 'lucide-react';
 import { formatPhone, formatDateIndian } from '@/lib/utils';
 import { CustomerFormModal } from '@/components/customers/customer-form-modal';
+import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
+import { shareCustomerRatesViaWhatsApp } from '@/lib/whatsapp';
+import { CustomerMaterialRate } from '@/types';
 
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { getCustomer, getCustomerChallans } = useApp();
+  const { getCustomer, getCustomerChallans, updateCustomer, showToast } = useApp();
   const [showEdit, setShowEdit] = useState(false);
+  const [selectedRateIds, setSelectedRateIds] = useState<Set<string>>(new Set());
 
   const customerId = params.id as string;
   const customer = useMemo(() => getCustomer(customerId), [getCustomer, customerId]);
@@ -29,6 +38,78 @@ export default function CustomerDetailPage() {
     () => getCustomerChallans(customerId),
     [getCustomerChallans, customerId]
   );
+
+  const materialRates: CustomerMaterialRate[] = useMemo(() => {
+    return Array.isArray(customer?.material_rates) ? customer.material_rates : [];
+  }, [customer?.material_rates]);
+
+  const toggleSelectRate = (id: string) => {
+    setSelectedRateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllRates = () => {
+    if (selectedRateIds.size === materialRates.length) {
+      setSelectedRateIds(new Set());
+    } else {
+      setSelectedRateIds(new Set(materialRates.map((mr) => mr.id)));
+    }
+  };
+
+  const handleDeleteSelectedRates = () => {
+    if (!customer || selectedRateIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedRateIds.size} material rate(s)?`)) return;
+
+    const remaining = materialRates.filter((mr) => !selectedRateIds.has(mr.id));
+    updateCustomer(customer.id, {
+      material_rates: remaining,
+    });
+    setSelectedRateIds(new Set());
+    showToast(`Removed selected material rate(s)`, 'info');
+  };
+
+  const getTargetRatesToExport = () => {
+    if (selectedRateIds.size > 0) {
+      return materialRates.filter((mr) => selectedRateIds.has(mr.id));
+    }
+    return materialRates;
+  };
+
+  const handleDownloadPDF = () => {
+    if (!customer) return;
+    const list = getTargetRatesToExport();
+    if (list.length === 0) {
+      showToast('No material rates to download', 'error');
+      return;
+    }
+    exportCustomerRatesToPDF({
+      customerName: customer.business_name,
+      contactPerson: customer.contact_person,
+      phone: customer.phone,
+      deliveryAddress: customer.delivery_address || customer.billing_address,
+      selectedRates: list,
+    });
+    showToast('Downloaded Customer Material Rates PDF!', 'success');
+  };
+
+  const handleShareWhatsApp = () => {
+    if (!customer) return;
+    const list = getTargetRatesToExport();
+    if (list.length === 0) {
+      showToast('No material rates to share', 'error');
+      return;
+    }
+    shareCustomerRatesViaWhatsApp({
+      customerName: customer.business_name,
+      phone: customer.phone,
+      selectedRates: list,
+      onToast: showToast,
+    });
+  };
 
   if (!customer) {
     return (
@@ -125,8 +206,162 @@ export default function CustomerDetailPage() {
           </div>
         </div>
 
-        {/* Challan History */}
-        <div className="lg:col-span-2 card p-3 sm:p-4 space-y-3">
+        {/* Right Section: Agreed Material Rates & Challan History */}
+        <div className="lg:col-span-2 space-y-3.5">
+          {/* Agreed Material Rates & Quotation Card */}
+          <div className="card p-3.5 sm:p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-surface-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-[#ea580c]/10 text-[#ea580c]">
+                  <Layers size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-surface-900 flex items-center gap-2">
+                    <span>Agreed Material Rates &amp; Quotations</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-surface-100 text-surface-700">
+                      {materialRates.length}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-surface-500">
+                    Room-wise agreed rates. Auto-fetches in Challans &amp; WhatsApp share.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Toolbar: Selection, Delete, Download, WhatsApp, Edit */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {selectedRateIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelectedRates}
+                    className="py-1 px-2.5 text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                    title="Delete selected rates"
+                  >
+                    <Trash2 size={12} />
+                    <span>Delete ({selectedRateIds.size})</span>
+                  </button>
+                )}
+
+                {materialRates.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPDF}
+                      className="py-1 px-2.5 text-xs font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 border border-surface-300 rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                      title="Download clean customer PDF (Room, Particulars & Rate only)"
+                    >
+                      <Download size={12} />
+                      <span>{selectedRateIds.size > 0 ? `PDF (${selectedRateIds.size})` : 'Download PDF'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleShareWhatsApp}
+                      className="py-1 px-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                      title="Send WhatsApp quotation to customer (Room, Particulars & Rate only)"
+                    >
+                      <Send size={12} />
+                      <span>{selectedRateIds.size > 0 ? `WhatsApp (${selectedRateIds.size})` : 'WhatsApp Share'}</span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowEdit(true)}
+                  className="py-1 px-2.5 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer"
+                >
+                  <Plus size={12} />
+                  <span>+ Manage Rates</span>
+                </button>
+              </div>
+            </div>
+
+            {materialRates.length === 0 ? (
+              <div className="p-4 bg-surface-50 rounded-xl border border-dashed border-surface-200 text-center text-xs text-surface-500 space-y-1">
+                <p className="font-semibold text-surface-700">No agreed materials configured yet</p>
+                <p className="text-[11px] text-surface-400">Click &quot;+ Manage Rates&quot; to configure room-wise particulars, internal codes &amp; agreed rates.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="border border-surface-200 rounded-xl overflow-hidden overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="bg-surface-50 border-b border-surface-200 text-surface-700 font-bold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2 px-2 w-8 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedRateIds.size === materialRates.length && materialRates.length > 0}
+                            onChange={toggleSelectAllRates}
+                            className="rounded border-surface-300 text-[#ea580c] focus:ring-[#ea580c] cursor-pointer"
+                            title="Select / Deselect All"
+                          />
+                        </th>
+                        <th className="py-2 px-2.5 w-28">Room</th>
+                        <th className="py-2 px-2.5">Selected Particulars</th>
+                        <th className="py-2 px-2 w-24">
+                          <div className="flex items-center gap-1">
+                            <span>Code</span>
+                            <span className="text-[8px] px-1 py-0.2 rounded bg-zinc-200 text-zinc-700 font-normal">Internal</span>
+                          </div>
+                        </th>
+                        <th className="py-2 px-2 w-28">
+                          <div className="flex items-center gap-1">
+                            <span>Company</span>
+                            <span className="text-[8px] px-1 py-0.2 rounded bg-zinc-200 text-zinc-700 font-normal">Internal</span>
+                          </div>
+                        </th>
+                        <th className="py-2 px-2.5 w-24 text-right">Agreed Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-100">
+                      {materialRates.map((mr, idx) => {
+                        const isChecked = selectedRateIds.has(mr.id);
+                        return (
+                          <tr key={mr.id || idx} className={isChecked ? 'bg-amber-50/60' : 'hover:bg-surface-50/60'}>
+                            <td className="p-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleSelectRate(mr.id)}
+                                className="rounded border-surface-300 text-[#ea580c] focus:ring-[#ea580c] cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-2 font-bold text-surface-900">{mr.room || 'General'}</td>
+                            <td className="p-2 font-medium text-surface-800">
+                              {mr.particulars?.trim() ? mr.particulars : <span className="text-surface-400 italic">Material Finish</span>}
+                            </td>
+                            <td className="p-2 font-mono text-zinc-600 font-semibold text-[11px]">{mr.code || '—'}</td>
+                            <td className="p-2 text-zinc-600 text-[11px]">{mr.company_name || '—'}</td>
+                            <td className="p-2 text-right font-mono font-bold text-[#ea580c]">
+                              ₹{Number(mr.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-surface-500 px-1">
+                  <span>
+                    {selectedRateIds.size > 0 ? (
+                      <strong className="text-[#ea580c]">{selectedRateIds.size} of {materialRates.length} item(s) selected</strong>
+                    ) : (
+                      <span>Showing {materialRates.length} agreed material(s)</span>
+                    )}
+                  </span>
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <ShieldCheck size={13} />
+                    <span>Customer PDF &amp; WhatsApp hide internal codes &amp; company names</span>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Challan History */}
+          <div className="card p-3 sm:p-4 space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-surface-100">
             <h3 className="text-sm font-bold text-surface-900">
               Challan History ({challans.length})
@@ -212,6 +447,7 @@ export default function CustomerDetailPage() {
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
 

@@ -210,7 +210,7 @@ function CreateChallanContent() {
   const handleLoadCustomerAgreedMaterials = () => {
     if (!matchedCustomer?.material_rates || matchedCustomer.material_rates.length === 0) return;
     const newItems: ChallanItemFormData[] = matchedCustomer.material_rates.map((m) => {
-      const desc = [m.code, m.company_name, m.room ? `(${m.room})` : ''].filter(Boolean).join(' ');
+      const desc = m.particulars?.trim() || [m.code, m.company_name, m.room ? `(${m.room})` : ''].filter(Boolean).join(' ');
       return {
         product_id: '',
         item_description: desc,
@@ -242,13 +242,15 @@ function CreateChallanContent() {
     const qBrand = (brand || '').trim().toLowerCase();
     if (!qDesc && !prodId) return null;
 
-    // 1. Check customer's agreed 4-column matrix: Room, Code, Company Name, Rate
+    // 1. Check customer's agreed material rates matrix (Particulars, Code, Company, Room)
     if (matchedCustomer?.material_rates && matchedCustomer.material_rates.length > 0) {
       const foundMat = matchedCustomer.material_rates.find((mr) => {
         const cCode = (mr.code || '').trim().toLowerCase();
         const cComp = (mr.company_name || '').trim().toLowerCase();
         const cRoom = (mr.room || '').trim().toLowerCase();
+        const cPart = (mr.particulars || '').trim().toLowerCase();
 
+        if (cPart && (qDesc.includes(cPart) || cPart.includes(qDesc))) return true;
         if (cCode && (qDesc.includes(cCode) || cCode.includes(qDesc))) return true;
         if (cComp && qBrand && (cComp === qBrand || qDesc.includes(cComp))) return true;
         if (cComp && qDesc.includes(cComp)) return true;

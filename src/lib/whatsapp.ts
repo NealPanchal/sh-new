@@ -3,7 +3,7 @@
  * Shares directly to customer's WhatsApp phone number along with PDF download & live document link
  */
 
-import { Challan, BusinessProfile, ChallanItem } from '@/types';
+import { Challan, BusinessProfile, ChallanItem, CustomerMaterialRate } from '@/types';
 import { getWhatsAppNumber, formatDateIndian } from '@/lib/utils';
 import { downloadChallanPDF, getChallanPDFBlob } from '@/lib/pdf';
 
@@ -638,5 +638,66 @@ export async function shareDeliveryConfirmationViaWhatsApp(options: {
 
   openWhatsApp(targetPhone, message);
   options.onToast?.(`WhatsApp opened with Delivery Confirmation for ${challan.customer_name}!`, 'success');
+  return true;
+}
+
+/**
+ * Generate customer-facing WhatsApp message for Agreed Material Rates
+ * Note: Customer Confidentiality - STRICTLY OMIT Internal Code & Company Name
+ * Only includes: Room, Selected Particulars, and Agreed Rate (₹)
+ */
+export function generateCustomerRatesWhatsAppMessage(
+  customerName: string,
+  selectedRates: Array<{
+    room: string;
+    particulars?: string;
+    rate: number;
+  }>
+): string {
+  let msg = `*SHOWHOUSE DECOR STUDIO*\n`;
+  msg += `*Agreed Material Rate Card / Quotation*\n\n`;
+  msg += `Client: *${customerName || 'Valued Client'}*\n`;
+  msg += `Date: *${formatDateIndian(new Date().toISOString())}*\n\n`;
+  msg += `*Selected Materials & Agreed Rates:*\n`;
+
+  selectedRates.forEach((mr, idx) => {
+    const roomStr = mr.room ? `*${mr.room}*` : `*Item #${idx + 1}*`;
+    const desc = mr.particulars?.trim() || 'Material Finish / Specification';
+    const rateStr = `₹${Number(mr.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    msg += `${idx + 1}. ${roomStr}\n`;
+    msg += `   • Particulars: ${desc}\n`;
+    msg += `   • Agreed Rate: ${rateStr}\n\n`;
+  });
+
+  msg += `_Note: Quantities will be finalized & billed upon delivery challan dispatch._\n\n`;
+  msg += `— *SHOWHOUSE DECOR STUDIO*\n`;
+  msg += `Vishram Baug, Near Makhmali Talao, LBS Marg, Thane (W)\n`;
+  msg += `📞 +91 93248 69306 / 022 - 2538 7683`;
+  return msg;
+}
+
+/**
+ * Open WhatsApp with customer-facing agreed rate quotation
+ */
+export function shareCustomerRatesViaWhatsApp(options: {
+  customerName: string;
+  phone?: string | null;
+  selectedRates: Array<{
+    room: string;
+    particulars?: string;
+    rate: number;
+  }>;
+  onToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
+}): boolean {
+  const { customerName, phone, selectedRates, onToast } = options;
+  if (!selectedRates || selectedRates.length === 0) {
+    onToast?.('Please select at least one material rate to share', 'error');
+    return false;
+  }
+
+  const message = generateCustomerRatesWhatsAppMessage(customerName, selectedRates);
+  const targetPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
+  openWhatsApp(targetPhone, message);
+  onToast?.(`WhatsApp opened with material rates for ${customerName}!`, 'success');
   return true;
 }
