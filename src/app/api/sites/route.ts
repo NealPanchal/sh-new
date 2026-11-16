@@ -8,6 +8,7 @@ import {
   unverifyCustomerSite,
   updateCustomerSiteBalances,
   deleteCustomerSite,
+  reorderCustomerSites,
   recordAuditLog,
 } from '@/lib/server-accounting';
 import { CustomerSite } from '@/types';
@@ -39,16 +40,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const customer_id = body.customer_id || body.customerId;
+    const site_name = body.site_name || body.siteName;
     const {
       id,
-      customer_id,
-      site_name,
       site_address,
       contact_person,
       phone,
       opening_balance,
       credit_adjustment,
       debit_adjustment,
+      challan_id,
+      challan_number,
+      order_index,
     } = body;
 
     if (!customer_id || !site_name) {
@@ -75,6 +79,9 @@ export async function POST(req: NextRequest) {
       credit_adjustment: credit,
       debit_adjustment: debit,
       current_balance: opening + debit - credit,
+      challan_id: challan_id ? challan_id.trim() : undefined,
+      challan_number: challan_number ? challan_number.trim() : undefined,
+      order_index: order_index !== undefined ? Number(order_index) : undefined,
       is_verified: true, // Default verified on create so it directly applies
       verified_at: new Date().toISOString(),
       verified_by: session.name || session.username,
@@ -112,13 +119,37 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { siteId, action, reason, site_name, opening_balance, credit_adjustment, debit_adjustment } = body;
+    const {
+      siteId,
+      customerId,
+      siteIds,
+      action,
+      reason,
+      site_name,
+      opening_balance,
+      credit_adjustment,
+      debit_adjustment,
+      challan_id,
+      challan_number,
+    } = body;
+
+    const userName = session.name || session.username;
+
+    // Handle site reordering (Move Up / Move Down)
+    if (action === 'reorder') {
+      if (!customerId || !Array.isArray(siteIds)) {
+        return NextResponse.json(
+          { success: false, error: 'customerId and siteIds array are required for reordering' },
+          { status: 400 }
+        );
+      }
+      const reordered = reorderCustomerSites(customerId, siteIds, userName);
+      return NextResponse.json({ success: true, sites: reordered });
+    }
 
     if (!siteId) {
       return NextResponse.json({ success: false, error: 'Site ID is required' }, { status: 400 });
     }
-
-    const userName = session.name || session.username;
 
     if (action === 'verify') {
       const site = verifyCustomerSite(siteId, userName);
@@ -138,6 +169,8 @@ export async function PATCH(req: NextRequest) {
         opening_balance,
         credit_adjustment,
         debit_adjustment,
+        challan_id,
+        challan_number,
       },
       userName
     );

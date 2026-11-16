@@ -90,6 +90,9 @@ export interface CustomerSite {
   is_verified?: boolean;      // Verified by accountant/admin
   verified_at?: string | null;
   verified_by?: string | null;
+  challan_id?: string;        // Attached challan ID
+  challan_number?: string;    // Attached challan number
+  order_index?: number;       // Custom sorting order index (for Move Up / Move Down)
   audit_history?: Array<{
     action: string;
     user: string;
@@ -359,6 +362,8 @@ export interface CustomerLedgerEntry {
   challan_id?: string;
   payment_id?: string;
   return_id?: string;
+  manual_id?: string;
+  source_type?: 'challan' | 'payment' | 'goods_return' | 'manual' | 'site_adjustment';
   is_verified?: boolean;
   is_paid?: boolean;
   payment_status?: 'paid' | 'partial' | 'unpaid';

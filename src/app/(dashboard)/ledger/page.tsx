@@ -29,8 +29,12 @@ import {
   Clock,
   ArrowLeftRight,
   FileText,
+  FilePlus,
+  Eye,
   X,
   ExternalLink,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { Customer, CustomerSite, CustomerLedgerEntry, PaymentMode } from '@/types';
 import { getClientAuthToken, getCurrentUser, isAdmin, canManageAccounting } from '@/lib/auth';
@@ -144,17 +148,40 @@ export default function MasterPartyLedgerPage() {
   const [newSiteOpening, setNewSiteOpening] = useState('0');
   const [newSiteCredit, setNewSiteCredit] = useState('0');
   const [newSiteDebit, setNewSiteDebit] = useState('0');
+  const [addSiteChallanId, setAddSiteChallanId] = useState('');
+  const [addSiteChallanNumber, setAddSiteChallanNumber] = useState('');
 
   const [editingSite, setEditingSite] = useState<CustomerSite | null>(null);
   const [editSiteName, setEditSiteName] = useState('');
   const [editSiteOpening, setEditSiteOpening] = useState('0');
   const [editSiteCredit, setEditSiteCredit] = useState('0');
   const [editSiteDebit, setEditSiteDebit] = useState('0');
+  const [editSiteChallanId, setEditSiteChallanId] = useState('');
+  const [editSiteChallanNumber, setEditSiteChallanNumber] = useState('');
+
+  // Delete ledger entry modal state
+  const [entryToDelete, setEntryToDelete] = useState<CustomerLedgerEntry | null>(null);
+  const [isDeletingEntry, setIsDeletingEntry] = useState(false);
+
+  // Customer challans list for attaching & party challans view
+  const [customerChallans, setCustomerChallans] = useState<
+    Array<{
+      id: string;
+      challan_number: string;
+      date: string;
+      amount: number;
+      status?: string;
+      items_count?: number;
+      site_name?: string;
+    }>
+  >([]);
+  const [showPartyChallansModal, setShowPartyChallansModal] = useState(false);
+  const [partyChallansSearch, setPartyChallansSearch] = useState('');
 
   const [showAddEntryModal, setShowAddEntryModal] = useState(false);
   const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
   const [entryParticulars, setEntryParticulars] = useState('');
-  const [entryType, setEntryType] = useState<'Receipt' | 'Sales GST' | 'Payment' | 'Journal'>('Receipt');
+  const [entryType, setEntryType] = useState<'Receipt' | 'Sales GST' | 'Payment' | 'Journal' | 'Party Challan'>('Receipt');
   const [entryVoucherNo, setEntryVoucherNo] = useState('');
   const [entryAmount, setEntryAmount] = useState('');
   const [entrySiteName, setEntrySiteName] = useState('');
@@ -243,8 +270,35 @@ export default function MasterPartyLedgerPage() {
     }
   };
 
+  const fetchCustomerChallans = async (custId: string) => {
+    if (!custId) return;
+    try {
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`/api/challans?customerId=${encodeURIComponent(custId)}`, { headers });
+      if (res.ok) {
+        const d = await res.json();
+        const list = (d.challans || []).map((c: any) => ({
+          id: c.id,
+          challan_number: c.challan_number || c.reference_number || 'CH',
+          date: c.challan_date || c.created_at,
+          amount: Number(c.total_amount) || 0,
+          status: c.status || 'delivered',
+          items_count: Array.isArray(c.items) ? c.items.length : 0,
+          site_name: c.site_name || c.delivery_address || '',
+        }));
+        setCustomerChallans(list);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch customer challans:', err);
+    }
+  };
+
   useEffect(() => {
     fetchLedger();
+    if (selectedCustomerId) {
+      fetchCustomerChallans(selectedCustomerId);
+    }
   }, [selectedCustomerId, fromDate, toDate, typeFilter, siteFilter]);
 
   // Selected customer object
@@ -283,6 +337,37 @@ export default function MasterPartyLedgerPage() {
     }
     return list;
   }, [ledgerData.entries, searchChallanNo]);
+
+  // Customer Challans for attaching to Sites
+  const availableChallans = useMemo(() => {
+    const list: Array<{ id: string; challan_number: string; date: string; amount: number }> = [];
+    const seen = new Set<string>();
+
+    customerChallans.forEach((c) => {
+      const key = (c.challan_number || c.id).trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push(c);
+      }
+    });
+
+    (ledgerData.entries || []).forEach((e) => {
+      if ((e.voucher_type === 'sales_gst' || e.challan_id || e.debit > 0) && e.reference) {
+        const key = e.reference.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push({
+            id: e.challan_id || `vch_${key}`,
+            challan_number: e.reference,
+            date: e.date,
+            amount: e.debit || 0,
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [customerChallans, ledgerData.entries]);
 
   // Split entries into Period 1 (Feb 2024) and Period 2 (Apr 2024 onwards) if R K Sales
   const isRKSales =
@@ -438,6 +523,8 @@ export default function MasterPartyLedgerPage() {
     setEditSiteOpening(String(site.opening_balance || 0));
     setEditSiteCredit(String(site.credit_adjustment || 0));
     setEditSiteDebit(String(site.debit_adjustment || 0));
+    setEditSiteChallanId(site.challan_id || '');
+    setEditSiteChallanNumber(site.challan_number || '');
   };
 
   const handleSaveEditSite = async (e: React.FormEvent) => {
@@ -456,10 +543,12 @@ export default function MasterPartyLedgerPage() {
         headers,
         body: JSON.stringify({
           siteId: editingSite.id,
-          site_name: editSiteName,
+          site_name: editSiteName.trim(),
           opening_balance: Number(editSiteOpening) || 0,
           credit_adjustment: Number(editSiteCredit) || 0,
           debit_adjustment: Number(editSiteDebit) || 0,
+          challan_id: editSiteChallanId || undefined,
+          challan_number: editSiteChallanNumber || undefined,
         }),
       });
 
@@ -499,6 +588,109 @@ export default function MasterPartyLedgerPage() {
     }
   };
 
+  // Move Site Up (Reorder)
+  const handleMoveSiteUp = async (index: number) => {
+    if (!ledgerData.sites || index <= 0) return;
+    const newSites = [...ledgerData.sites];
+    const temp = newSites[index];
+    newSites[index] = newSites[index - 1];
+    newSites[index - 1] = temp;
+
+    // Instant local UI update
+    setLedgerData((prev) => ({ ...prev, sites: newSites }));
+
+    try {
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      await fetch('/api/sites', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          action: 'reorder',
+          customerId: selectedCustomerId,
+          siteIds: newSites.map((s) => s.id),
+        }),
+      });
+      showToast(`Site "${temp.site_name}" moved up`);
+    } catch {
+      showToast('Error saving reordered sites', 'error');
+    }
+  };
+
+  // Move Site Down (Reorder)
+  const handleMoveSiteDown = async (index: number) => {
+    if (!ledgerData.sites || index >= ledgerData.sites.length - 1) return;
+    const newSites = [...ledgerData.sites];
+    const temp = newSites[index];
+    newSites[index] = newSites[index + 1];
+    newSites[index + 1] = temp;
+
+    // Instant local UI update
+    setLedgerData((prev) => ({ ...prev, sites: newSites }));
+
+    try {
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      await fetch('/api/sites', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          action: 'reorder',
+          customerId: selectedCustomerId,
+          siteIds: newSites.map((s) => s.id),
+        }),
+      });
+      showToast(`Site "${temp.site_name}" moved down`);
+    } catch {
+      showToast('Error saving reordered sites', 'error');
+    }
+  };
+
+  // Confirm delete of any transaction entry from Ledger Table
+  const handleConfirmDeleteEntry = async () => {
+    if (!entryToDelete) return;
+    try {
+      setIsDeletingEntry(true);
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch('/api/ledger', {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({
+          id: entryToDelete.id,
+          sourceType: entryToDelete.source_type,
+          challanId: entryToDelete.challan_id,
+          paymentId: entryToDelete.payment_id,
+          returnId: entryToDelete.return_id,
+          manualId: entryToDelete.manual_id,
+        }),
+      });
+
+      if (res.ok) {
+        showToast(`Voucher ${entryToDelete.reference} removed from ledger`);
+        setEntryToDelete(null);
+        await fetchLedger();
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to delete ledger entry', 'error');
+      }
+    } catch {
+      showToast('Error deleting ledger entry', 'error');
+    } finally {
+      setIsDeletingEntry(false);
+    }
+  };
+
   const handleCreateSite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSiteName.trim()) {
@@ -522,6 +714,8 @@ export default function MasterPartyLedgerPage() {
           opening_balance: Number(newSiteOpening) || 0,
           credit_adjustment: Number(newSiteCredit) || 0,
           debit_adjustment: Number(newSiteDebit) || 0,
+          challan_id: addSiteChallanId || undefined,
+          challan_number: addSiteChallanNumber || undefined,
         }),
       });
 
@@ -532,6 +726,8 @@ export default function MasterPartyLedgerPage() {
         setNewSiteOpening('0');
         setNewSiteCredit('0');
         setNewSiteDebit('0');
+        setAddSiteChallanId('');
+        setAddSiteChallanNumber('');
         await fetchLedger();
       } else {
         const err = await res.json();
@@ -551,7 +747,7 @@ export default function MasterPartyLedgerPage() {
       return;
     }
 
-    let isDebit = entryType === 'Sales GST' || entryType === 'Payment';
+    let isDebit = entryType === 'Party Challan' || entryType === 'Sales GST' || entryType === 'Payment';
     let formattedParticulars = entryParticulars.trim();
     if (isDebit && !formattedParticulars.toLowerCase().startsWith('to ')) {
       formattedParticulars = `To ${formattedParticulars}`;
@@ -573,7 +769,7 @@ export default function MasterPartyLedgerPage() {
           customer_id: selectedCustomerId,
           date: entryDate,
           particulars: formattedParticulars,
-          payment_type: entryType,
+          payment_type: entryType === 'Party Challan' ? 'Sales GST' : entryType,
           voucher_no: entryVoucherNo || `VCH-${Date.now().toString().slice(-4)}`,
           debit: isDebit ? numAmt : 0,
           credit: !isDebit ? numAmt : 0,
@@ -831,6 +1027,32 @@ export default function MasterPartyLedgerPage() {
               </Link>
 
               <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Party Challans Drawer/Modal Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowPartyChallansModal(true)}
+                  className="px-2.5 py-1.5 text-xs font-bold text-surface-800 bg-surface-100 hover:bg-surface-200 border border-surface-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs active:scale-95 cursor-pointer"
+                  title="View all delivery challans for this customer"
+                >
+                  <FileText size={14} className="text-[#ea580c]" />
+                  <span>Party Challans</span>
+                  {customerChallans.length > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.2 bg-[#ea580c] text-white font-black rounded-full text-[10px]">
+                      {customerChallans.length}
+                    </span>
+                  )}
+                </button>
+
+                {/* Create New Party Challan Shortcut */}
+                <Link
+                  href={`/challans/new?customerId=${encodeURIComponent(selectedCustomer.id || selectedCustomerId)}`}
+                  className="px-2.5 py-1.5 text-xs font-bold text-white bg-black hover:bg-zinc-800 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs active:scale-95 cursor-pointer"
+                  title="Create new delivery challan for this party"
+                >
+                  <FilePlus size={14} className="text-[#ea580c]" />
+                  <span>+ Party Challan</span>
+                </Link>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -960,6 +1182,7 @@ export default function MasterPartyLedgerPage() {
                   className="input text-xs py-1.5 px-2.5 w-full font-medium"
                 >
                   <option value="all">All</option>
+                  <option value="Party Challan">Party Challan (Sales)</option>
                   <option value="Receipt">Receipt (All)</option>
                   <option value="UPI">UPI</option>
                   <option value="Cash">Cash</option>
@@ -1024,6 +1247,15 @@ export default function MasterPartyLedgerPage() {
                   <Plus size={13} />
                   <span>Add Entry</span>
                 </button>
+
+                <Link
+                  href={`/challans/new?customerId=${encodeURIComponent(selectedCustomer.id || selectedCustomerId)}`}
+                  className="py-1.5 px-3 text-xs font-bold text-[#ea580c] bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg flex items-center justify-center gap-1 whitespace-nowrap shadow-xs active:scale-95 transition-colors"
+                  title="Create new delivery challan for this party"
+                >
+                  <FilePlus size={13} />
+                  <span>+ Party Challan</span>
+                </Link>
               </div>
             </div>
           </div>
@@ -1035,7 +1267,7 @@ export default function MasterPartyLedgerPage() {
             {/* Mobile Scroll Hint Banner */}
             <div className="sm:hidden px-3 py-1.5 bg-amber-50/70 border-b border-amber-200/50 flex items-center justify-between text-[11px] text-amber-800 font-medium">
               <span>← Scroll table horizontally →</span>
-              <span className="text-[10px] text-surface-500">7 Columns</span>
+              <span className="text-[10px] text-surface-500">8 Columns</span>
             </div>
             <div className="overflow-x-auto scrollbar-thin">
               <table className="w-full text-xs text-left border-collapse min-w-[680px]">
@@ -1048,6 +1280,7 @@ export default function MasterPartyLedgerPage() {
                     <th className="py-2.5 px-3 text-center w-32 border border-zinc-700">Vch No.</th>
                     <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Debit (₹)</th>
                     <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Credit (₹)</th>
+                    <th className="py-2.5 px-3 text-center w-14 border border-zinc-700 print:hidden">Actions</th>
                   </tr>
                 </thead>
 
@@ -1095,6 +1328,16 @@ export default function MasterPartyLedgerPage() {
                           <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
                             {formatAmountDisplay(e.credit)}
                           </td>
+                          <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
+                            <button
+                              type="button"
+                              onClick={() => setEntryToDelete(e)}
+                              className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                              title="Delete entry from ledger"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
                         </tr>
                       ))}
 
@@ -1114,6 +1357,7 @@ export default function MasterPartyLedgerPage() {
                         <td className="py-2 px-3 text-right font-mono font-bold border border-surface-200">
                           {formatAmountDisplay(period1TotalCredit)}
                         </td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Period 1 Balanced Total Row */}
@@ -1129,6 +1373,7 @@ export default function MasterPartyLedgerPage() {
                         <td className="py-2.5 px-3 text-right font-mono font-black border border-surface-200 border-t-2 border-b-2 border-surface-950">
                           {formatAmountDisplay(Math.max(period1TotalDebit, period1TotalCredit))}
                         </td>
+                        <td className="py-2.5 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Period 2 Opening Balance Row */}
@@ -1149,6 +1394,7 @@ export default function MasterPartyLedgerPage() {
                           {formatAmountDisplay(period2Calculations.opening)}
                         </td>
                         <td className="py-2 px-3 text-right font-mono text-surface-400 border border-surface-200"></td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Period 2 Entries */}
@@ -1191,6 +1437,16 @@ export default function MasterPartyLedgerPage() {
                           <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
                             {formatAmountDisplay(e.credit)}
                           </td>
+                          <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
+                            <button
+                              type="button"
+                              onClick={() => setEntryToDelete(e)}
+                              className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                              title="Delete entry from ledger"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
                         </tr>
                       ))}
 
@@ -1207,6 +1463,7 @@ export default function MasterPartyLedgerPage() {
                         <td className="py-2 px-3 text-right font-mono font-bold border border-surface-200">
                           {formatAmountDisplay(period2Calculations.totalCredits)}
                         </td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Period 2 Closing Balance Row */}
@@ -1243,6 +1500,7 @@ export default function MasterPartyLedgerPage() {
                         )}>
                           {formatAmountDisplay(period2Calculations.finalClosing)}
                         </td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Period 2 Balanced Total Row */}
@@ -1258,6 +1516,7 @@ export default function MasterPartyLedgerPage() {
                         <td className="py-2.5 px-3 text-right font-mono font-black border border-surface-200 border-t-2 border-b-2 border-surface-950">
                           {formatAmountDisplay(period2Calculations.balancedTotal)}
                         </td>
+                        <td className="py-2.5 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
                     </>
                   ) : (
@@ -1279,12 +1538,13 @@ export default function MasterPartyLedgerPage() {
                           {formatAmountDisplay(ledgerData.openingBalance)}
                         </td>
                         <td className="py-2 px-3 text-right font-mono text-surface-400 border border-surface-200"></td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Transaction Rows */}
                       {displayEntries.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-xs text-surface-400">
+                          <td colSpan={8} className="py-8 text-center text-xs text-surface-400">
                             No transactions recorded in this date range. Click "+ Add Entry" to record a voucher.
                           </td>
                         </tr>
@@ -1328,6 +1588,16 @@ export default function MasterPartyLedgerPage() {
                             <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
                               {formatAmountDisplay(e.credit)}
                             </td>
+                            <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
+                              <button
+                                type="button"
+                                onClick={() => setEntryToDelete(e)}
+                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                title="Delete entry from ledger"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
                           </tr>
                         ))
                       )}
@@ -1347,6 +1617,7 @@ export default function MasterPartyLedgerPage() {
                         <td className="py-2 px-3 text-right font-mono font-bold border border-surface-200">
                           {formatAmountDisplay(ledgerData.totalCredit)}
                         </td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Closing Balance Row */}
@@ -1383,6 +1654,7 @@ export default function MasterPartyLedgerPage() {
                         )}>
                           {formatAmountDisplay(effectiveClosingBalance)}
                         </td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
 
                       {/* Balanced Total Row */}
@@ -1408,6 +1680,7 @@ export default function MasterPartyLedgerPage() {
                             )
                           )}
                         </td>
+                        <td className="py-2.5 px-3 border border-surface-200 print:hidden"></td>
                       </tr>
                     </>
                   )}
@@ -1445,20 +1718,21 @@ export default function MasterPartyLedgerPage() {
             {/* Mobile Scroll Hint Banner */}
             <div className="sm:hidden px-3 py-1.5 bg-amber-50/70 border-b border-amber-200/50 flex items-center justify-between text-[11px] text-amber-800 font-medium">
               <span>← Scroll sites horizontally →</span>
-              <span className="text-[10px] text-surface-500">8 Columns</span>
+              <span className="text-[10px] text-surface-500">9 Columns</span>
             </div>
             <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full text-xs text-left border-collapse min-w-[680px]">
+              <table className="w-full text-xs text-left border-collapse min-w-[760px]">
                 <thead>
                   <tr className="bg-black text-white font-bold uppercase tracking-wider text-[11px]">
-                    <th className="py-2.5 px-3 text-center w-14 border border-zinc-700">Sr. No.</th>
-                    <th className="py-2.5 px-3 w-48 border border-zinc-700">Site</th>
-                    <th className="py-2.5 px-3 text-right w-36 border border-zinc-700">Opening Balance (₹)</th>
-                    <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Credit (+) (₹)</th>
-                    <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Debit (-) (₹)</th>
-                    <th className="py-2.5 px-3 text-right w-36 border border-zinc-700">Current Balance (₹)</th>
-                    <th className="py-2.5 px-3 text-center w-28 border border-zinc-700">Verified</th>
-                    <th className="py-2.5 px-3 text-center w-20 border border-zinc-700 print:hidden">Actions</th>
+                    <th className="py-2.5 px-3 text-center w-12 border border-zinc-700">Sr. No.</th>
+                    <th className="py-2.5 px-3 w-40 border border-zinc-700">Site</th>
+                    <th className="py-2.5 px-3 w-36 border border-zinc-700">Attached Challan</th>
+                    <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Opening Balance (₹)</th>
+                    <th className="py-2.5 px-3 text-right w-28 border border-zinc-700">Credit (+) (₹)</th>
+                    <th className="py-2.5 px-3 text-right w-28 border border-zinc-700">Debit (-) (₹)</th>
+                    <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Current Balance (₹)</th>
+                    <th className="py-2.5 px-3 text-center w-24 border border-zinc-700">Verified</th>
+                    <th className="py-2.5 px-3 text-center w-28 border border-zinc-700 print:hidden">Actions</th>
                   </tr>
                 </thead>
 
@@ -1477,6 +1751,26 @@ export default function MasterPartyLedgerPage() {
                           </td>
                           <td className="py-2.5 px-3 font-bold text-surface-900 border border-surface-200">
                             {site.site_name}
+                          </td>
+                          <td className="py-2.5 px-3 border border-surface-200">
+                            {site.challan_number ? (
+                              <div className="flex items-center gap-1 font-mono font-bold text-primary-600">
+                                {site.challan_id ? (
+                                  <Link
+                                    href={`/challans/${site.challan_id}`}
+                                    className="hover:text-primary-800 hover:underline inline-flex items-center gap-1"
+                                    title="View attached challan"
+                                  >
+                                    <span>{site.challan_number}</span>
+                                    <ExternalLink size={10} className="opacity-70" />
+                                  </Link>
+                                ) : (
+                                  <span className="text-surface-800">{site.challan_number}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-surface-400 font-medium italic text-[11px]">— (General)</span>
+                            )}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono font-semibold text-surface-800 border border-surface-200">
                             {op.toFixed(2)}
@@ -1514,19 +1808,37 @@ export default function MasterPartyLedgerPage() {
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-center border border-surface-200 print:hidden">
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => handleMoveSiteUp(idx)}
+                                disabled={idx === 0}
+                                className="p-1 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
+                                title="Move Site Up"
+                              >
+                                <ChevronUp size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveSiteDown(idx)}
+                                disabled={idx === (ledgerData.sites?.length || 0) - 1}
+                                className="p-1 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
+                                title="Move Site Down"
+                              >
+                                <ChevronDown size={14} />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditSite(site)}
-                                className="p-1 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded transition-colors"
-                                title="Edit site balances"
+                                className="p-1 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                title="Edit site details & balances"
                               >
                                 <Edit2 size={13} />
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteSite(site)}
-                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
                                 title="Delete site"
                               >
                                 <Trash2 size={13} />
@@ -1538,7 +1850,7 @@ export default function MasterPartyLedgerPage() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-xs text-surface-400">
+                      <td colSpan={9} className="py-8 text-center text-xs text-surface-400">
                         <div className="flex flex-col items-center justify-center gap-1">
                           <Layers size={20} className="text-surface-300 stroke-[1.5]" />
                           <span className="font-semibold text-surface-600">No sites added for this customer</span>
@@ -1555,6 +1867,7 @@ export default function MasterPartyLedgerPage() {
                       <td className="py-2.5 px-3 font-black text-surface-950 border border-amber-200">
                         Total (Sites)
                       </td>
+                      <td className="py-2.5 px-3 border border-amber-200"></td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-surface-900 border border-amber-200">
                         {sitesSummary.sumOpening.toFixed(2)}
                       </td>
@@ -1619,6 +1932,30 @@ export default function MasterPartyLedgerPage() {
                   className="input text-xs w-full font-semibold"
                   required
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-surface-700 flex items-center justify-between">
+                  <span>Attach to Challan (Optional)</span>
+                  <span className="text-[10px] font-normal text-surface-400">Link site balance to a delivery challan</span>
+                </label>
+                <select
+                  value={addSiteChallanNumber}
+                  onChange={(e) => {
+                    const selectedNum = e.target.value;
+                    setAddSiteChallanNumber(selectedNum);
+                    const found = availableChallans.find((c) => c.challan_number === selectedNum);
+                    setAddSiteChallanId(found ? found.id : '');
+                  }}
+                  className="input text-xs w-full font-medium"
+                >
+                  <option value="">-- None / General Account --</option>
+                  {availableChallans.map((c) => (
+                    <option key={c.id} value={c.challan_number}>
+                      {c.challan_number} {c.amount ? `(₹${c.amount.toLocaleString('en-IN')})` : ''} - {c.date ? formatDateDisplay(c.date) : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-3 gap-2 pt-1">
@@ -1710,6 +2047,30 @@ export default function MasterPartyLedgerPage() {
                   className="input text-xs w-full font-semibold"
                   required
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-surface-700 flex items-center justify-between">
+                  <span>Attached Challan</span>
+                  <span className="text-[10px] font-normal text-surface-400">Link site balance to a delivery challan</span>
+                </label>
+                <select
+                  value={editSiteChallanNumber}
+                  onChange={(e) => {
+                    const selectedNum = e.target.value;
+                    setEditSiteChallanNumber(selectedNum);
+                    const found = availableChallans.find((c) => c.challan_number === selectedNum);
+                    setEditSiteChallanId(found ? found.id : '');
+                  }}
+                  className="input text-xs w-full font-medium"
+                >
+                  <option value="">-- None / General Account --</option>
+                  {availableChallans.map((c) => (
+                    <option key={c.id} value={c.challan_number}>
+                      {c.challan_number} {c.amount ? `(₹${c.amount.toLocaleString('en-IN')})` : ''} - {c.date ? formatDateDisplay(c.date) : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-3 gap-2 pt-1">
@@ -1864,13 +2225,16 @@ export default function MasterPartyLedgerPage() {
                     onChange={(e) => {
                       const val = e.target.value;
                       setEntryType(val as any);
-                      if (val === 'UPI') setEntryParticulars('By UPI');
+                      if (val === 'Party Challan') setEntryParticulars('To SALE GST 18%');
+                      else if (val === 'UPI') setEntryParticulars('By UPI');
                       else if (val === 'Cash') setEntryParticulars('By Cash');
                       else if (val === 'Cheque') setEntryParticulars('By Cheque');
                       else if (val === 'Bank Transfer') setEntryParticulars('By HDFC BANK-50200003880041');
+                      else if (val === 'Sales GST') setEntryParticulars('To SALE GST 18%');
                     }}
                     className="input text-xs w-full font-bold"
                   >
+                    <option value="Party Challan">Party Challan (Sales Debit)</option>
                     <option value="UPI">UPI (Receipt)</option>
                     <option value="Cash">Cash (Receipt)</option>
                     <option value="Bank Transfer">Bank Transfer (Receipt)</option>
@@ -2116,6 +2480,228 @@ export default function MasterPartyLedgerPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: DELETE LEDGER ENTRY CONFIRMATION                      */}
+      {/* ============================================================ */}
+      {entryToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full border border-surface-200 p-4 sm:p-5 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
+            <div className="flex items-center gap-2 text-rose-600">
+              <div className="p-2 bg-rose-100 text-rose-600 rounded-lg">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-surface-900">Delete Ledger Entry</h3>
+                <span className="text-[11px] text-surface-500">This action cannot be undone</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-surface-50 rounded-lg border border-surface-200 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-surface-500">Date:</span>
+                <span className="font-semibold text-surface-800">{formatDateDisplay(entryToDelete.date)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-surface-500">Particulars:</span>
+                <span className="font-semibold text-surface-900 text-right">{entryToDelete.particulars}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-surface-500">Vch / Ref:</span>
+                <span className="font-mono font-bold text-surface-900">{entryToDelete.reference || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-surface-500">Amount:</span>
+                <span className="font-mono font-black text-rose-600">
+                  ₹{(entryToDelete.debit > 0 ? entryToDelete.debit : entryToDelete.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              {entryToDelete.source_type && (
+                <div className="flex justify-between pt-1 border-t border-surface-200">
+                  <span className="text-surface-500">Source:</span>
+                  <span className="uppercase text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-surface-200 text-surface-700">
+                    {entryToDelete.source_type}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-surface-600 leading-relaxed">
+              Deleting this entry will remove it from the customer ledger and recalculate closing balance and subtotals automatically.
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-surface-100">
+              <button
+                type="button"
+                disabled={isDeletingEntry}
+                onClick={() => setEntryToDelete(null)}
+                className="btn-secondary py-1.5 px-3 text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingEntry}
+                onClick={handleConfirmDeleteEntry}
+                className="btn-primary py-1.5 px-3.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 cursor-pointer"
+              >
+                {isDeletingEntry ? (
+                  <span>Deleting...</span>
+                ) : (
+                  <>
+                    <Trash2 size={13} />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: PARTY CHALLANS LIST                                   */}
+      {/* ============================================================ */}
+      {showPartyChallansModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-surface-200 p-4 sm:p-5 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-orange-100 text-[#ea580c] rounded-lg">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-surface-900 flex items-center gap-2">
+                    <span>Party Challans: {selectedCustomer.name || selectedCustomer.business_name}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-surface-100 text-surface-700 font-bold">
+                      {customerChallans.length} Challans
+                    </span>
+                  </h3>
+                  <span className="text-[11px] text-surface-500">
+                    Official delivery challans issued to this party
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPartyChallansModal(false)}
+                className="p-1.5 text-surface-400 hover:text-surface-700 rounded-lg hover:bg-surface-100 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Search and Action Bar */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="relative flex-1">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={partyChallansSearch}
+                  onChange={(e) => setPartyChallansSearch(e.target.value)}
+                  placeholder="Filter challans by number, site..."
+                  className="input text-xs py-1.5 pl-8 pr-2 w-full font-medium"
+                />
+              </div>
+
+              <Link
+                href={`/challans/new?customerId=${encodeURIComponent(selectedCustomer.id || selectedCustomerId)}`}
+                className="btn-primary py-1.5 px-3 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white flex items-center gap-1 shadow-xs whitespace-nowrap"
+              >
+                <Plus size={13} />
+                <span>+ New Challan</span>
+              </Link>
+            </div>
+
+            {/* Challans Table */}
+            <div className="border border-surface-200 rounded-xl overflow-hidden max-h-[50vh] overflow-y-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-surface-50 sticky top-0 border-b border-surface-200">
+                  <tr className="text-surface-700 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="py-2 px-3">Challan #</th>
+                    <th className="py-2 px-3">Date</th>
+                    <th className="py-2 px-3">Site / Project</th>
+                    <th className="py-2 px-3 text-right">Amount (₹)</th>
+                    <th className="py-2 px-3 text-center">Status</th>
+                    <th className="py-2 px-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-100 font-medium text-surface-800">
+                  {customerChallans
+                    .filter((c) => {
+                      if (!partyChallansSearch.trim()) return true;
+                      const q = partyChallansSearch.toLowerCase();
+                      return (
+                        c.challan_number.toLowerCase().includes(q) ||
+                        (c.site_name || '').toLowerCase().includes(q)
+                      );
+                    })
+                    .map((c) => (
+                      <tr key={c.id} className="hover:bg-surface-50/80 transition-colors">
+                        <td className="py-2 px-3 font-mono font-bold text-primary-600">
+                          <Link
+                            href={`/challans/${c.id}`}
+                            className="hover:underline flex items-center gap-1"
+                          >
+                            <span>{c.challan_number}</span>
+                            <ExternalLink size={10} className="opacity-70" />
+                          </Link>
+                        </td>
+                        <td className="py-2 px-3 text-surface-600 whitespace-nowrap">
+                          {formatDateDisplay(c.date)}
+                        </td>
+                        <td className="py-2 px-3 text-surface-700">
+                          {c.site_name || '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-surface-900">
+                          ₹{c.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span className="uppercase text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                            {c.status || 'delivered'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <Link
+                            href={`/challans/${c.id}`}
+                            className="p-1 text-surface-600 hover:text-surface-900 hover:bg-surface-100 rounded inline-flex items-center gap-1 text-[11px] font-semibold"
+                            title="Open Challan"
+                          >
+                            <Eye size={12} />
+                            <span>View</span>
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  {customerChallans.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-xs text-surface-400">
+                        No challans found for this party.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-2 border-t border-surface-100 flex items-center justify-between text-xs text-surface-500">
+              <span>
+                Total Amount:{' '}
+                <b className="text-surface-900 font-mono">
+                  ₹{customerChallans.reduce((s, c) => s + (c.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </b>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPartyChallansModal(false)}
+                className="btn-secondary py-1.5 px-3 text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,1 +1,57 @@
-[]
+[
+  {
+    "id": "site_cust_rk_sales_kalpataru_1794735221620",
+    "customer_id": "cust_rk_sales",
+    "site_name": "Kalpataru",
+    "site_address": "Kalpataru Site, Thane",
+    "opening_balance": 0,
+    "credit_adjustment": 0,
+    "debit_adjustment": 0,
+    "current_balance": 0,
+    "challan_id": "863ae81f-7483-4c89-9710-1bfbbcb22bec",
+    "challan_number": "SH/11/002",
+    "order_index": 0,
+    "is_verified": true,
+    "verified_at": "2026-11-15T09:33:41.620Z",
+    "verified_by": "Admin SH",
+    "is_active": true,
+    "created_at": "2026-11-15T09:33:41.620Z",
+    "updated_at": "2026-11-15T09:33:41.672Z"
+  },
+  {
+    "id": "site_cust_rk_sales_lodha_1794735221630",
+    "customer_id": "cust_rk_sales",
+    "site_name": "Lodha",
+    "site_address": "Lodha Site, Thane",
+    "opening_balance": 0,
+    "credit_adjustment": 0,
+    "debit_adjustment": 0,
+    "current_balance": 0,
+    "challan_id": "b1d0c41e-0774-44f5-a37c-283d7ac34646",
+    "challan_number": "SH/11/001",
+    "order_index": 1,
+    "is_verified": true,
+    "verified_at": "2026-11-15T09:33:41.630Z",
+    "verified_by": "Admin SH",
+    "is_active": true,
+    "created_at": "2026-11-15T09:33:41.631Z",
+    "updated_at": "2026-11-15T09:33:41.672Z"
+  },
+  {
+    "id": "site_cust_rk_sales_regency_1794735221637",
+    "customer_id": "cust_rk_sales",
+    "site_name": "Regency",
+    "site_address": "Regency Site, Thane",
+    "opening_balance": 0,
+    "credit_adjustment": 0,
+    "debit_adjustment": 0,
+    "current_balance": 0,
+    "order_index": 2,
+    "is_verified": true,
+    "verified_at": "2026-11-15T09:33:41.637Z",
+    "verified_by": "Admin SH",
+    "is_active": true,
+    "created_at": "2026-11-15T09:33:41.637Z",
+    "updated_at": "2026-11-15T09:33:41.672Z"
+  }
+]

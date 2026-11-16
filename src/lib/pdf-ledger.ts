@@ -256,6 +256,7 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
     sitesData.push([
       idx + 1,
       site.site_name,
+      site.challan_number || '—',
       op.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       `+ ${cr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
       `- ${db.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
@@ -267,6 +268,7 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
   sitesData.push([
     '',
     'Total (Sites)',
+    '',
     sumOpening.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
     sumCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
     sumDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
@@ -276,7 +278,7 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
 
   autoTable(doc, {
     startY: finalY,
-    head: [['Sr. No.', 'Site', 'Opening Balance (₹)', 'Credit (+) (₹)', 'Debit (-) (₹)', 'Current Balance (₹)', 'Verified']],
+    head: [['Sr. No.', 'Site', 'Attached Challan', 'Opening Balance (₹)', 'Credit (+) (₹)', 'Debit (-) (₹)', 'Current Balance (₹)', 'Verified']],
     body: sitesData,
     theme: 'grid',
     headStyles: {

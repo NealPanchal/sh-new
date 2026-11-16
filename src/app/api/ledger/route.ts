@@ -4,6 +4,7 @@ import {
   computeCustomerLedger,
   addManualLedgerEntry,
   deleteManualLedgerEntry,
+  deleteLedgerEntry,
   recordAuditLog,
   ManualLedgerEntry,
 } from '@/lib/server-accounting';
@@ -99,13 +100,59 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return NextResponse.json({ success: false, error: 'Entry ID is required' }, { status: 400 });
+  // Permission check: only admin and accountant can delete ledger records
+  if (session.role === 'employee') {
+    return NextResponse.json(
+      { success: false, error: 'Permission denied. Only Admins and Accountants can delete ledger entries.' },
+      { status: 403 }
+    );
   }
 
-  const ok = deleteManualLedgerEntry(id);
-  return NextResponse.json({ success: ok });
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id') || searchParams.get('entryId');
+    const sourceType = searchParams.get('sourceType');
+    const challanId = searchParams.get('challanId');
+    const paymentId = searchParams.get('paymentId');
+    const returnId = searchParams.get('returnId');
+    const manualId = searchParams.get('manualId');
+
+    // Also parse JSON body if sent via body
+    let bodyData: any = {};
+    if (req.headers.get('content-type')?.includes('application/json')) {
+      bodyData = await req.json().catch(() => ({}));
+    }
+
+    const targetId = id || bodyData.id || bodyData.entryId;
+    const targetSourceType = sourceType || bodyData.sourceType;
+    const targetChallanId = challanId || bodyData.challanId;
+    const targetPaymentId = paymentId || bodyData.paymentId;
+    const targetReturnId = returnId || bodyData.returnId;
+    const targetManualId = manualId || bodyData.manualId;
+
+    if (!targetId && !targetChallanId && !targetPaymentId && !targetReturnId && !targetManualId) {
+      return NextResponse.json(
+        { success: false, error: 'Entry identifier (id, challanId, paymentId, or manualId) is required' },
+        { status: 400 }
+      );
+    }
+
+    const userLabel = session.name || session.username;
+    const res = deleteLedgerEntry(
+      {
+        entryId: targetId,
+        sourceType: targetSourceType,
+        challanId: targetChallanId,
+        paymentId: targetPaymentId,
+        returnId: targetReturnId,
+        manualId: targetManualId,
+      },
+      userLabel
+    );
+
+    return NextResponse.json({ success: res.success, deletedType: res.deletedType });
+  } catch (err: any) {
+    console.error('Error deleting ledger entry:', err);
+    return NextResponse.json({ success: false, error: err.message || 'Server error' }, { status: 500 });
+  }
 }

@@ -154,7 +154,14 @@ export function saveCustomerSites(sites: CustomerSite[]): void {
 
 export function getSitesByCustomerId(customerId: string): CustomerSite[] {
   const all = getCustomerSites();
-  return all.filter((s) => s.customer_id === customerId);
+  const sites = all.filter((s) => s.customer_id === customerId);
+  sites.sort((a, b) => {
+    const idxA = a.order_index ?? 9999;
+    const idxB = b.order_index ?? 9999;
+    if (idxA !== idxB) return idxA - idxB;
+    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+  });
+  return sites;
 }
 
 export function addOrUpdateSite(site: CustomerSite): CustomerSite {
@@ -173,6 +180,9 @@ export function addOrUpdateSite(site: CustomerSite): CustomerSite {
     credit_adjustment: credit,
     debit_adjustment: debit,
     current_balance,
+    challan_id: site.challan_id || undefined,
+    challan_number: site.challan_number || undefined,
+    order_index: site.order_index !== undefined ? site.order_index : (idx >= 0 ? sites[idx].order_index : sites.length),
     updated_at: now,
     created_at: idx >= 0 ? sites[idx].created_at : site.created_at || now,
   };
@@ -183,6 +193,49 @@ export function addOrUpdateSite(site: CustomerSite): CustomerSite {
   }
   saveCustomerSites(sites);
   return record;
+}
+
+export function reorderCustomerSites(
+  customerId: string,
+  orderedSiteIds: string[],
+  user: string
+): CustomerSite[] {
+  const allSites = getCustomerSites();
+  const custSites = allSites.filter((s) => s.customer_id === customerId);
+  const otherSites = allSites.filter((s) => s.customer_id !== customerId);
+
+  const siteMap = new Map(custSites.map((s) => [s.id, s]));
+  const reordered: CustomerSite[] = [];
+
+  orderedSiteIds.forEach((id, idx) => {
+    const s = siteMap.get(id);
+    if (s) {
+      s.order_index = idx;
+      s.updated_at = new Date().toISOString();
+      reordered.push(s);
+      siteMap.delete(id);
+    }
+  });
+
+  siteMap.forEach((s) => {
+    s.order_index = reordered.length;
+    reordered.push(s);
+  });
+
+  const finalSites = [...otherSites, ...reordered];
+  saveCustomerSites(finalSites);
+
+  recordAuditLog({
+    entity_type: 'site_adjustment',
+    entity_id: customerId,
+    user_id: user,
+    user_name: user,
+    action: 'REORDER_SITES',
+    updated_values: { orderedSiteIds },
+    reason: `Reordered ${orderedSiteIds.length} sites for customer ${customerId}`,
+  });
+
+  return reordered;
 }
 
 export function verifyCustomerSite(siteId: string, user: string): CustomerSite {
@@ -281,6 +334,8 @@ export function updateCustomerSiteBalances(
     opening_balance?: number;
     credit_adjustment?: number;
     debit_adjustment?: number;
+    challan_id?: string;
+    challan_number?: string;
     is_verified?: boolean;
   },
   user: string
@@ -296,6 +351,8 @@ export function updateCustomerSiteBalances(
     debit_adjustment: site.debit_adjustment,
     current_balance: site.current_balance,
     is_verified: site.is_verified,
+    challan_id: site.challan_id,
+    challan_number: site.challan_number,
   };
   const now = new Date().toISOString();
 
@@ -303,6 +360,8 @@ export function updateCustomerSiteBalances(
   if (data.opening_balance !== undefined) site.opening_balance = Number(data.opening_balance) || 0;
   if (data.credit_adjustment !== undefined) site.credit_adjustment = Number(data.credit_adjustment) || 0;
   if (data.debit_adjustment !== undefined) site.debit_adjustment = Number(data.debit_adjustment) || 0;
+  if (data.challan_id !== undefined) site.challan_id = data.challan_id || undefined;
+  if (data.challan_number !== undefined) site.challan_number = data.challan_number || undefined;
   if (data.is_verified !== undefined) {
     site.is_verified = Boolean(data.is_verified);
     if (site.is_verified) {
@@ -536,6 +595,15 @@ export function addPayment(payment: PaymentRecord): PaymentRecord {
   return payment;
 }
 
+export function deletePayment(id: string): boolean {
+  const payments = getPayments();
+  const idx = payments.findIndex((p) => p.id === id);
+  if (idx < 0) return false;
+  payments.splice(idx, 1);
+  savePayments(payments);
+  return true;
+}
+
 // ----------------------------------------------------
 // 3. GOODS RETURNS
 // ----------------------------------------------------
@@ -554,6 +622,15 @@ export function addGoodsReturn(goodsReturn: GoodsReturn): GoodsReturn {
   return goodsReturn;
 }
 
+export function deleteGoodsReturn(id: string): boolean {
+  const returns = getGoodsReturns();
+  const idx = returns.findIndex((r) => r.id === id);
+  if (idx < 0) return false;
+  returns.splice(idx, 1);
+  saveGoodsReturns(returns);
+  return true;
+}
+
 // ----------------------------------------------------
 // 4. SITE-WISE PLUS/MINUS ADJUSTMENTS
 // ----------------------------------------------------
@@ -570,6 +647,15 @@ export function addSiteAdjustment(adj: SiteAdjustment): SiteAdjustment {
   list.push(adj);
   saveSiteAdjustments(list);
   return adj;
+}
+
+export function deleteSiteAdjustment(id: string): boolean {
+  const list = getSiteAdjustments();
+  const idx = list.findIndex((a) => a.id === id);
+  if (idx < 0) return false;
+  list.splice(idx, 1);
+  saveSiteAdjustments(list);
+  return true;
 }
 
 // ----------------------------------------------------
@@ -695,6 +781,131 @@ export function updateChallanPayment(
   return ch;
 }
 
+export function deleteChallanRecord(challanId: string, user: string): boolean {
+  const challans = getAllChallans();
+  const lower = challanId.trim().toLowerCase();
+  const idx = challans.findIndex(
+    (c) => c.id === challanId || (c.challan_number && c.challan_number.trim().toLowerCase() === lower)
+  );
+  if (idx < 0) return false;
+
+  challans[idx].is_deleted = true;
+  challans[idx].status = 'void';
+  challans[idx].updated_at = new Date().toISOString();
+  saveAllChallans(challans);
+  return true;
+}
+
+export function deleteLedgerEntry(
+  options: {
+    entryId?: string;
+    sourceType?: string;
+    challanId?: string;
+    paymentId?: string;
+    returnId?: string;
+    manualId?: string;
+  },
+  user: string
+): { success: boolean; deletedType?: string } {
+  const { entryId, sourceType, challanId, paymentId, returnId, manualId } = options;
+
+  // 1. Manual Ledger Entry
+  if (sourceType === 'manual' || manualId || (entryId && entryId.startsWith('mle_'))) {
+    const idToDelete = manualId || entryId!;
+    const ok = deleteManualLedgerEntry(idToDelete);
+    if (ok) {
+      recordAuditLog({
+        entity_type: 'site_adjustment',
+        entity_id: idToDelete,
+        user_id: user,
+        user_name: user,
+        action: 'DELETE_LEDGER_ENTRY',
+        reason: `Deleted manual ledger entry: ${idToDelete}`,
+      });
+      return { success: true, deletedType: 'manual' };
+    }
+  }
+
+  // 2. Payment Entry
+  if (sourceType === 'payment' || paymentId) {
+    const idToDelete = paymentId || entryId!;
+    const ok = deletePayment(idToDelete);
+    if (ok) {
+      recordAuditLog({
+        entity_type: 'payment',
+        entity_id: idToDelete,
+        user_id: user,
+        user_name: user,
+        action: 'DELETE_LEDGER_ENTRY',
+        reason: `Deleted payment receipt entry from ledger: ${idToDelete}`,
+      });
+      return { success: true, deletedType: 'payment' };
+    }
+  }
+
+  // 3. Goods Return Entry
+  if (sourceType === 'goods_return' || returnId) {
+    const idToDelete = returnId || entryId!;
+    const ok = deleteGoodsReturn(idToDelete);
+    if (ok) {
+      recordAuditLog({
+        entity_type: 'goods_return',
+        entity_id: idToDelete,
+        user_id: user,
+        user_name: user,
+        action: 'DELETE_LEDGER_ENTRY',
+        reason: `Deleted goods return entry from ledger: ${idToDelete}`,
+      });
+      return { success: true, deletedType: 'goods_return' };
+    }
+  }
+
+  // 4. Challan Entry
+  if (sourceType === 'challan' || challanId) {
+    const idToDelete = challanId || entryId!;
+    const ok = deleteChallanRecord(idToDelete, user);
+    if (ok) {
+      recordAuditLog({
+        entity_type: 'challan',
+        entity_id: idToDelete,
+        user_id: user,
+        user_name: user,
+        action: 'DELETE_LEDGER_ENTRY',
+        reason: `Deleted/voided challan entry from ledger: ${idToDelete}`,
+      });
+      return { success: true, deletedType: 'challan' };
+    }
+  }
+
+  // 5. Site Adjustment Entry
+  if (sourceType === 'site_adjustment') {
+    const idToDelete = entryId!;
+    const ok = deleteSiteAdjustment(idToDelete);
+    if (ok) {
+      recordAuditLog({
+        entity_type: 'site_adjustment',
+        entity_id: idToDelete,
+        user_id: user,
+        user_name: user,
+        action: 'DELETE_LEDGER_ENTRY',
+        reason: `Deleted site adjustment entry from ledger: ${idToDelete}`,
+      });
+      return { success: true, deletedType: 'site_adjustment' };
+    }
+  }
+
+  // Fallback search across all entities if not explicitly tagged
+  if (entryId) {
+    if (deleteManualLedgerEntry(entryId)) return { success: true, deletedType: 'manual' };
+    if (deletePayment(entryId)) return { success: true, deletedType: 'payment' };
+    if (deleteGoodsReturn(entryId)) return { success: true, deletedType: 'goods_return' };
+    if (deleteSiteAdjustment(entryId)) return { success: true, deletedType: 'site_adjustment' };
+    if (deleteChallanRecord(entryId, user)) return { success: true, deletedType: 'challan' };
+  }
+
+  return { success: false };
+}
+
 // ----------------------------------------------------
 // 9. PARTY LEDGER COMPUTATION (TALLY STYLE)
 // ----------------------------------------------------
@@ -771,6 +982,7 @@ export function computeCustomerLedger(
     particulars: string;
     reference: string;
     voucher_type: CustomerLedgerEntry['voucher_type'];
+    source_type?: CustomerLedgerEntry['source_type'];
     payment_type?: string;
     site_name?: string;
     debit: number;
@@ -778,6 +990,7 @@ export function computeCustomerLedger(
     challan_id?: string;
     payment_id?: string;
     return_id?: string;
+    manual_id?: string;
     is_paid?: boolean;
     paid_amount?: number;
     payment_status?: 'paid' | 'partial' | 'unpaid';
@@ -833,6 +1046,7 @@ export function computeCustomerLedger(
         particulars: desc,
         reference: c.challan_number,
         voucher_type: 'sales_gst',
+        source_type: 'challan',
         payment_type: 'Sales GST',
         site_name: c.site_name || c.delivery_address || undefined,
         debit: amt,
@@ -893,6 +1107,7 @@ export function computeCustomerLedger(
         particulars: particularsLabel,
         reference: p.receipt_number || p.reference_no || 'REC',
         voucher_type: 'receipt',
+        source_type: 'payment',
         payment_type: paymentTypeLabel,
         site_name: p.site_name || undefined,
         debit: 0,
@@ -922,6 +1137,7 @@ export function computeCustomerLedger(
         particulars: `By Goods Return [${gr.challan_number}]`,
         reference: gr.return_number,
         voucher_type: 'goods_return',
+        source_type: 'goods_return',
         payment_type: 'Goods Return',
         site_name: gr.site_name || undefined,
         debit: 0,
@@ -967,6 +1183,8 @@ export function computeCustomerLedger(
       particulars: mle.particulars,
       reference: mle.voucher_no,
       voucher_type: mle.debit > 0 ? 'sales_gst' : 'receipt',
+      source_type: 'manual',
+      manual_id: mle.id,
       payment_type: mle.payment_type,
       site_name: mle.site_name,
       debit: Number(mle.debit) || 0,
@@ -994,6 +1212,7 @@ export function computeCustomerLedger(
         particulars: `To Adjustment (+): ${adj.reason}`,
         reference: adj.adjustment_number,
         voucher_type: 'site_plus',
+        source_type: 'site_adjustment',
         payment_type: 'Debit Adjustment',
         site_name: adj.site_name,
         debit: amt,
@@ -1006,6 +1225,7 @@ export function computeCustomerLedger(
         particulars: `By Adjustment (-): ${adj.reason}`,
         reference: adj.adjustment_number,
         voucher_type: 'site_minus',
+        source_type: 'site_adjustment',
         payment_type: 'Credit Adjustment',
         site_name: adj.site_name,
         debit: 0,
@@ -1047,7 +1267,16 @@ export function computeCustomerLedger(
   }
   if (options?.typeFilter && options.typeFilter !== 'all') {
     const tf = options.typeFilter.toLowerCase();
-    filtered = filtered.filter((e) => (e.payment_type || '').toLowerCase().includes(tf));
+    if (tf.includes('challan') || tf.includes('party')) {
+      filtered = filtered.filter(
+        (e) =>
+          e.source_type === 'challan' ||
+          e.voucher_type === 'sales_gst' ||
+          (e.payment_type || '').toLowerCase().includes('sales')
+      );
+    } else {
+      filtered = filtered.filter((e) => (e.payment_type || '').toLowerCase().includes(tf));
+    }
   }
 
   // 3. Calculate Running Balance starting from periodOpeningBalance
@@ -1066,6 +1295,7 @@ export function computeCustomerLedger(
       particulars: item.particulars,
       reference: item.reference,
       voucher_type: item.voucher_type,
+      source_type: item.source_type,
       payment_type: item.payment_type || (item.debit > 0 ? 'Sales GST' : 'Receipt'),
       site_name: item.site_name,
       debit: item.debit,
@@ -1074,6 +1304,7 @@ export function computeCustomerLedger(
       challan_id: item.challan_id,
       payment_id: item.payment_id,
       return_id: item.return_id,
+      manual_id: item.manual_id,
       is_paid: item.is_paid,
       paid_amount: item.paid_amount,
       payment_status: item.payment_status,
