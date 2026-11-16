@@ -106,6 +106,14 @@ export interface CustomerSite {
   updated_at?: string;
 }
 
+export interface CustomerMaterialRate {
+  id: string;
+  room: string;          // e.g. "Master Bedroom", "Living Room", "Kitchen"
+  code: string;          // e.g. "SF-102", "HG-405", "101-GLOSS"
+  company_name: string;  // e.g. "Royal Oak", "Merino", "Showhouse Premium"
+  rate: number;          // e.g. 850
+}
+
 export interface Customer {
   id: string;
   user_id: string;
@@ -118,6 +126,7 @@ export interface Customer {
   delivery_address: string | null;
   gstin: string | null;
   notes: string | null;
+  material_rates?: CustomerMaterialRate[]; // 4-column matrix: Room, Code, Company, Rate
   is_active: boolean;
   opening_balance?: number;
   credit_days?: number; // Default 45 days
@@ -153,6 +162,16 @@ export interface DeliveryHistoryEntry {
   updated_at: string;
   updated_by: string;
   remarks?: string;
+}
+
+export interface ChallanRevisionEntry {
+  timestamp: string;
+  edited_by: string;
+  user_role?: string;
+  reason?: string;
+  changes: string[]; // e.g. ["Total amount changed from ₹34,000 to ₹40,120", "Rate updated from ₹800 to ₹850"]
+  previous_total?: number | null;
+  new_total?: number | null;
 }
 
 export interface Challan {
@@ -212,6 +231,7 @@ export interface Challan {
   // Joined data
   items?: ChallanItem[];
   customer?: Customer;
+  revision_history?: ChallanRevisionEntry[];
 }
 
 export interface ChallanItem {

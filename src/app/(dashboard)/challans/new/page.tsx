@@ -197,6 +197,99 @@ function CreateChallanContent() {
     );
   };
 
+  const matchedCustomer = useMemo(() => {
+    return (
+      customers.find(
+        (c) =>
+          (selectedCustomerId && c.id === selectedCustomerId) ||
+          c.business_name.toLowerCase() === customerName.trim().toLowerCase()
+      ) || null
+    );
+  }, [customers, selectedCustomerId, customerName]);
+
+  const handleLoadCustomerAgreedMaterials = () => {
+    if (!matchedCustomer?.material_rates || matchedCustomer.material_rates.length === 0) return;
+    const newItems: ChallanItemFormData[] = matchedCustomer.material_rates.map((m) => {
+      const desc = [m.code, m.company_name, m.room ? `(${m.room})` : ''].filter(Boolean).join(' ');
+      return {
+        product_id: '',
+        item_description: desc,
+        brand: m.company_name || '',
+        colour_finish: m.room || '',
+        size: '',
+        unit: 'sheets',
+        quantity: '', // blank for user to add quantity
+        rate: m.rate ? String(m.rate) : '',
+        discount_type: 'percent',
+        discount_value: '',
+        discount_amount: '',
+        amount: '',
+        length: '',
+        width: '',
+        dimension_unit: 'ft',
+        calculated_sqft: '',
+      };
+    });
+    setItems(newItems);
+    showToast(
+      `Loaded ${newItems.length} agreed material(s) for ${matchedCustomer.business_name} with pre-agreed rates. Enter quantities to proceed!`,
+      'success'
+    );
+  };
+
+  const findCustomerMaterialRate = (desc: string, prodId?: string, brand?: string | null): number | null => {
+    const qDesc = (desc || '').trim().toLowerCase();
+    const qBrand = (brand || '').trim().toLowerCase();
+    if (!qDesc && !prodId) return null;
+
+    // 1. Check customer's agreed 4-column matrix: Room, Code, Company Name, Rate
+    if (matchedCustomer?.material_rates && matchedCustomer.material_rates.length > 0) {
+      const foundMat = matchedCustomer.material_rates.find((mr) => {
+        const cCode = (mr.code || '').trim().toLowerCase();
+        const cComp = (mr.company_name || '').trim().toLowerCase();
+        const cRoom = (mr.room || '').trim().toLowerCase();
+
+        if (cCode && (qDesc.includes(cCode) || cCode.includes(qDesc))) return true;
+        if (cComp && qBrand && (cComp === qBrand || qDesc.includes(cComp))) return true;
+        if (cComp && qDesc.includes(cComp)) return true;
+        if (cRoom && qDesc.includes(cRoom)) return true;
+        return false;
+      });
+      if (foundMat && Number(foundMat.rate) > 0) {
+        return Number(foundMat.rate);
+      }
+    }
+
+    // 2. Price Memory Engine: Check prior challans for this customer
+    const custId = matchedCustomer?.id || selectedCustomerId;
+    const custName = (matchedCustomer?.business_name || customerName || '').trim().toLowerCase();
+
+    const customerPastChallans = liveChallans.filter(
+      (c) =>
+        (c.customer_id === custId ||
+          (c.customer_name && c.customer_name.trim().toLowerCase() === custName)) &&
+        c.status !== 'cancelled' &&
+        c.status !== 'void'
+    );
+
+    for (const ch of customerPastChallans) {
+      if (!ch.items) continue;
+      const matchedItem = ch.items.find((it) => {
+        if (prodId && it.product_id && it.product_id === prodId) return true;
+        const itDesc = (it.item_description || '').trim().toLowerCase();
+        if (itDesc && (itDesc === qDesc || itDesc.includes(qDesc) || qDesc.includes(itDesc))) {
+          return true;
+        }
+        return false;
+      });
+      if (matchedItem && matchedItem.rate != null && Number(matchedItem.rate) > 0) {
+        return Number(matchedItem.rate);
+      }
+    }
+
+    return null;
+  };
+
   const employeeList: string[] = useMemo(() => {
     if (profile?.employees && profile.employees.length > 0) {
       return profile.employees;
@@ -305,6 +398,9 @@ function CreateChallanContent() {
 
   const selectProduct = (rowIndex: number, product: Product) => {
     const newItems = [...items];
+    const customerSavedRate = findCustomerMaterialRate(product.name, product.id, product.brand);
+    const effectiveRate = customerSavedRate != null ? customerSavedRate : (product.default_rate || 0);
+
     newItems[rowIndex] = {
       ...newItems[rowIndex],
       product_id: product.id,
@@ -313,14 +409,18 @@ function CreateChallanContent() {
       colour_finish: product.colour_design || '',
       size: product.size_thickness || '',
       unit: product.unit,
-      rate: product.default_rate ? String(product.default_rate) : '',
+      rate: effectiveRate ? String(effectiveRate) : '',
     };
-    if (newItems[rowIndex].quantity && product.default_rate) {
-      newItems[rowIndex].amount = String(Number(newItems[rowIndex].quantity) * product.default_rate);
+    if (newItems[rowIndex].quantity && effectiveRate) {
+      newItems[rowIndex].amount = String(Number(newItems[rowIndex].quantity) * effectiveRate);
     }
     setItems(newItems);
     setActiveProductRow(null);
     setProductSearch('');
+
+    if (customerSavedRate != null) {
+      showToast(`⚡ Price Memory: Auto-applied party rate ₹${customerSavedRate} for "${product.name}"`, 'info');
+    }
   };
 
   const addItem = () => {
@@ -338,6 +438,14 @@ function CreateChallanContent() {
       ...newItems[index],
       [field]: value,
     };
+
+    if (field === 'item_description' && (!it.rate || it.rate === '0')) {
+      const memoryRate = findCustomerMaterialRate(value);
+      if (memoryRate != null) {
+        it.rate = String(memoryRate);
+        showToast(`⚡ Price Memory: Auto-applied saved party rate ₹${memoryRate}`, 'info');
+      }
+    }
 
     const qty = Number(it.quantity) || 0;
     const rate = it.rate ? Number(it.rate) : 0;
@@ -803,6 +911,42 @@ function CreateChallanContent() {
               >
                 <Sparkles size={13} className="text-amber-600" />
                 <span>Use Previous Challan Items</span>
+              </button>
+            </div>
+          )}
+
+          {/* Customer Agreed Materials Matrix Auto-Fetch Banner (4 Columns: Room, Code, Company, Rate) */}
+          {matchedCustomer?.material_rates && matchedCustomer.material_rates.length > 0 && (
+            <div className="sm:col-span-12 p-3 bg-blue-50/90 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-start gap-2">
+                <Layers size={16} className="text-blue-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-blue-950 flex items-center gap-1.5">
+                    <span>Customer Agreed Materials Configured</span>
+                    <span className="px-1.5 py-0.2 bg-blue-200 text-blue-800 rounded font-black text-[10px]">
+                      {matchedCustomer.material_rates.length} {matchedCustomer.material_rates.length === 1 ? 'Item' : 'Items'}
+                    </span>
+                  </span>
+                  <p className="text-[11px] text-blue-800 mt-0.5">
+                    Room / Code / Company matrix with locked party rates:{' '}
+                    <span className="font-semibold text-blue-900">
+                      {matchedCustomer.material_rates
+                        .map((m) => `${m.code || m.company_name} (${m.room || 'General'}) @ ₹${m.rate}`)
+                        .slice(0, 3)
+                        .join(' · ')}
+                      {matchedCustomer.material_rates.length > 3 ? ' ...' : ''}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLoadCustomerAgreedMaterials}
+                className="btn-primary py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shrink-0 self-start sm:self-auto shadow-sm inline-flex items-center gap-1.5"
+                title="Auto-fill items with locked rates and leave quantity blank"
+              >
+                <Layers size={13} />
+                <span>⚡ Auto-Fetch Agreed Materials</span>
               </button>
             </div>
           )}

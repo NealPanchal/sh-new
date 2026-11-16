@@ -154,7 +154,70 @@ export function saveCustomerSites(sites: CustomerSite[]): void {
 
 export function getSitesByCustomerId(customerId: string): CustomerSite[] {
   const all = getCustomerSites();
-  const sites = all.filter((s) => s.customer_id === customerId);
+  let sites = all.filter((s) => s.customer_id === customerId);
+
+  // Auto-fetch sites from customer's challans if not already added
+  try {
+    const challans = getAllChallans();
+    const custChallans = challans.filter(
+      (c) =>
+        (c.customer_id === customerId ||
+          (c.customer_name && customerId && c.customer_name.toLowerCase().includes(customerId.toLowerCase())) ||
+          (customerId === 'cust_rk_sales' && (c.customer_name || '').toLowerCase().includes('r k sales'))) &&
+        !c.is_deleted
+    );
+
+    const existingSiteNames = new Set(sites.map((s) => s.site_name.trim().toLowerCase()));
+    let modified = false;
+
+    custChallans.forEach((c) => {
+      let sName = (c.site_name || '').trim();
+      if (!sName && c.delivery_address) {
+        sName = c.delivery_address.split(',')[0].trim();
+      }
+      if (sName) {
+        const found = sites.find((s) => s.site_name.trim().toLowerCase() === sName.toLowerCase());
+        if (!found) {
+          existingSiteNames.add(sName.toLowerCase());
+          const newSite: CustomerSite = {
+            id: `site_${customerId}_${sName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
+            customer_id: customerId,
+            site_name: sName,
+            site_address: c.delivery_address || `${sName} Site`,
+            opening_balance: 0,
+            credit_adjustment: 0,
+            debit_adjustment: 0,
+            current_balance: 0,
+            challan_id: c.id,
+            challan_number: c.challan_number,
+            order_index: sites.length,
+            is_verified: true,
+            verified_at: new Date().toISOString(),
+            verified_by: 'Auto (Challan)',
+            is_active: true,
+            created_at: c.challan_date || new Date().toISOString(),
+          };
+          sites.push(newSite);
+          all.push(newSite);
+          modified = true;
+        } else if (!found.challan_number || found.challan_number.startsWith('SH/')) {
+          found.challan_id = c.id;
+          found.challan_number = c.challan_number;
+          if (c.delivery_address) found.site_address = c.delivery_address;
+          const allIdx = all.findIndex((s) => s.id === found.id);
+          if (allIdx >= 0) all[allIdx] = found;
+          modified = true;
+        }
+      }
+    });
+
+    if (modified) {
+      saveCustomerSites(all);
+    }
+  } catch (err) {
+    console.warn('Auto-fetch sites note:', err);
+  }
+
   sites.sort((a, b) => {
     const idxA = a.order_index ?? 9999;
     const idxB = b.order_index ?? 9999;

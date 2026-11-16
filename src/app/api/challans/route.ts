@@ -448,6 +448,68 @@ export async function POST(req: NextRequest) {
       created_at: it.created_at || now,
     }));
 
+    // Revision Tracking: Track exact changes when challan is edited
+    let revisionHistory = Array.isArray(challans[idx]?.revision_history)
+      ? [...challans[idx].revision_history]
+      : [];
+
+    if (idx >= 0) {
+      const prev = challans[idx];
+      const diffs: string[] = [];
+
+      // Check total amount change
+      if (Number(prev.total_amount) !== Number(validChallan.total_amount)) {
+        diffs.push(
+          `Grand Total changed from ₹${Number(prev.total_amount || 0).toLocaleString('en-IN')} to ₹${Number(validChallan.total_amount || 0).toLocaleString('en-IN')}`
+        );
+      }
+
+      // Check total quantity change
+      if (Number(prev.total_quantity) !== Number(validChallan.total_quantity)) {
+        diffs.push(`Total Quantity changed from ${prev.total_quantity} to ${validChallan.total_quantity}`);
+      }
+
+      // Check items modifications (rates / quantities)
+      const prevItems = prev.items || [];
+      cleanItems.forEach((newItem, i) => {
+        const oldItem = prevItems[i] || prevItems.find((o: any) => o.id === newItem.id || o.item_description === newItem.item_description);
+        if (oldItem) {
+          if (oldItem.rate !== newItem.rate) {
+            diffs.push(
+              `Item "${newItem.item_description || 'Item #' + (i + 1)}": Rate changed from ₹${oldItem.rate ?? 0} to ₹${newItem.rate ?? 0}`
+            );
+          }
+          if (oldItem.quantity !== newItem.quantity) {
+            diffs.push(
+              `Item "${newItem.item_description || 'Item #' + (i + 1)}": Qty changed from ${oldItem.quantity} to ${newItem.quantity}`
+            );
+          }
+        } else {
+          diffs.push(`Added new item: "${newItem.item_description || 'Item #' + (i + 1)}" (Qty: ${newItem.quantity}, Rate: ₹${newItem.rate || 0})`);
+        }
+      });
+
+      // Check delivery address / site
+      if ((prev.site_name || '') !== (validChallan.site_name || '')) {
+        diffs.push(`Site changed to "${validChallan.site_name || 'General'}"`);
+      }
+      if ((prev.challan_date || '') !== (validChallan.challan_date || '')) {
+        diffs.push(`Challan date changed from ${prev.challan_date} to ${validChallan.challan_date}`);
+      }
+
+      if (diffs.length > 0) {
+        revisionHistory.push({
+          timestamp: now,
+          edited_by: session.name || session.username || 'Admin',
+          user_role: session.role || 'admin',
+          reason: body.modification_reason || 'Challan updated with modified rates/quantities',
+          changes: diffs,
+          previous_total: prev.total_amount,
+          new_total: validChallan.total_amount,
+        });
+      }
+    }
+
     const finalRecord = {
       ...validChallan,
       challan_number: assignedChallanNumber,
@@ -457,6 +519,7 @@ export async function POST(req: NextRequest) {
       customer_address: validChallan.customer_address || '',
       delivery_address: validChallan.delivery_address || validChallan.customer_address || '',
       items: cleanItems,
+      revision_history: revisionHistory,
       updated_at: now,
       created_at: idx >= 0 ? challans[idx].created_at || now : validChallan.created_at || now,
       is_deleted: false,
@@ -596,3 +659,5 @@ export async function DELETE(req: NextRequest) {
     );
   }
 }
+
+export const PUT = POST;

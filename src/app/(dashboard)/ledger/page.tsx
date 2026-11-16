@@ -185,6 +185,8 @@ export default function MasterPartyLedgerPage() {
   const [entryVoucherNo, setEntryVoucherNo] = useState('');
   const [entryAmount, setEntryAmount] = useState('');
   const [entrySiteName, setEntrySiteName] = useState('');
+  const [selectedChallanForEntry, setSelectedChallanForEntry] = useState('');
+  const [entryDebitOrCredit, setEntryDebitOrCredit] = useState<'debit' | 'credit'>('debit');
 
   const [showUnverifyModal, setShowUnverifyModal] = useState(false);
   const [unverifyTargetSite, setUnverifyTargetSite] = useState<CustomerSite | null>(null);
@@ -747,7 +749,7 @@ export default function MasterPartyLedgerPage() {
       return;
     }
 
-    let isDebit = entryType === 'Party Challan' || entryType === 'Sales GST' || entryType === 'Payment';
+    const isDebit = entryDebitOrCredit === 'debit';
     let formattedParticulars = entryParticulars.trim();
     if (isDebit && !formattedParticulars.toLowerCase().startsWith('to ')) {
       formattedParticulars = `To ${formattedParticulars}`;
@@ -774,6 +776,7 @@ export default function MasterPartyLedgerPage() {
           debit: isDebit ? numAmt : 0,
           credit: !isDebit ? numAmt : 0,
           site_name: entrySiteName || undefined,
+          challan_id: selectedChallanForEntry || undefined,
         }),
       });
 
@@ -783,6 +786,8 @@ export default function MasterPartyLedgerPage() {
         setEntryParticulars('');
         setEntryAmount('');
         setEntryVoucherNo('');
+        setSelectedChallanForEntry('');
+        setEntrySiteName('');
         await fetchLedger();
       } else {
         const err = await res.json();
@@ -2206,6 +2211,90 @@ export default function MasterPartyLedgerPage() {
             </div>
 
             <form onSubmit={handleCreateManualEntry} className="space-y-3 text-xs">
+              {/* Select Customer's Challans (Auto-Fill) */}
+              <div className="space-y-1 p-2.5 bg-amber-500/10 border border-amber-300/70 rounded-xl">
+                <label className="font-bold text-amber-950 flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1.5">
+                    <FileText size={13} className="text-[#ea580c]" />
+                    <span>Select from Customer&apos;s Challans (Optional)</span>
+                  </span>
+                  {availableChallans.length > 0 && (
+                    <span className="text-[10px] text-amber-800 font-semibold">
+                      {availableChallans.length} Challan(s)
+                    </span>
+                  )}
+                </label>
+                <select
+                  value={selectedChallanForEntry}
+                  onChange={(e) => {
+                    const cId = e.target.value;
+                    setSelectedChallanForEntry(cId);
+                    const match = availableChallans.find((c) => c.id === cId || c.challan_number === cId);
+                    if (match) {
+                      setEntryVoucherNo(match.challan_number);
+                      setEntryAmount(String(match.amount || ''));
+                      if (match.date) setEntryDate(match.date.slice(0, 10));
+                      if ((match as any).site_name) setEntrySiteName((match as any).site_name);
+                      setEntryParticulars(`To SALE GST 18% - Challan ${match.challan_number}`);
+                      setEntryType('Party Challan');
+                      setEntryDebitOrCredit('debit');
+                    }
+                  }}
+                  className="input text-xs w-full font-bold bg-white border-amber-300"
+                >
+                  <option value="">-- Choose Challan to Auto-Fill --</option>
+                  {availableChallans.map((ch) => (
+                    <option key={ch.id} value={ch.id}>
+                      Challan #{ch.challan_number} — ₹{Number(ch.amount).toLocaleString('en-IN')} ({ch.date ? formatDateDisplay(ch.date) : 'No date'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Accounting Effect: Debit vs Credit Toggle */}
+              <div className="space-y-1">
+                <label className="font-bold text-surface-700">Accounting Effect *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEntryDebitOrCredit('debit');
+                      if (!entryParticulars || entryParticulars.startsWith('By ')) {
+                        setEntryParticulars(entryParticulars.replace(/^By\s+/i, 'To ') || 'To SALE GST 18%');
+                      }
+                    }}
+                    className={cn(
+                      'py-2 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer',
+                      entryDebitOrCredit === 'debit'
+                        ? 'bg-rose-50 border-rose-500 text-rose-700 ring-2 ring-rose-400/20'
+                        : 'bg-white border-surface-200 text-surface-600 hover:bg-surface-50'
+                    )}
+                  >
+                    <ArrowUpRight size={14} className="text-rose-600" />
+                    <span>Debit (+) Receivable</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEntryDebitOrCredit('credit');
+                      if (!entryParticulars || entryParticulars.startsWith('To ')) {
+                        setEntryParticulars(entryParticulars.replace(/^To\s+/i, 'By ') || 'By HDFC BANK-50200003880041');
+                      }
+                    }}
+                    className={cn(
+                      'py-2 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer',
+                      entryDebitOrCredit === 'credit'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-400/20'
+                        : 'bg-white border-surface-200 text-surface-600 hover:bg-surface-50'
+                    )}
+                  >
+                    <ArrowDownLeft size={14} className="text-emerald-600" />
+                    <span>Credit (-) Receipt / Payment</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="font-bold text-surface-700">Date *</label>

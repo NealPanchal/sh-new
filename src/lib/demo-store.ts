@@ -903,9 +903,49 @@ export function updateChallan(
     data.total_amount = finalTotal;
   }
 
+  const prev = state.challans[idx];
+  const diffs: string[] = [];
+  if (data.total_amount != null && Number(prev.total_amount) !== Number(data.total_amount)) {
+    diffs.push(
+      `Grand Total changed from ₹${Number(prev.total_amount || 0).toLocaleString('en-IN')} to ₹${Number(data.total_amount).toLocaleString('en-IN')}`
+    );
+  }
+  if (data.total_quantity != null && Number(prev.total_quantity) !== Number(data.total_quantity)) {
+    diffs.push(`Total Quantity changed from ${prev.total_quantity} to ${data.total_quantity}`);
+  }
+  if (items && Array.isArray(items)) {
+    const prevItems = state.challanItems.filter((it) => it.challan_id === id);
+    items.forEach((newItem, i) => {
+      const oldItem = prevItems[i] || prevItems.find((o) => o.item_description === newItem.item_description);
+      if (oldItem) {
+        if (newItem.rate != null && oldItem.rate !== newItem.rate) {
+          diffs.push(`Item "${newItem.item_description || 'Item #' + (i + 1)}": Rate changed from ₹${oldItem.rate ?? 0} to ₹${newItem.rate}`);
+        }
+        if (newItem.quantity != null && oldItem.quantity !== newItem.quantity) {
+          diffs.push(`Item "${newItem.item_description || 'Item #' + (i + 1)}": Qty changed from ${oldItem.quantity} to ${newItem.quantity}`);
+        }
+      } else {
+        diffs.push(`Added item: "${newItem.item_description || 'Item #' + (i + 1)}" (Qty: ${newItem.quantity || 0}, Rate: ₹${newItem.rate || 0})`);
+      }
+    });
+  }
+
+  let revisionHistory = Array.isArray(prev.revision_history) ? [...prev.revision_history] : [];
+  if (diffs.length > 0) {
+    revisionHistory.push({
+      timestamp: now,
+      edited_by: 'Admin / Staff',
+      reason: 'Challan modified with rate/item adjustments',
+      changes: diffs,
+      previous_total: prev.total_amount,
+      new_total: data.total_amount,
+    });
+  }
+
   state.challans[idx] = {
     ...state.challans[idx],
     ...data,
+    revision_history: revisionHistory,
     updated_at: now,
   };
 
