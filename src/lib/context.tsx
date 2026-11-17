@@ -216,6 +216,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const createCustomerFn = useCallback((data: Partial<Customer>) => {
     const c = store.createCustomer(data);
     setCustomers(store.getCustomers());
+    if (typeof window !== 'undefined') {
+      try {
+        const { getClientAuthToken } = require('@/lib/auth');
+        const token = getClientAuthToken();
+        fetch('/api/customers', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(c),
+        }).catch(() => {});
+      } catch {}
+    }
     return c;
   }, []);
 

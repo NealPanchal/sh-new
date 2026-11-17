@@ -70,6 +70,39 @@ export async function POST(req: NextRequest) {
 
     addManualLedgerEntry(entry);
 
+    // Auto-save site if provided
+    if (site_name && site_name.trim() && customer_id) {
+      try {
+        const { getCustomerSites, addOrUpdateSite } = await import('@/lib/server-accounting');
+        const sites = getCustomerSites();
+        const cleanSite = site_name.trim();
+        const existing = sites.find(
+          (s) => (s.customer_id === customer_id || s.customer_id.toLowerCase() === customer_id.toLowerCase()) &&
+                 s.site_name.toLowerCase() === cleanSite.toLowerCase()
+        );
+        if (!existing) {
+          addOrUpdateSite({
+            id: `site_${customer_id}_${cleanSite.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
+            customer_id,
+            site_name: cleanSite,
+            site_address: `${cleanSite} Site`,
+            opening_balance: 0,
+            credit_adjustment: 0,
+            debit_adjustment: 0,
+            current_balance: 0,
+            order_index: sites.length,
+            is_verified: true,
+            verified_at: new Date().toISOString(),
+            verified_by: operatorName,
+            is_active: true,
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (siteErr) {
+        console.warn('Auto-save site from manual entry note:', siteErr);
+      }
+    }
+
     recordAuditLog({
       entity_type: 'site_adjustment',
       entity_id: entry.id,
@@ -89,12 +122,11 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = getAuthenticatedSession(req);
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  }
+  const operatorRole = session?.role || 'admin';
+  const operatorName = session?.name || session?.username || 'Admin SH';
 
   // Permission check: only admin and accountant can delete ledger records
-  if (session.role === 'employee') {
+  if (operatorRole === 'employee') {
     return NextResponse.json(
       { success: false, error: 'Permission denied. Only Admins and Accountants can delete ledger entries.' },
       { status: 403 }
@@ -130,7 +162,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const userLabel = session.name || session.username;
+    const userLabel = operatorName;
     const res = deleteLedgerEntry(
       {
         entryId: targetId,

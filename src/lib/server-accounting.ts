@@ -185,7 +185,7 @@ export function saveCustomerSites(sites: CustomerSite[]): void {
   writeJsonFile('customer_sites.json', sites, false);
 }
 
-export function getSitesByCustomerId(customerId: string): CustomerSite[] {
+export function getSitesByCustomerId(customerId: string, externalChallans?: Challan[]): CustomerSite[] {
   const all = getCustomerSites();
   const allCusts = getAllCustomers();
   const cust = allCusts.find(
@@ -209,15 +209,16 @@ export function getSitesByCustomerId(customerId: string): CustomerSite[] {
 
   // Auto-fetch and detect all sites from customer's challans
   try {
-    const challans = getAllChallans();
+    const challans = externalChallans || getAllChallans();
     const isMatchThisCust = (c: Challan) => {
       const cCustId = (c.customer_id || '').trim().toLowerCase();
       const cCustName = (c.customer_name || '').trim().toLowerCase();
 
       if (targetId && (cCustId === targetId || cCustName === targetId)) return true;
+      if (targetId && (cCustName.includes(targetId) || targetId.includes(cCustName))) return true;
       if (custId && (cCustId === custId || cCustName === custId)) return true;
-      if (custName && (cCustName === custName || cCustName.includes(custName))) return true;
-      if (custBiz && (cCustName === custBiz || cCustName.includes(custBiz))) return true;
+      if (custName && (cCustName === custName || cCustName.includes(custName) || custName.includes(cCustName))) return true;
+      if (custBiz && (cCustName === custBiz || cCustName.includes(custBiz) || custBiz.includes(cCustName))) return true;
       if (
         (targetId === 'cust_rk_sales' || targetId.includes('rk') || custName.includes('rk')) &&
         (cCustName.includes('r k') || cCustName.includes('rk sales'))
@@ -1078,7 +1079,7 @@ export function computeCustomerLedger(
   const goodsReturns = getGoodsReturns();
   const siteAdjustments = getSiteAdjustments();
   const manualEntries = getManualLedgerEntries();
-  const customerSites = getSitesByCustomerId(customerId);
+  const customerSites = getSitesByCustomerId(customerId, challans);
 
   // Find customer opening balance if any
   let openingBalance = 0;
@@ -1102,6 +1103,8 @@ export function computeCustomerLedger(
 
     if (rId && rId === target) return true;
     if (rName && rName === target) return true;
+    if (target && rName && (rName.includes(target) || target.includes(rName))) return true;
+    if (target && rId && (rId.includes(target) || target.includes(rId))) return true;
 
     if (cust) {
       const cId = (cust.id || '').trim().toLowerCase();
@@ -1111,6 +1114,8 @@ export function computeCustomerLedger(
 
       if (rId && (rId === cId || rId === cName || rId === cBiz || rId === cComp)) return true;
       if (rName && (rName === cId || rName === cName || rName === cBiz || rName === cComp)) return true;
+      if (cName && (rName.includes(cName) || cName.includes(rName))) return true;
+      if (cBiz && (rName.includes(cBiz) || cBiz.includes(rName))) return true;
     }
     return false;
   };
