@@ -23,6 +23,7 @@ import { formatPhone, formatDateIndian } from '@/lib/utils';
 import { CustomerFormModal } from '@/components/customers/customer-form-modal';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
 import { shareCustomerRatesViaWhatsApp } from '@/lib/whatsapp';
+import { getCurrentUser } from '@/lib/auth';
 import { CustomerMaterialRate } from '@/types';
 
 export default function CustomerDetailPage() {
@@ -103,9 +104,11 @@ export default function CustomerDetailPage() {
       showToast('No material rates to share', 'error');
       return;
     }
+    const user = getCurrentUser();
     shareCustomerRatesViaWhatsApp({
       customerName: customer.business_name,
       phone: customer.phone,
+      attendee: user?.name || 'VRUSHANK',
       selectedRates: list,
       onToast: showToast,
     });

@@ -237,6 +237,22 @@ export default function MasterPartyLedgerPage() {
   const [payNotes, setPayNotes] = useState('');
   const [isRecordingPayment, setIsRecordingPayment] = useState(false);
 
+  // Edit Ledger Entry Modal states
+  const [showEditEntryModal, setShowEditEntryModal] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<CustomerLedgerEntry | null>(null);
+  const [editEntryDate, setEditEntryDate] = useState('');
+  const [editEntryParticulars, setEditEntryParticulars] = useState('');
+  const [editEntryType, setEditEntryType] = useState('Sales GST');
+  const [editEntryDebitOrCredit, setEditEntryDebitOrCredit] = useState<'debit' | 'credit'>('debit');
+  const [editEntryVoucherNo, setEditEntryVoucherNo] = useState('');
+  const [editEntryAmount, setEditEntryAmount] = useState('');
+  const [editEntrySiteName, setEditEntrySiteName] = useState('');
+  const [editEntryReason, setEditEntryReason] = useState('');
+  const [isUpdatingEntry, setIsUpdatingEntry] = useState(false);
+
+  // Transaction Update & Revision History Modal state
+  const [selectedEntryForHistory, setSelectedEntryForHistory] = useState<CustomerLedgerEntry | null>(null);
+
   // Toast / feedback message
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -629,6 +645,71 @@ export default function MasterPartyLedgerPage() {
     return list;
   }, [ledgerData.entries, searchChallanNo]);
 
+  // Dynamically compute exact site balances from attached customer challans & receipts
+  const siteBalancesMap = useMemo(() => {
+    const map = new Map<string, {
+      challanDebit: number;
+      receiptCredit: number;
+      effectiveDebit: number;
+      effectiveCredit: number;
+      currentBalance: number;
+      challansCount: number;
+    }>();
+
+    const targetCustId = (selectedCustomerId || '').trim().toLowerCase();
+    const custName = (selectedCustomer?.name || '').trim().toLowerCase();
+
+    // All active challans for this customer
+    const activeChallans = (contextChallans || []).filter((c: any) => {
+      const cId = (c.customer_id || '').toLowerCase();
+      const cName = (c.customer_name || '').toLowerCase();
+      const matchCust = (targetCustId && (cId === targetCustId || cName === targetCustId)) ||
+                        (custName && (cName === custName || cName.includes(custName)));
+      return matchCust && !c.is_deleted && c.status !== 'cancelled' && c.status !== 'void';
+    });
+
+    (ledgerData.sites || []).forEach((site) => {
+      const lowerSite = (site.site_name || '').trim().toLowerCase();
+      
+      // Match challans for this site
+      const siteChallans = activeChallans.filter((c: any) => {
+        const cSite = (c.site_name || '').trim().toLowerCase();
+        const cAddr = (c.delivery_address || '').trim().toLowerCase();
+        return (lowerSite && (cSite === lowerSite || cAddr.includes(lowerSite))) ||
+               (site.challan_id && (c.id === site.challan_id || c.challan_number === site.challan_number));
+      });
+
+      const challanDebit = siteChallans.reduce((sum, ch) => sum + (Number(ch.total_amount) || 0), 0);
+
+      // Match payments / credits for this site
+      const sitePayments = (ledgerData.entries || []).filter((e) => {
+        const eSite = (e.site_name || '').trim().toLowerCase();
+        return lowerSite && eSite === lowerSite && e.credit > 0;
+      });
+      const receiptCredit = sitePayments.reduce((sum, p) => sum + (Number(p.credit) || 0), 0);
+
+      const manualDebit = Number(site.debit_adjustment) || 0;
+      const manualCredit = Number(site.credit_adjustment) || 0;
+      const opening = Number(site.opening_balance) || 0;
+
+      // If challans exist for this site, use challanDebit as primary debit; otherwise fallback to manual debit
+      const effectiveDebit = challanDebit > 0 ? challanDebit : manualDebit;
+      const effectiveCredit = manualCredit + receiptCredit;
+      const currentBalance = opening + effectiveDebit - effectiveCredit;
+
+      map.set(site.id, {
+        challanDebit,
+        receiptCredit,
+        effectiveDebit,
+        effectiveCredit,
+        currentBalance,
+        challansCount: siteChallans.length,
+      });
+    });
+
+    return map;
+  }, [ledgerData.sites, ledgerData.entries, contextChallans, selectedCustomerId, selectedCustomer]);
+
   // Comprehensive Customer Transactions & Challans for Auto-Fill
   const availableCustomerTransactions = useMemo(() => {
     const list: Array<{
@@ -840,7 +921,7 @@ export default function MasterPartyLedgerPage() {
     };
   }, [isRKSales, period2Entries, ledgerData]);
 
-  // Sites totals
+  // Sites totals (dynamically derived from attached challans & receipts)
   const sitesSummary = useMemo(() => {
     const list = ledgerData.sites || [];
     let sumOpening = 0;
@@ -849,10 +930,11 @@ export default function MasterPartyLedgerPage() {
     let sumCurrent = 0;
 
     list.forEach((s) => {
+      const b = siteBalancesMap.get(s.id);
       const op = Number(s.opening_balance) || 0;
-      const cr = Number(s.credit_adjustment) || 0;
-      const db = Number(s.debit_adjustment) || 0;
-      const cur = op + db - cr;
+      const cr = b ? b.effectiveCredit : (Number(s.credit_adjustment) || 0);
+      const db = b ? b.effectiveDebit : (Number(s.debit_adjustment) || 0);
+      const cur = b ? b.currentBalance : (op + db - cr);
 
       sumOpening += op;
       sumCredit += cr;
@@ -861,7 +943,7 @@ export default function MasterPartyLedgerPage() {
     });
 
     return { sumOpening, sumCredit, sumDebit, sumCurrent };
-  }, [ledgerData.sites]);
+  }, [ledgerData.sites, siteBalancesMap]);
 
   // Handlers for Sites Balance Adjustments
   const handleVerifySite = async (site: CustomerSite) => {
@@ -1275,6 +1357,79 @@ export default function MasterPartyLedgerPage() {
       await fetchLedger();
     } catch (err) {
       console.warn('Server ledger save note:', err);
+    }
+  };
+
+  // Edit Ledger Entry Handler
+  const handleOpenEditEntry = (entry: CustomerLedgerEntry) => {
+    setEditingEntry(entry);
+    setEditEntryDate(toInputDateFormat(entry.date));
+    setEditEntryParticulars(entry.particulars || '');
+    setEditEntryType(entry.payment_type || (entry.debit > 0 ? 'Sales GST' : 'Receipt'));
+    const isCr = Number(entry.credit) > 0 && Number(entry.debit) === 0;
+    setEditEntryDebitOrCredit(isCr ? 'credit' : 'debit');
+    setEditEntryVoucherNo(entry.reference || '');
+    setEditEntryAmount(String(isCr ? entry.credit : entry.debit));
+    setEditEntrySiteName(entry.site_name || '');
+    setEditEntryReason(entry.reason || '');
+    setShowEditEntryModal(true);
+  };
+
+  const handleUpdateEntrySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEntry) return;
+
+    const numAmt = Number(editEntryAmount);
+    if (isNaN(numAmt) || numAmt < 0) {
+      showToast('Please enter a valid amount', 'error');
+      return;
+    }
+
+    const isDebit = editEntryDebitOrCredit === 'debit';
+    const reasonText = editEntryReason.trim() || 'Admin ledger adjustment / rate correction';
+
+    try {
+      setIsUpdatingEntry(true);
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch('/api/ledger', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          id: editingEntry.id,
+          customer_id: selectedCustomer?.id || selectedCustomerId,
+          date: toInputDateFormat(editEntryDate),
+          particulars: editEntryParticulars.trim(),
+          payment_type: editEntryType,
+          voucher_no: editEntryVoucherNo.trim(),
+          debit: isDebit ? numAmt : 0,
+          credit: !isDebit ? numAmt : 0,
+          site_name: editEntrySiteName.trim() || undefined,
+          challan_id: editingEntry.challan_id,
+          manual_id: editingEntry.manual_id,
+          source_type: editingEntry.source_type,
+          reason: reasonText,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Failed to update ledger entry', 'error');
+        return;
+      }
+
+      showToast('Ledger entry updated successfully!');
+      setShowEditEntryModal(false);
+      setEditingEntry(null);
+      await fetchLedger();
+    } catch {
+      showToast('Network error updating ledger entry', 'error');
+    } finally {
+      setIsUpdatingEntry(false);
     }
   };
 
@@ -1789,7 +1944,20 @@ export default function MasterPartyLedgerPage() {
                             {formatDateDisplay(e.date)}
                           </td>
                           <td className="py-2 px-3 font-semibold text-surface-900 border border-surface-200">
-                            {e.particulars}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span>{e.particulars}</span>
+                              {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedEntryForHistory(e)}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-bold tracking-tight cursor-pointer shadow-2xs whitespace-nowrap"
+                                  title="Click to view update history and reason"
+                                >
+                                  <Clock size={10} className="stroke-[2.5]" />
+                                  <span>Updated</span>
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200">
                             {renderPaymentTypeBadge(e.payment_type, e.debit > 0)}
@@ -1820,14 +1988,24 @@ export default function MasterPartyLedgerPage() {
                             {formatAmountDisplay(e.credit)}
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
-                            <button
-                              type="button"
-                              onClick={() => setEntryToDelete(e)}
-                              className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                              title="Delete entry from ledger"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditEntry(e)}
+                                className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                title="Edit entry (Debit/Credit, Amount, Site, Reason)"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEntryToDelete(e)}
+                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                title="Delete entry from ledger"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1898,7 +2076,20 @@ export default function MasterPartyLedgerPage() {
                             {formatDateDisplay(e.date)}
                           </td>
                           <td className="py-2 px-3 font-semibold text-surface-900 border border-surface-200">
-                            {e.particulars}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span>{e.particulars}</span>
+                              {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedEntryForHistory(e)}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-bold tracking-tight cursor-pointer shadow-2xs whitespace-nowrap"
+                                  title="Click to view update history and reason"
+                                >
+                                  <Clock size={10} className="stroke-[2.5]" />
+                                  <span>Updated</span>
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200">
                             {renderPaymentTypeBadge(e.payment_type, e.debit > 0)}
@@ -1929,14 +2120,24 @@ export default function MasterPartyLedgerPage() {
                             {formatAmountDisplay(e.credit)}
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
-                            <button
-                              type="button"
-                              onClick={() => setEntryToDelete(e)}
-                              className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                              title="Delete entry from ledger"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditEntry(e)}
+                                className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                title="Edit entry (Debit/Credit, Amount, Site, Reason)"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEntryToDelete(e)}
+                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                title="Delete entry from ledger"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2049,7 +2250,20 @@ export default function MasterPartyLedgerPage() {
                               {formatDateDisplay(e.date)}
                             </td>
                             <td className="py-2 px-3 font-semibold text-surface-900 border border-surface-200">
-                              {e.particulars}
+                              <div className="flex items-center justify-between gap-1.5">
+                                <span>{e.particulars}</span>
+                                {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedEntryForHistory(e)}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-bold tracking-tight cursor-pointer shadow-2xs whitespace-nowrap"
+                                    title="Click to view update history and reason"
+                                  >
+                                    <Clock size={10} className="stroke-[2.5]" />
+                                    <span>Updated</span>
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td className="py-2 px-3 text-center border border-surface-200">
                               {renderPaymentTypeBadge(e.payment_type, e.debit > 0)}
@@ -2080,14 +2294,24 @@ export default function MasterPartyLedgerPage() {
                               {formatAmountDisplay(e.credit)}
                             </td>
                             <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
-                              <button
-                                type="button"
-                                onClick={() => setEntryToDelete(e)}
-                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                                title="Delete entry from ledger"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditEntry(e)}
+                                  className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                  title="Edit entry (Debit/Credit, Amount, Site, Reason)"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEntryToDelete(e)}
+                                  className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                  title="Delete entry from ledger"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -2230,10 +2454,11 @@ export default function MasterPartyLedgerPage() {
                 <tbody className="divide-y divide-surface-100 font-medium text-surface-800">
                   {ledgerData.sites && ledgerData.sites.length > 0 ? (
                     ledgerData.sites.map((site, idx) => {
+                      const b = siteBalancesMap.get(site.id);
                       const op = Number(site.opening_balance) || 0;
-                      const cr = Number(site.credit_adjustment) || 0;
-                      const db = Number(site.debit_adjustment) || 0;
-                      const cur = op + db - cr;
+                      const cr = b ? b.effectiveCredit : (Number(site.credit_adjustment) || 0);
+                      const db = b ? b.effectiveDebit : (Number(site.debit_adjustment) || 0);
+                      const cur = b ? b.currentBalance : (op + db - cr);
 
                       return (
                         <tr key={site.id} className="hover:bg-surface-50/80 transition-colors">
@@ -3277,6 +3502,364 @@ export default function MasterPartyLedgerPage() {
                 type="button"
                 onClick={() => setShowPartyChallansModal(false)}
                 className="btn-secondary py-1.5 px-3 text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: EDIT LEDGER ENTRY (DEBIT / CREDIT / AMOUNT / SITE)    */}
+      {/* ============================================================ */}
+      {showEditEntryModal && editingEntry && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-surface-200 p-4 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-orange-100 text-[#ea580c] rounded-lg">
+                  <Edit2 size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-surface-900">
+                    Edit Ledger Transaction
+                  </h3>
+                  <span className="text-[11px] text-surface-500">
+                    Modify debit/credit, amounts, site or particulars with audit tracking
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditEntryModal(false);
+                  setEditingEntry(null);
+                }}
+                className="p-1.5 text-surface-400 hover:text-surface-700 rounded-lg hover:bg-surface-100 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateEntrySubmit} className="space-y-4 text-xs">
+              {/* Accounting Effect: Debit vs Credit toggle */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-surface-700 block">Accounting Effect *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditEntryDebitOrCredit('debit');
+                      if (editEntryParticulars.toLowerCase().startsWith('by ')) {
+                        setEditEntryParticulars(editEntryParticulars.replace(/^by\s+/i, 'To '));
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      editEntryDebitOrCredit === 'debit'
+                        ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-2xs ring-2 ring-rose-400/20'
+                        : 'bg-surface-50 border-surface-200 text-surface-600 hover:bg-surface-100'
+                    }`}
+                  >
+                    <span>↗ Debit (+) Receivable</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditEntryDebitOrCredit('credit');
+                      if (editEntryParticulars.toLowerCase().startsWith('to ')) {
+                        setEditEntryParticulars(editEntryParticulars.replace(/^to\s+/i, 'By '));
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      editEntryDebitOrCredit === 'credit'
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-2xs ring-2 ring-emerald-400/20'
+                        : 'bg-surface-50 border-surface-200 text-surface-600 hover:bg-surface-100'
+                    }`}
+                  >
+                    <span>↙ Credit (-) Receipt / Payment</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Date & Transaction Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-surface-700">Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={editEntryDate}
+                    onChange={(e) => setEditEntryDate(e.target.value)}
+                    className="input text-xs w-full font-medium"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-surface-700">Transaction Type *</label>
+                  <select
+                    value={editEntryType}
+                    onChange={(e) => setEditEntryType(e.target.value)}
+                    className="input text-xs w-full font-medium"
+                  >
+                    <option value="Sales GST">Sales GST (Challan / Bill)</option>
+                    <option value="Party Challan">Party Challan (Delivery)</option>
+                    <option value="Generic Receipt (Credit)">Generic Receipt (Credit)</option>
+                    <option value="Bank Transfer">Bank Transfer (HDFC Bank)</option>
+                    <option value="UPI">UPI Payment</option>
+                    <option value="Cash">Cash Receipt</option>
+                    <option value="Cheque">Cheque</option>
+                    <option value="Debit Adjustment">Debit Adjustment (+)</option>
+                    <option value="Credit Adjustment">Credit Adjustment (-)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Particulars */}
+              <div className="space-y-1">
+                <label className="font-bold text-surface-700">Particulars / Description *</label>
+                <input
+                  type="text"
+                  required
+                  value={editEntryParticulars}
+                  onChange={(e) => setEditEntryParticulars(e.target.value)}
+                  placeholder="e.g. To SALE GST 18% or By HDFC BANK-50200003880041"
+                  className="input text-xs w-full font-medium"
+                />
+              </div>
+
+              {/* Voucher No & Amount */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-surface-700">Vch No. / Ref</label>
+                  <input
+                    type="text"
+                    value={editEntryVoucherNo}
+                    onChange={(e) => setEditEntryVoucherNo(e.target.value)}
+                    placeholder="e.g. 2225 or 4652/23-24"
+                    className="input text-xs w-full font-mono font-medium"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-surface-700">Amount (₹) *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={editEntryAmount}
+                    onChange={(e) => setEditEntryAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="input text-xs w-full font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Site Name */}
+              <div className="space-y-1">
+                <label className="font-bold text-surface-700">Site Name (Optional)</label>
+                <input
+                  type="text"
+                  list="ledgerSitesList"
+                  value={editEntrySiteName}
+                  onChange={(e) => setEditEntrySiteName(e.target.value)}
+                  placeholder="e.g. Kalpataru, Naupada, General..."
+                  className="input text-xs w-full font-medium"
+                />
+                <datalist id="ledgerSitesList">
+                  {ledgerData.sites?.map((s) => (
+                    <option key={s.id} value={s.site_name} />
+                  ))}
+                </datalist>
+                <span className="text-[10px] text-surface-500">
+                  Site balance will automatically update in the Sites table below.
+                </span>
+              </div>
+
+              {/* Reason for Change */}
+              <div className="space-y-1">
+                <label className="font-bold text-surface-700 flex items-center justify-between">
+                  <span>Reason for Change / Edit *</span>
+                  <span className="text-[10px] text-amber-700 font-normal">Recorded in audit log</span>
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={editEntryReason}
+                  onChange={(e) => setEditEntryReason(e.target.value)}
+                  placeholder="e.g. Rate adjusted as per revised challan / payment mode corrected / debit shifted"
+                  className="input text-xs w-full font-medium py-1.5"
+                />
+              </div>
+
+              {/* Form Action Buttons */}
+              <div className="pt-3 border-t border-surface-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditEntryModal(false);
+                    setEditingEntry(null);
+                  }}
+                  className="btn-secondary py-1.5 px-3 text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingEntry}
+                  className="btn-primary py-1.5 px-4 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isUpdatingEntry ? (
+                    <span>Saving...</span>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>Save Changes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: TRANSACTION REVISION & UPDATE HISTORY (LAST UPDATED)  */}
+      {/* ============================================================ */}
+      {selectedEntryForHistory && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-surface-200 p-4 sm:p-5 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto my-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-100 text-amber-800 rounded-lg">
+                  <Clock size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-surface-900">
+                    Transaction Revision & Update History
+                  </h3>
+                  <span className="text-[11px] text-surface-500 font-mono">
+                    Ref: {selectedEntryForHistory.reference || '—'} • {selectedEntryForHistory.particulars}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEntryForHistory(null)}
+                className="p-1.5 text-surface-400 hover:text-surface-700 rounded-lg hover:bg-surface-100 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Current Status & Primary Last Updated Banner */}
+            <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                  <Clock size={13} className="text-amber-700" />
+                  <span>Last Updated:</span>
+                </span>
+                <span className="font-semibold text-amber-950 font-mono text-[11px]">
+                  {selectedEntryForHistory.last_updated
+                    ? new Date(selectedEntryForHistory.last_updated).toLocaleString('en-IN', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Recent update'}
+                </span>
+              </div>
+
+              {selectedEntryForHistory.updated_by && (
+                <div className="flex items-center justify-between text-surface-700">
+                  <span>Updated By:</span>
+                  <span className="font-bold text-surface-900">{selectedEntryForHistory.updated_by}</span>
+                </div>
+              )}
+
+              {selectedEntryForHistory.reason && (
+                <div className="pt-2 border-t border-amber-200/70 text-surface-800">
+                  <span className="font-bold text-amber-950 block text-[11px] mb-0.5">Reason for Update:</span>
+                  <p className="bg-white/80 p-2 rounded-lg border border-amber-200/80 text-[11.5px] leading-relaxed font-medium text-surface-900">
+                    &ldquo;{selectedEntryForHistory.reason}&rdquo;
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Entry Financial Snapshot */}
+            <div className="grid grid-cols-3 gap-2 text-center text-xs p-2.5 bg-surface-50 rounded-xl border border-surface-200">
+              <div>
+                <span className="text-[10px] text-surface-500 font-bold block uppercase">Date</span>
+                <span className="font-semibold text-surface-800">{formatDateDisplay(selectedEntryForHistory.date)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-surface-500 font-bold block uppercase">Effect</span>
+                <span className={`font-bold uppercase text-[11px] ${selectedEntryForHistory.debit > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {selectedEntryForHistory.debit > 0 ? 'Debit (+)' : 'Credit (-)'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-surface-500 font-bold block uppercase">Amount</span>
+                <span className="font-mono font-bold text-surface-950">
+                  ₹{(selectedEntryForHistory.debit > 0 ? selectedEntryForHistory.debit : selectedEntryForHistory.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Chronological Revisions History */}
+            {selectedEntryForHistory.revision_history && selectedEntryForHistory.revision_history.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-[11px] font-bold text-surface-700 uppercase tracking-wider">
+                  Detailed Change Log ({selectedEntryForHistory.revision_history.length})
+                </h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {selectedEntryForHistory.revision_history.map((rev: any, rIdx: number) => (
+                    <div
+                      key={rIdx}
+                      className="p-2.5 bg-surface-50 rounded-lg border border-surface-200 text-xs space-y-1"
+                    >
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-surface-800">
+                          {rev.edited_by || 'Admin'}
+                        </span>
+                        <span className="text-surface-500 font-mono text-[10px]">
+                          {new Date(rev.timestamp).toLocaleString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      {rev.reason && (
+                        <p className="text-[11px] text-surface-700 font-medium">
+                          <b>Reason:</b> {rev.reason}
+                        </p>
+                      )}
+                      {Array.isArray(rev.changes) && rev.changes.length > 0 && (
+                        <ul className="list-disc list-inside text-[10.5px] text-surface-600 space-y-0.5 pt-0.5">
+                          {rev.changes.map((c: string, ci: number) => (
+                            <li key={ci}>{c}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-surface-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedEntryForHistory(null)}
+                className="btn-secondary py-1.5 px-4 text-xs font-semibold cursor-pointer"
               >
                 Close
               </button>

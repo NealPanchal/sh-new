@@ -253,6 +253,15 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
         const lowerSite = sName.toLowerCase();
         const found = sites.find((s) => s.site_name.trim().toLowerCase() === lowerSite);
 
+        // Sum of all challan amounts for this site
+        const siteChallansTotal = custChallans
+          .filter((ch) => {
+            const sn = (ch.site_name || '').trim().toLowerCase();
+            const da = (ch.delivery_address || '').trim().toLowerCase();
+            return sn === lowerSite || da.includes(lowerSite) || ch.id === c.id;
+          })
+          .reduce((sum, ch) => sum + (Number(ch.total_amount) || 0), 0);
+
         if (!found && !existingSiteNames.has(lowerSite)) {
           existingSiteNames.add(lowerSite);
           const newSite: CustomerSite = {
@@ -262,8 +271,8 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
             site_address: c.delivery_address || `${sName} Site`,
             opening_balance: 0,
             credit_adjustment: 0,
-            debit_adjustment: 0,
-            current_balance: 0,
+            debit_adjustment: siteChallansTotal > 0 ? siteChallansTotal : (Number(c.total_amount) || 0),
+            current_balance: siteChallansTotal > 0 ? siteChallansTotal : (Number(c.total_amount) || 0),
             challan_id: c.id,
             challan_number: c.challan_number,
             order_index: sites.length,
@@ -276,10 +285,16 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
           sites.push(newSite);
           all.push(newSite);
           modified = true;
-        } else if (found && (!found.challan_number || found.challan_number.startsWith('SH/'))) {
-          found.challan_id = c.id;
-          found.challan_number = c.challan_number;
-          if (c.delivery_address) found.site_address = c.delivery_address;
+        } else if (found) {
+          if (!found.challan_number || found.challan_number.startsWith('SH/')) {
+            found.challan_id = c.id;
+            found.challan_number = c.challan_number;
+            if (c.delivery_address) found.site_address = c.delivery_address;
+          }
+          if (siteChallansTotal > 0) {
+            found.debit_adjustment = siteChallansTotal;
+            found.current_balance = (Number(found.opening_balance) || 0) + siteChallansTotal - (Number(found.credit_adjustment) || 0);
+          }
           const allIdx = all.findIndex((s) => s.id === found.id);
           if (allIdx >= 0) all[allIdx] = found;
           modified = true;
@@ -586,6 +601,15 @@ export interface ManualLedgerEntry {
   challan_id?: string;
   created_at: string;
   created_by?: string;
+  last_updated?: string;
+  updated_by?: string;
+  reason?: string;
+  revision_history?: Array<{
+    timestamp: string;
+    edited_by: string;
+    reason: string;
+    changes?: string[];
+  }>;
 }
 
 export function getManualLedgerEntries(): ManualLedgerEntry[] {
@@ -1138,6 +1162,10 @@ export function computeCustomerLedger(
     paid_amount?: number;
     payment_status?: 'paid' | 'partial' | 'unpaid';
     created_at: string;
+    last_updated?: string;
+    updated_by?: string;
+    reason?: string;
+    revision_history?: any[];
   }> = [];
 
   // Helper map for fast challan number -> id linking
@@ -1162,7 +1190,59 @@ export function computeCustomerLedger(
   // Keep track of already included vouchers / challans so no double entry occurs
   const addedChallanKeys = new Set<string>();
 
-  // 1. Challans / Invoices -> DEBIT (Sales GST)
+  // 1. Manual Ledger Entries (processed first so manual overrides & admin edits take precedence)
+  manualEntries.forEach((mle) => {
+    if (!isMatchCust(mle.customer_id, mle.customer_id)) {
+      return;
+    }
+    if (options?.siteName && mle.site_name && mle.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;
+
+    // Track this voucher/challan as handled so subsequent challan loop does not duplicate it
+    const refKey = (mle.voucher_no || '').trim().toLowerCase();
+    const idKey = (mle.challan_id || '').toLowerCase();
+    if (refKey) addedChallanKeys.add(refKey);
+    if (idKey) addedChallanKeys.add(idKey);
+
+    let linkedId = mle.challan_id;
+    if (!linkedId && mle.voucher_no) {
+      linkedId = challanLookup.get(mle.voucher_no.trim().toLowerCase());
+    }
+
+    let isPaid = Boolean(mle.credit > 0);
+    if (!isPaid && linkedId) {
+      const ch = challans.find((c) => c.id === linkedId || (c.challan_number && c.challan_number.trim().toLowerCase() === mle.voucher_no.trim().toLowerCase()));
+      if (ch) {
+        const paidSum = (paymentsByChallan.get(ch.id) || 0) + (paymentsByChallan.get(ch.challan_number?.trim().toLowerCase()) || 0);
+        isPaid = ch.payment_status === 'paid' || (Number(mle.debit) > 0 && paidSum >= Number(mle.debit));
+      }
+    }
+
+    const revs = Array.isArray(mle.revision_history) && mle.revision_history.length > 0
+      ? mle.revision_history[mle.revision_history.length - 1]
+      : null;
+
+    rawEntries.push({
+      date: mle.date,
+      particulars: mle.particulars,
+      reference: mle.voucher_no,
+      voucher_type: mle.debit > 0 ? 'sales_gst' : 'receipt',
+      source_type: 'manual',
+      manual_id: mle.id,
+      payment_type: mle.payment_type,
+      site_name: mle.site_name,
+      debit: Number(mle.debit) || 0,
+      credit: Number(mle.credit) || 0,
+      challan_id: linkedId,
+      is_paid: isPaid,
+      created_at: mle.created_at,
+      last_updated: mle.last_updated || (revs ? revs.timestamp : undefined),
+      updated_by: mle.updated_by || (revs ? revs.edited_by : undefined),
+      reason: mle.reason || (revs ? revs.reason : undefined),
+      revision_history: mle.revision_history,
+    });
+  });
+
+  // 2. Challans / Invoices -> DEBIT (Sales GST) - auto-fetched immediately upon creation
   challans.forEach((c) => {
     if (!isMatchCust(c.customer_id, c.customer_name)) {
       return;
@@ -1171,6 +1251,11 @@ export function computeCustomerLedger(
 
     if (options?.siteId && c.site_id && c.site_id !== options.siteId) return;
     if (options?.siteName && c.site_name && c.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;
+
+    // Skip if already overridden by manual entry
+    if (c.id && addedChallanKeys.has(c.id.toLowerCase())) return;
+    if (c.challan_number && addedChallanKeys.has(c.challan_number.trim().toLowerCase())) return;
+    if (c.reference_number && addedChallanKeys.has(c.reference_number.trim().toLowerCase())) return;
 
     const amt = Number(c.total_amount) || 0;
     if (amt > 0) {
@@ -1183,6 +1268,10 @@ export function computeCustomerLedger(
 
       const paidSum = (paymentsByChallan.get(c.id) || 0) + (paymentsByChallan.get(c.challan_number?.trim().toLowerCase()) || 0);
       const isPaid = Boolean(c.payment_status === 'paid' || (amt > 0 && paidSum >= amt));
+
+      const revs = Array.isArray(c.revision_history) && c.revision_history.length > 0
+        ? c.revision_history[c.revision_history.length - 1]
+        : null;
 
       rawEntries.push({
         date: c.challan_date || c.created_at,
@@ -1199,11 +1288,15 @@ export function computeCustomerLedger(
         paid_amount: paidSum,
         payment_status: isPaid ? 'paid' : (paidSum > 0 ? 'partial' : 'unpaid'),
         created_at: c.created_at || c.challan_date,
+        last_updated: revs ? revs.timestamp : (c.updated_at && c.updated_at !== c.created_at ? c.updated_at : undefined),
+        updated_by: revs ? revs.edited_by : undefined,
+        reason: revs ? revs.reason : undefined,
+        revision_history: c.revision_history,
       });
     }
   });
 
-  // 2. Payments Received -> CREDIT (Receipt)
+  // 3. Payments Received -> CREDIT (Receipt)
   payments.forEach((p) => {
     if (!isMatchCust(p.customer_id, p.customer_name)) {
       return;
@@ -1264,7 +1357,7 @@ export function computeCustomerLedger(
     }
   });
 
-  // 3. Goods Returns -> CREDIT
+  // 4. Goods Returns -> CREDIT
   goodsReturns.forEach((gr) => {
     if (!isMatchCust(gr.customer_id, gr.customer_name)) {
       return;
@@ -1290,52 +1383,6 @@ export function computeCustomerLedger(
         created_at: gr.created_at || gr.return_date,
       });
     }
-  });
-
-  // 4. Manual Ledger Entries (R K Sales exact entries or custom added entries)
-  manualEntries.forEach((mle) => {
-    if (!isMatchCust(mle.customer_id, mle.customer_id)) {
-      return;
-    }
-    if (options?.siteName && mle.site_name && mle.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;
-
-    // Deduplicate: If this challan/voucher was already added from challans.json, do not add it again!
-    const refKey = (mle.voucher_no || '').trim().toLowerCase();
-    const idKey = (mle.challan_id || '').toLowerCase();
-    if (refKey && addedChallanKeys.has(refKey)) return;
-    if (idKey && addedChallanKeys.has(idKey)) return;
-    if (refKey) addedChallanKeys.add(refKey);
-    if (idKey) addedChallanKeys.add(idKey);
-
-    let linkedId = mle.challan_id;
-    if (!linkedId && mle.voucher_no) {
-      linkedId = challanLookup.get(mle.voucher_no.trim().toLowerCase());
-    }
-
-    let isPaid = Boolean(mle.credit > 0);
-    if (!isPaid && linkedId) {
-      const ch = challans.find((c) => c.id === linkedId || (c.challan_number && c.challan_number.trim().toLowerCase() === mle.voucher_no.trim().toLowerCase()));
-      if (ch) {
-        const paidSum = (paymentsByChallan.get(ch.id) || 0) + (paymentsByChallan.get(ch.challan_number?.trim().toLowerCase()) || 0);
-        isPaid = ch.payment_status === 'paid' || (Number(mle.debit) > 0 && paidSum >= Number(mle.debit));
-      }
-    }
-
-    rawEntries.push({
-      date: mle.date,
-      particulars: mle.particulars,
-      reference: mle.voucher_no,
-      voucher_type: mle.debit > 0 ? 'sales_gst' : 'receipt',
-      source_type: 'manual',
-      manual_id: mle.id,
-      payment_type: mle.payment_type,
-      site_name: mle.site_name,
-      debit: Number(mle.debit) || 0,
-      credit: Number(mle.credit) || 0,
-      challan_id: linkedId,
-      is_paid: isPaid,
-      created_at: mle.created_at,
-    });
   });
 
   // 5. Site-wise Plus (+) -> DEBIT, Minus (-) -> CREDIT
@@ -1451,6 +1498,10 @@ export function computeCustomerLedger(
       is_paid: item.is_paid,
       paid_amount: item.paid_amount,
       payment_status: item.payment_status,
+      last_updated: item.last_updated,
+      updated_by: item.updated_by,
+      reason: item.reason,
+      revision_history: item.revision_history,
     };
   });
 

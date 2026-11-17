@@ -9,6 +9,7 @@ import { X, Plus, Trash2, Layers, Download, Send, CheckSquare, Square, ShieldAle
 import { CustomerMaterialRate } from '@/types';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
 import { shareCustomerRatesViaWhatsApp } from '@/lib/whatsapp';
+import { getCurrentUser } from '@/lib/auth';
 
 interface CustomerFormModalProps {
   editId: string | null;
@@ -162,9 +163,11 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
     }
     const name = watch('business_name') || 'Customer';
     const phone = watch('phone') || '';
+    const user = getCurrentUser();
     shareCustomerRatesViaWhatsApp({
       customerName: name,
       phone,
+      attendee: user?.name || 'VRUSHANK',
       selectedRates: list,
       onToast: showToast,
     });

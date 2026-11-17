@@ -389,6 +389,15 @@ export interface CustomerLedgerEntry {
   is_paid?: boolean;
   payment_status?: 'paid' | 'partial' | 'unpaid';
   paid_amount?: number;
+  last_updated?: string;
+  updated_by?: string;
+  reason?: string;
+  revision_history?: Array<{
+    timestamp: string;
+    edited_by: string;
+    reason: string;
+    changes?: string[];
+  }>;
 }
 
 // ----------------------------------------------------

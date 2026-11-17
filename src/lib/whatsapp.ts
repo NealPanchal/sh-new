@@ -642,9 +642,25 @@ export async function shareDeliveryConfirmationViaWhatsApp(options: {
 }
 
 /**
- * Generate customer-facing WhatsApp message for Agreed Material Rates
- * Note: Customer Confidentiality - STRICTLY OMIT Internal Code & Company Name
- * Only includes: Room, Selected Particulars, and Agreed Rate (₹)
+ * Generate customer-facing WhatsApp message for Agreed Material Rates / Selection
+ * Format matches the requested format:
+ * SHOWHOUSE DECOR STUDIO
+ * SELECTION
+ * 
+ * Client: <CLIENT>
+ * Attendee: <ATTENDEE>
+ * Date: <DD/MM/YYYY>
+ * 
+ * Selected Materials & Rates:
+ * 1. Master Bedroom
+ *    • Particulars: LIGHT
+ *    • Agreed Rate: ₹900.00
+ * 
+ * Note: Quantities will be finalized & billed upon delivery challan dispatch.
+ * 
+ * — SHOWHOUSE DECOR STUDIO
+ * Vishram Baug, Near Makhmali Talao, LBS Marg, Thane (W)
+ * 📞 +91 93248 69306 / 022 - 2538 7683
  */
 export function generateCustomerRatesWhatsAppMessage(
   customerName: string,
@@ -652,36 +668,53 @@ export function generateCustomerRatesWhatsAppMessage(
     room: string;
     particulars?: string;
     rate: number;
-  }>
+  }>,
+  attendee?: string | null,
+  dateStr?: string | null
 ): string {
-  let msg = `*SHOWHOUSE DECOR STUDIO*\n`;
-  msg += `*Agreed Material Rate Card / Quotation*\n\n`;
-  msg += `Client: *${customerName || 'Valued Client'}*\n`;
-  msg += `Date: *${formatDateIndian(new Date().toISOString())}*\n\n`;
-  msg += `*Selected Materials & Agreed Rates:*\n`;
+  const cleanClient = (customerName || 'RONAK').toUpperCase();
+  const cleanAttendee = (attendee || 'VRUSHANK').toUpperCase();
+
+  let formattedDate = dateStr;
+  if (!formattedDate) {
+    const now = new Date();
+    const d = String(now.getDate()).padStart(2, '0');
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = now.getFullYear();
+    formattedDate = `${d}/${m}/${y}`;
+  }
+
+  let msg = `SHOWHOUSE DECOR STUDIO\n`;
+  msg += `SELECTION\n\n`;
+  msg += `Client: ${cleanClient}\n`;
+  msg += `Attendee: ${cleanAttendee}\n`;
+  msg += `Date: ${formattedDate}\n\n`;
+  msg += `Selected Materials & Rates:\n`;
 
   selectedRates.forEach((mr, idx) => {
-    const roomStr = mr.room ? `*${mr.room}*` : `*Item #${idx + 1}*`;
-    const desc = mr.particulars?.trim() || 'Material Finish / Specification';
-    const rateStr = `₹${Number(mr.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const roomStr = (mr.room || 'General Area').trim();
+    const desc = (mr.particulars || 'Material Specification').trim();
+    const rateStr = `₹${Number(mr.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     msg += `${idx + 1}. ${roomStr}\n`;
     msg += `   • Particulars: ${desc}\n`;
     msg += `   • Agreed Rate: ${rateStr}\n\n`;
   });
 
-  msg += `_Note: Quantities will be finalized & billed upon delivery challan dispatch._\n\n`;
-  msg += `— *SHOWHOUSE DECOR STUDIO*\n`;
+  msg += `Note: Quantities will be finalized & billed upon delivery challan dispatch.\n\n`;
+  msg += `— SHOWHOUSE DECOR STUDIO\n`;
   msg += `Vishram Baug, Near Makhmali Talao, LBS Marg, Thane (W)\n`;
   msg += `📞 +91 93248 69306 / 022 - 2538 7683`;
   return msg;
 }
 
 /**
- * Open WhatsApp with customer-facing agreed rate quotation
+ * Open WhatsApp with customer-facing agreed rate quotation / selection
  */
 export function shareCustomerRatesViaWhatsApp(options: {
   customerName: string;
   phone?: string | null;
+  attendee?: string | null;
+  dateStr?: string | null;
   selectedRates: Array<{
     room: string;
     particulars?: string;
@@ -689,15 +722,15 @@ export function shareCustomerRatesViaWhatsApp(options: {
   }>;
   onToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }): boolean {
-  const { customerName, phone, selectedRates, onToast } = options;
+  const { customerName, phone, attendee, dateStr, selectedRates, onToast } = options;
   if (!selectedRates || selectedRates.length === 0) {
     onToast?.('Please select at least one material rate to share', 'error');
     return false;
   }
 
-  const message = generateCustomerRatesWhatsAppMessage(customerName, selectedRates);
+  const message = generateCustomerRatesWhatsAppMessage(customerName, selectedRates, attendee, dateStr);
   const targetPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
   openWhatsApp(targetPhone, message);
-  onToast?.(`WhatsApp opened with material rates for ${customerName}!`, 'success');
+  onToast?.(`WhatsApp opened with Selection message for ${customerName}!`, 'success');
   return true;
 }
