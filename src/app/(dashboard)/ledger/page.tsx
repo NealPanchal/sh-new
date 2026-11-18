@@ -452,39 +452,42 @@ export default function MasterPartyLedgerPage() {
       );
 
       matchingContextChallans.forEach((c: any) => {
-        const candidateNames: string[] = [];
-        if (c.site_name && c.site_name.trim()) candidateNames.push(c.site_name.trim());
-        if (c.delivery_address && c.delivery_address.trim()) {
-          const first = c.delivery_address.split(',')[0].trim();
-          if (first && !candidateNames.some((n) => n.toLowerCase() === first.toLowerCase())) {
-            candidateNames.push(first);
-          }
+        let siteName = (c.site_name || '').trim();
+        if (!siteName && c.delivery_address && c.delivery_address.trim()) {
+          siteName = c.delivery_address.split(',')[0].trim();
         }
+        if (!siteName) siteName = 'General Account';
 
-        candidateNames.forEach((sName) => {
-          const lowerSName = sName.toLowerCase();
-          if (!existingSiteNames.has(lowerSName)) {
-            existingSiteNames.add(lowerSName);
-            mergedSites.push({
-              id: `site_${selectedCustomerId}_${lowerSName.replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
-              customer_id: selectedCustomerId,
-              site_name: sName,
-              site_address: c.delivery_address || `${sName} Site`,
-              opening_balance: 0,
-              credit_adjustment: 0,
-              debit_adjustment: 0,
-              current_balance: 0,
-              challan_id: c.id,
-              challan_number: c.challan_number,
-              order_index: mergedSites.length,
-              is_verified: true,
-              verified_at: new Date().toISOString(),
-              verified_by: 'Auto (Challan)',
-              is_active: true,
-              created_at: c.challan_date || new Date().toISOString(),
-            });
-          }
+        const lowerSName = siteName.toLowerCase();
+        const alreadyExists = mergedSites.some((s: any) => {
+          const existing = (s.site_name || '').trim().toLowerCase();
+          return existing === lowerSName ||
+                 (existing.length >= 4 && (lowerSName.startsWith(existing) || existing.startsWith(lowerSName))) ||
+                 (s.challan_id && s.challan_id === c.id) ||
+                 (s.challan_number && c.challan_number && s.challan_number === c.challan_number);
         });
+
+        if (!alreadyExists && !existingSiteNames.has(lowerSName)) {
+          existingSiteNames.add(lowerSName);
+          mergedSites.push({
+            id: `site_${selectedCustomerId}_${lowerSName.replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
+            customer_id: selectedCustomerId,
+            site_name: siteName,
+            site_address: c.delivery_address || `${siteName} Site`,
+            opening_balance: 0,
+            credit_adjustment: 0,
+            debit_adjustment: Number(c.total_amount) || 0,
+            current_balance: Number(c.total_amount) || 0,
+            challan_id: c.id,
+            challan_number: c.challan_number,
+            order_index: mergedSites.length,
+            is_verified: true,
+            verified_at: new Date().toISOString(),
+            verified_by: 'Auto (Challan)',
+            is_active: true,
+            created_at: c.challan_date || new Date().toISOString(),
+          });
+        }
       });
 
       // Recalculate entries and running balance
@@ -504,7 +507,7 @@ export default function MasterPartyLedgerPage() {
         totalDebit: Math.round(totDebit * 100) / 100,
         totalCredit: Math.round(totCredit * 100) / 100,
         closingBalance: running,
-        verifiedClosingBalance: running + (baseLedger.netVerifiedSiteAdjustment || 0),
+        verifiedClosingBalance: running,
         entries: mergedEntries,
         sites: mergedSites,
       };
@@ -645,70 +648,6 @@ export default function MasterPartyLedgerPage() {
     return list;
   }, [ledgerData.entries, searchChallanNo]);
 
-  // Dynamically compute exact site balances from attached customer challans & receipts
-  const siteBalancesMap = useMemo(() => {
-    const map = new Map<string, {
-      challanDebit: number;
-      receiptCredit: number;
-      effectiveDebit: number;
-      effectiveCredit: number;
-      currentBalance: number;
-      challansCount: number;
-    }>();
-
-    const targetCustId = (selectedCustomerId || '').trim().toLowerCase();
-    const custName = (selectedCustomer?.name || '').trim().toLowerCase();
-
-    // All active challans for this customer
-    const activeChallans = (contextChallans || []).filter((c: any) => {
-      const cId = (c.customer_id || '').toLowerCase();
-      const cName = (c.customer_name || '').toLowerCase();
-      const matchCust = (targetCustId && (cId === targetCustId || cName === targetCustId)) ||
-                        (custName && (cName === custName || cName.includes(custName)));
-      return matchCust && !c.is_deleted && c.status !== 'cancelled' && c.status !== 'void';
-    });
-
-    (ledgerData.sites || []).forEach((site) => {
-      const lowerSite = (site.site_name || '').trim().toLowerCase();
-      
-      // Match challans for this site
-      const siteChallans = activeChallans.filter((c: any) => {
-        const cSite = (c.site_name || '').trim().toLowerCase();
-        const cAddr = (c.delivery_address || '').trim().toLowerCase();
-        return (lowerSite && (cSite === lowerSite || cAddr.includes(lowerSite))) ||
-               (site.challan_id && (c.id === site.challan_id || c.challan_number === site.challan_number));
-      });
-
-      const challanDebit = siteChallans.reduce((sum, ch) => sum + (Number(ch.total_amount) || 0), 0);
-
-      // Match payments / credits for this site
-      const sitePayments = (ledgerData.entries || []).filter((e) => {
-        const eSite = (e.site_name || '').trim().toLowerCase();
-        return lowerSite && eSite === lowerSite && e.credit > 0;
-      });
-      const receiptCredit = sitePayments.reduce((sum, p) => sum + (Number(p.credit) || 0), 0);
-
-      const manualDebit = Number(site.debit_adjustment) || 0;
-      const manualCredit = Number(site.credit_adjustment) || 0;
-      const opening = Number(site.opening_balance) || 0;
-
-      // If challans exist for this site, use challanDebit as primary debit; otherwise fallback to manual debit
-      const effectiveDebit = challanDebit > 0 ? challanDebit : manualDebit;
-      const effectiveCredit = manualCredit + receiptCredit;
-      const currentBalance = opening + effectiveDebit - effectiveCredit;
-
-      map.set(site.id, {
-        challanDebit,
-        receiptCredit,
-        effectiveDebit,
-        effectiveCredit,
-        currentBalance,
-        challansCount: siteChallans.length,
-      });
-    });
-
-    return map;
-  }, [ledgerData.sites, ledgerData.entries, contextChallans, selectedCustomerId, selectedCustomer]);
 
   // Comprehensive Customer Transactions & Challans for Auto-Fill
   const availableCustomerTransactions = useMemo(() => {
@@ -895,55 +834,272 @@ export default function MasterPartyLedgerPage() {
       };
     }, [isRKSales, displayEntries]);
 
-  // Period 2 calculations (with verified site adjustments added)
+  // Period 2 calculations (for historical split when customer has multi-period accounting)
   const period2Calculations = useMemo(() => {
     const opening = period1Entries.length > 0 ? period1Closing : (ledgerData.openingBalance || 0);
     const debitEntries = period2Entries.reduce((sum, e) => sum + (e.debit || 0), 0);
     const creditEntries = period2Entries.reduce((sum, e) => sum + (e.credit || 0), 0);
 
-    // Sum of verified site adjustments
-    const verifiedNet = ledgerData.netVerifiedSiteAdjustment || 0;
-
     const totalDebits = opening + debitEntries;
     const totalCredits = creditEntries;
-    const finalClosing = totalDebits - totalCredits + verifiedNet;
+    const finalClosing = Math.round((totalDebits - totalCredits) * 100) / 100;
     const balancedTotal = Math.max(totalDebits, totalCredits + finalClosing);
 
     return {
       opening,
       debitEntries,
       creditEntries,
-      verifiedNet,
+      verifiedNet: 0,
       totalDebits,
       totalCredits,
       finalClosing,
       balancedTotal,
     };
-  }, [isRKSales, period2Entries, ledgerData]);
+  }, [isRKSales, period1Entries, period1Closing, period2Entries, ledgerData]);
 
-  // Sites totals (dynamically derived from attached challans & receipts)
-  const sitesSummary = useMemo(() => {
-    const list = ledgerData.sites || [];
+  // Reconciled Sites Breakdown - 100% Mathematically Reconciled with Ledger View
+  const { reconciledSites, sitesSummary } = useMemo(() => {
+    // 1. Determine active scope based on customer and period
+    const activeEntries = isRKSales ? period2Entries : displayEntries;
+    const activeOpening = isRKSales ? period1Closing : (ledgerData.openingBalance || 0);
+
+    const targetCustId = (selectedCustomerId || '').trim().toLowerCase();
+    const custName = (selectedCustomer?.name || '').trim().toLowerCase();
+
+    // 2. Collect all active customer challans
+    const activeChallans = (contextChallans || []).filter((c: any) => {
+      const cId = (c.customer_id || '').toLowerCase();
+      const cName = (c.customer_name || '').toLowerCase();
+      const matchCust = (targetCustId && (cId === targetCustId || cName === targetCustId)) ||
+                        (custName && (cName === custName || cName.includes(custName)));
+      return matchCust && !c.is_deleted && c.status !== 'cancelled' && c.status !== 'void';
+    });
+
+    const allChallanMap = new Map<string, any>();
+    activeChallans.forEach((c: any) => allChallanMap.set(c.id || c.challan_number, c));
+    (customerChallans || []).forEach((c: any) => {
+      if (!allChallanMap.has(c.id) && !allChallanMap.has(c.challan_number)) {
+        allChallanMap.set(c.id || c.challan_number, c);
+      }
+    });
+    const combinedChallans = Array.from(allChallanMap.values());
+
+    // 3. Normalize & Deduplicate Site Buckets
+    interface SiteBucket extends CustomerSite {
+      aliases: Set<string>;
+    }
+
+    const siteBuckets: SiteBucket[] = [];
+
+    const findBucket = (rawName: string): SiteBucket | undefined => {
+      if (!rawName) return undefined;
+      const lower = rawName.trim().toLowerCase();
+      return siteBuckets.find(
+        (b) =>
+          b.site_name.toLowerCase() === lower ||
+          b.aliases.has(lower) ||
+          (lower.length >= 4 && b.site_name.toLowerCase().startsWith(lower)) ||
+          (b.site_name.length >= 4 && lower.startsWith(b.site_name.toLowerCase()))
+      );
+    };
+
+    const getOrCreateBucket = (name: string, address?: string, challanId?: string, challanNo?: string): SiteBucket => {
+      const cleanName = (name || 'General Account').trim();
+      let bucket = findBucket(cleanName);
+      if (!bucket) {
+        bucket = {
+          id: `reconciled_site_${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          customer_id: selectedCustomerId,
+          site_name: cleanName,
+          site_address: address || `${cleanName} Site`,
+          challan_id: challanId,
+          challan_number: challanNo,
+          attached_challans: [],
+          opening_balance: 0,
+          credit_adjustment: 0,
+          debit_adjustment: 0,
+          current_balance: 0,
+          is_verified: true,
+          order_index: siteBuckets.length,
+          created_at: new Date().toISOString(),
+          aliases: new Set([cleanName.toLowerCase()]),
+        };
+        siteBuckets.push(bucket);
+      } else {
+        bucket.aliases.add(cleanName.toLowerCase());
+        if (address && (!bucket.site_address || bucket.site_address.endsWith('Site'))) {
+          bucket.site_address = address;
+        }
+        if (cleanName.length > bucket.site_name.length && cleanName.toLowerCase().includes(bucket.site_name.toLowerCase())) {
+          bucket.aliases.add(bucket.site_name.toLowerCase());
+          bucket.site_name = cleanName;
+        }
+      }
+      return bucket;
+    };
+
+    // Populate buckets from persisted ledgerData.sites
+    (ledgerData.sites || []).forEach((s) => {
+      const b = getOrCreateBucket(s.site_name, s.site_address, s.challan_id, s.challan_number);
+      b.id = s.id;
+      b.is_verified = s.is_verified !== false;
+      b.order_index = s.order_index ?? b.order_index;
+    });
+
+    // Populate buckets from combinedChallans
+    combinedChallans.forEach((c: any) => {
+      let sName = (c.site_name || '').trim();
+      if (!sName && c.delivery_address) {
+        sName = c.delivery_address.split(',')[0].trim();
+      }
+      if (sName) {
+        const b = getOrCreateBucket(sName, c.delivery_address, c.id, c.challan_number);
+        const chNo = c.challan_number || c.reference_number;
+        if (chNo && !b.attached_challans!.some((ch) => ch.challan_number === chNo)) {
+          b.attached_challans!.push({
+            id: c.id,
+            challan_number: chNo,
+            amount: Number(c.total_amount) || 0,
+          });
+        }
+      }
+    });
+
+    // Populate buckets from active ledger entries (e.g. SH/11/003 or custom sites)
+    activeEntries.forEach((e) => {
+      if (e.site_name && e.site_name.trim()) {
+        getOrCreateBucket(e.site_name.trim());
+      }
+    });
+
+    if (siteBuckets.length === 0) {
+      getOrCreateBucket('General Account', selectedCustomer?.billing_address || 'Main Office');
+    }
+
+    // Associate unattached challans
+    combinedChallans.forEach((c: any) => {
+      const chNo = c.challan_number || c.reference_number;
+      if (!chNo) return;
+      const alreadyAttached = siteBuckets.some((b) => b.attached_challans?.some((ch) => ch.challan_number === chNo));
+      if (!alreadyAttached) {
+        let sName = (c.site_name || '').trim();
+        if (!sName && c.delivery_address) sName = c.delivery_address.split(',')[0].trim();
+        const b = findBucket(sName) || siteBuckets[0];
+        b.attached_challans!.push({
+          id: c.id,
+          challan_number: chNo,
+          amount: Number(c.total_amount) || 0,
+        });
+      }
+    });
+
+    // Partition active entries across buckets
+    activeEntries.forEach((e) => {
+      let targetBucket: SiteBucket | undefined;
+
+      if (e.site_name && e.site_name.trim()) {
+        targetBucket = findBucket(e.site_name.trim());
+      }
+
+      if (!targetBucket && e.reference) {
+        const refClean = e.reference.trim().toLowerCase();
+        targetBucket = siteBuckets.find((b) =>
+          b.attached_challans?.some((ch) => ch.challan_number.toLowerCase() === refClean) ||
+          (b.challan_number && b.challan_number.toLowerCase() === refClean)
+        );
+      }
+
+      if (!targetBucket && e.particulars) {
+        const partClean = e.particulars.toLowerCase();
+        targetBucket = siteBuckets.find((b) =>
+          partClean.includes(b.site_name.toLowerCase()) ||
+          b.attached_challans?.some((ch) => partClean.includes(ch.challan_number.toLowerCase()))
+        );
+      }
+
+      if (!targetBucket) {
+        targetBucket = siteBuckets[0];
+      }
+
+      if (e.debit > 0) {
+        targetBucket.debit_adjustment = (targetBucket.debit_adjustment || 0) + (Number(e.debit) || 0);
+        if (e.reference && (e.reference.includes('/') || e.reference.startsWith('SH') || e.reference.startsWith('CH'))) {
+          if (!targetBucket.attached_challans!.some((ch) => ch.challan_number === e.reference)) {
+            targetBucket.attached_challans!.push({
+              id: e.challan_id,
+              challan_number: e.reference,
+              amount: Number(e.debit) || 0,
+            });
+          }
+        }
+      }
+
+      if (e.credit > 0) {
+        targetBucket.credit_adjustment = (targetBucket.credit_adjustment || 0) + (Number(e.credit) || 0);
+      }
+    });
+
+    // Allocate Active Opening Balance to the primary site
+    if (siteBuckets.length > 0) {
+      siteBuckets[0].opening_balance = activeOpening;
+    }
+
+    siteBuckets.forEach((b) => {
+      b.opening_balance = Math.round((b.opening_balance || 0) * 100) / 100;
+      b.debit_adjustment = Math.round((b.debit_adjustment || 0) * 100) / 100;
+      b.credit_adjustment = Math.round((b.credit_adjustment || 0) * 100) / 100;
+      b.current_balance = Math.round(((b.opening_balance || 0) + (b.debit_adjustment || 0) - (b.credit_adjustment || 0)) * 100) / 100;
+    });
+
+    let finalSites: CustomerSite[] = siteBuckets.filter((b, idx) => {
+      if (idx === 0) return true;
+      return (
+        b.opening_balance !== 0 ||
+        b.debit_adjustment !== 0 ||
+        b.credit_adjustment !== 0 ||
+        (b.attached_challans && b.attached_challans.length > 0)
+      );
+    });
+
+    if (finalSites.length === 0) {
+      finalSites = siteBuckets;
+    }
+
     let sumOpening = 0;
     let sumCredit = 0;
     let sumDebit = 0;
     let sumCurrent = 0;
 
-    list.forEach((s) => {
-      const b = siteBalancesMap.get(s.id);
-      const op = Number(s.opening_balance) || 0;
-      const cr = b ? b.effectiveCredit : (Number(s.credit_adjustment) || 0);
-      const db = b ? b.effectiveDebit : (Number(s.debit_adjustment) || 0);
-      const cur = b ? b.currentBalance : (op + db - cr);
-
-      sumOpening += op;
-      sumCredit += cr;
-      sumDebit += db;
-      sumCurrent += cur;
+    finalSites.forEach((s) => {
+      sumOpening += s.opening_balance || 0;
+      sumCredit += s.credit_adjustment || 0;
+      sumDebit += s.debit_adjustment || 0;
+      sumCurrent += s.current_balance || 0;
     });
 
-    return { sumOpening, sumCredit, sumDebit, sumCurrent };
-  }, [ledgerData.sites, siteBalancesMap]);
+    sumOpening = Math.round(sumOpening * 100) / 100;
+    sumCredit = Math.round(sumCredit * 100) / 100;
+    sumDebit = Math.round(sumDebit * 100) / 100;
+    sumCurrent = Math.round(sumCurrent * 100) / 100;
+
+    return {
+      reconciledSites: finalSites,
+      sitesSummary: { sumOpening, sumCredit, sumDebit, sumCurrent },
+    };
+  }, [
+    isRKSales,
+    period2Entries,
+    displayEntries,
+    period1Closing,
+    ledgerData.openingBalance,
+    ledgerData.closingBalance,
+    ledgerData.sites,
+    selectedCustomerId,
+    selectedCustomer,
+    contextChallans,
+    customerChallans,
+    period2Calculations,
+  ]);
 
   // Handlers for Sites Balance Adjustments
   const handleVerifySite = async (site: CustomerSite) => {
@@ -1324,7 +1480,7 @@ export default function MasterPartyLedgerPage() {
         totalDebit: Math.round(totDebit * 100) / 100,
         totalCredit: Math.round(totCredit * 100) / 100,
         closingBalance: running,
-        verifiedClosingBalance: running + (prev.netVerifiedSiteAdjustment || 0),
+        verifiedClosingBalance: running,
         entries: recomputed,
         sites: updatedSites,
       };
@@ -1500,11 +1656,14 @@ export default function MasterPartyLedgerPage() {
       fromDate,
       toDate,
       openingBalance: isRKSales ? 27500 : ledgerData.openingBalance,
-      totalDebit: ledgerData.totalDebit,
-      totalCredit: ledgerData.totalCredit,
+      totalDebit: isRKSales ? period2Calculations.totalDebits : ledgerData.totalDebit,
+      totalCredit: isRKSales ? period2Calculations.totalCredits : ledgerData.totalCredit,
       closingBalance: effectiveClosingBalance,
-      entries: displayEntries,
-      sites: ledgerData.sites || [],
+      entries: isRKSales ? period2Entries : displayEntries,
+      sites: reconciledSites.map((s) => ({
+        ...s,
+        challan_number: s.attached_challans?.map((c) => c.challan_number).join(', ') || s.challan_number || '',
+      })),
       isAccountPaid: isAccountSettled,
     });
     showToast(`PDF exported for ${selectedCustomer.name}!`);
@@ -2417,6 +2576,10 @@ export default function MasterPartyLedgerPage() {
                 <h3 className="text-sm font-black text-surface-950 tracking-tight">
                   Sites / Balance Adjustment
                 </h3>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded inline-flex items-center gap-1">
+                  <Check size={11} className="stroke-[2.5]" />
+                  <span>Auto-Reconciled</span>
+                </span>
               </div>
 
               <button
@@ -2452,13 +2615,12 @@ export default function MasterPartyLedgerPage() {
                 </thead>
 
                 <tbody className="divide-y divide-surface-100 font-medium text-surface-800">
-                  {ledgerData.sites && ledgerData.sites.length > 0 ? (
-                    ledgerData.sites.map((site, idx) => {
-                      const b = siteBalancesMap.get(site.id);
+                  {reconciledSites && reconciledSites.length > 0 ? (
+                    reconciledSites.map((site, idx) => {
                       const op = Number(site.opening_balance) || 0;
-                      const cr = b ? b.effectiveCredit : (Number(site.credit_adjustment) || 0);
-                      const db = b ? b.effectiveDebit : (Number(site.debit_adjustment) || 0);
-                      const cur = b ? b.currentBalance : (op + db - cr);
+                      const cr = Number(site.credit_adjustment) || 0;
+                      const db = Number(site.debit_adjustment) || 0;
+                      const cur = Number(site.current_balance) || 0;
 
                       return (
                         <tr key={site.id} className="hover:bg-surface-50/80 transition-colors">
@@ -2466,22 +2628,46 @@ export default function MasterPartyLedgerPage() {
                             {idx + 1}
                           </td>
                           <td className="py-2.5 px-3 font-bold text-surface-900 border border-surface-200">
-                            {site.site_name}
+                            <div>{site.site_name}</div>
+                            {site.site_address && site.site_address !== `${site.site_name} Site` && (
+                              <div className="text-[10px] text-surface-400 font-normal truncate max-w-[180px]">{site.site_address}</div>
+                            )}
                           </td>
                           <td className="py-2.5 px-3 border border-surface-200">
-                            {site.challan_number ? (
+                            {site.attached_challans && site.attached_challans.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-1">
+                                {site.attached_challans.map((ch, cIdx) => (
+                                  <div key={cIdx} className="inline-flex items-center gap-1 font-mono font-bold text-primary-600">
+                                    {ch.id ? (
+                                      <Link
+                                        href={`/challans/${ch.id}`}
+                                        className="hover:text-primary-800 hover:underline inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary-50 border border-primary-200"
+                                        title={`View attached challan ${ch.challan_number}`}
+                                      >
+                                        <span>{ch.challan_number}</span>
+                                        <ExternalLink size={10} className="opacity-70" />
+                                      </Link>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded bg-surface-100 border border-surface-200 text-surface-800">
+                                        {ch.challan_number}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : site.challan_number ? (
                               <div className="flex items-center gap-1 font-mono font-bold text-primary-600">
                                 {site.challan_id ? (
                                   <Link
                                     href={`/challans/${site.challan_id}`}
-                                    className="hover:text-primary-800 hover:underline inline-flex items-center gap-1"
+                                    className="hover:text-primary-800 hover:underline inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary-50 border border-primary-200"
                                     title="View attached challan"
                                   >
                                     <span>{site.challan_number}</span>
                                     <ExternalLink size={10} className="opacity-70" />
                                   </Link>
                                 ) : (
-                                  <span className="text-surface-800">{site.challan_number}</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-surface-100 border border-surface-200 text-surface-800">{site.challan_number}</span>
                                 )}
                               </div>
                             ) : (
@@ -2537,7 +2723,7 @@ export default function MasterPartyLedgerPage() {
                               <button
                                 type="button"
                                 onClick={() => handleMoveSiteDown(idx)}
-                                disabled={idx === (ledgerData.sites?.length || 0) - 1}
+                                disabled={idx === (reconciledSites?.length || 0) - 1}
                                 className="p-1 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
                                 title="Move Site Down"
                               >
@@ -2577,21 +2763,27 @@ export default function MasterPartyLedgerPage() {
                   )}
 
                   {/* Sites Table Total Footer (shown when sites exist) */}
-                  {ledgerData.sites && ledgerData.sites.length > 0 && (
+                  {reconciledSites && reconciledSites.length > 0 && (
                     <tr className="bg-[#fff8ee] font-bold text-surface-950 border-t-2 border-amber-300">
                       <td className="py-2.5 px-3 text-center border border-amber-200"></td>
                       <td className="py-2.5 px-3 font-black text-surface-950 border border-amber-200">
-                        Total (Sites)
+                        <div className="flex items-center gap-2">
+                          <span>Total (Sites)</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded shadow-2xs">
+                            <Check size={11} className="stroke-[2.5]" />
+                            <span>Reconciled with Ledger</span>
+                          </span>
+                        </div>
                       </td>
                       <td className="py-2.5 px-3 border border-amber-200"></td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-surface-900 border border-amber-200">
                         {sitesSummary.sumOpening.toFixed(2)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-800 border border-amber-200">
-                        {sitesSummary.sumCredit.toFixed(2)}
+                        + {sitesSummary.sumCredit.toFixed(2)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-800 border border-amber-200">
-                        {sitesSummary.sumDebit.toFixed(2)}
+                        - {sitesSummary.sumDebit.toFixed(2)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-black text-surface-950 border border-amber-200">
                         {sitesSummary.sumCurrent.toFixed(2)}

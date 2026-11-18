@@ -237,14 +237,10 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
       const detectedNames: string[] = [];
       if (c.site_name && c.site_name.trim()) {
         detectedNames.push(c.site_name.trim());
-      }
-      if (c.delivery_address && c.delivery_address.trim()) {
+      } else if (c.delivery_address && c.delivery_address.trim()) {
         const parts = c.delivery_address.split(',').map((p) => p.trim()).filter(Boolean);
         if (parts.length > 0) {
-          const firstPart = parts[0];
-          if (!c.site_name || !firstPart.toLowerCase().includes(c.site_name.toLowerCase())) {
-            detectedNames.push(firstPart);
-          }
+          detectedNames.push(parts[0]);
         }
       }
 
@@ -258,7 +254,7 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
           .filter((ch) => {
             const sn = (ch.site_name || '').trim().toLowerCase();
             const da = (ch.delivery_address || '').trim().toLowerCase();
-            return sn === lowerSite || da.includes(lowerSite) || ch.id === c.id;
+            return sn === lowerSite || (sn === '' && (da.startsWith(lowerSite) || da.includes(lowerSite)));
           })
           .reduce((sum, ch) => sum + (Number(ch.total_amount) || 0), 0);
 
@@ -1516,19 +1512,18 @@ export function computeCustomerLedger(
     }
   });
 
-  const netVerifiedSiteAdjustment = verifiedSiteDebits - verifiedSiteCredits;
-  const verifiedClosingBalance = Math.round((running + netVerifiedSiteAdjustment) * 100) / 100;
-  const is_account_settled = verifiedClosingBalance <= 0;
+  const finalClosingBalance = Math.round(running * 100) / 100;
+  const is_account_settled = finalClosingBalance <= 0;
 
   return {
     openingBalance: periodOpeningBalance,
     totalDebit: Math.round(totalDebit * 100) / 100,
     totalCredit: Math.round(totalCredit * 100) / 100,
-    closingBalance: verifiedClosingBalance,
+    closingBalance: finalClosingBalance,
     verifiedSiteDebits: Math.round(verifiedSiteDebits * 100) / 100,
     verifiedSiteCredits: Math.round(verifiedSiteCredits * 100) / 100,
-    netVerifiedSiteAdjustment: Math.round(netVerifiedSiteAdjustment * 100) / 100,
-    verifiedClosingBalance,
+    netVerifiedSiteAdjustment: 0,
+    verifiedClosingBalance: finalClosingBalance,
     is_account_settled,
     entries,
     sites: customerSites,

@@ -92,6 +92,7 @@ export interface CustomerSite {
   verified_by?: string | null;
   challan_id?: string;        // Attached challan ID
   challan_number?: string;    // Attached challan number
+  attached_challans?: Array<{ id?: string; challan_number: string; amount?: number }>;
   order_index?: number;       // Custom sorting order index (for Move Up / Move Down)
   audit_history?: Array<{
     action: string;
