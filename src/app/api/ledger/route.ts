@@ -40,7 +40,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = getAuthenticatedSession(req);
+  const operatorRole = session?.role || 'admin';
   const operatorName = session?.name || session?.username || 'Admin SH';
+
+  if (operatorRole === 'employee') {
+    return NextResponse.json(
+      { success: false, error: 'Permission denied. Only Admins can add or record ledger entries.' },
+      { status: 403 }
+    );
+  }
 
   try {
     const body = await req.json();
@@ -137,6 +145,13 @@ export async function PUT(req: NextRequest) {
   const operatorName = session?.name || session?.username || 'Admin SH';
   const operatorRole = session?.role || 'admin';
   const operatorUsername = session?.username || 'adminsh';
+
+  if (operatorRole === 'employee') {
+    return NextResponse.json(
+      { success: false, error: 'Permission denied. Only Admins can edit ledger data.' },
+      { status: 403 }
+    );
+  }
 
   try {
     const body = await req.json();

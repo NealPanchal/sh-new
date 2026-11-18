@@ -31,6 +31,7 @@ export interface EmployeeAccount {
   password: string;
   role: UserRole;
   is_active: boolean;
+  is_banned?: boolean;
   po_prefix?: string;
   created_at?: string;
 }

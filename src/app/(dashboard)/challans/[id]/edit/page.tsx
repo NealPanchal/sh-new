@@ -548,6 +548,26 @@ export default function EditChallanPage() {
     );
   }
 
+  if (isEmployeeUser) {
+    return (
+      <div className="card p-8 sm:p-12 text-center max-w-lg mx-auto my-12 space-y-3 shadow-sm border border-surface-200">
+        <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-200">
+          <ShieldAlert size={26} />
+        </div>
+        <h2 className="text-lg font-bold text-surface-900">Editing Restricted to Admin</h2>
+        <p className="text-xs text-surface-500 leading-relaxed">
+          Staff members have no permission to edit finalized challan records. Only Showhouse Administrators can edit data.
+        </p>
+        <Link
+          href={`/challans/${challanId}`}
+          className="btn-primary inline-flex items-center gap-1.5 text-xs py-2 px-4 shadow-xs mt-2"
+        >
+          View Challan
+        </Link>
+      </div>
+    );
+  }
+
   if (!challanLoaded) {
     return (
       <div className="card p-8 sm:p-12 text-center max-w-lg mx-auto">

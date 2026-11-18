@@ -35,6 +35,8 @@ import {
   ExternalLink,
   ChevronUp,
   ChevronDown,
+  CalendarClock,
+  Copy,
 } from 'lucide-react';
 import { Customer, CustomerSite, CustomerLedgerEntry, PaymentMode } from '@/types';
 import { useApp } from '@/lib/context';
@@ -1130,6 +1132,113 @@ function MasterPartyLedgerContent() {
     period2Calculations,
   ]);
 
+  const isAdminUser = currentUser?.role === 'admin' || !currentUser || currentUser?.role !== 'employee';
+
+  // ----------------------------------------------------
+  // PENDING OUTSTANDINGS (MONTHLY AGING)
+  // Matching user requested format:
+  // Rs. 96,061/- (JULY)
+  // Rs. 42,300/- (AUG)
+  // Rs. 41,493/- (SEP)
+  // Rs. 2,01,486/- (OCT)
+  //
+  // Rs. 3,81,340/-(Total as on DD.MM.YY)
+  // ----------------------------------------------------
+  const monthlyOutstandings = useMemo(() => {
+    const entries = [...(ledgerData.entries || displayEntries || [])];
+    entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let availableCredit = entries.reduce((sum, e) => sum + (Number(e.credit) || 0), 0);
+
+    interface DebitItem {
+      date: string;
+      monthKey: string;
+      monthName: string;
+      amount: number;
+      unpaid: number;
+    }
+
+    const debits: DebitItem[] = [];
+
+    if (ledgerData.openingBalance > 0) {
+      const opDate = fromDate || '2024-04-01';
+      const d = new Date(opDate);
+      const mName = !isNaN(d.getTime()) ? d.toLocaleString('en-IN', { month: 'short' }).toUpperCase() : 'APR';
+      debits.push({
+        date: opDate,
+        monthKey: opDate.slice(0, 7),
+        monthName: mName,
+        amount: ledgerData.openingBalance,
+        unpaid: ledgerData.openingBalance,
+      });
+    }
+
+    entries.forEach((e) => {
+      const dVal = Number(e.debit) || 0;
+      if (dVal > 0) {
+        const d = new Date(e.date);
+        const mName = !isNaN(d.getTime())
+          ? d.toLocaleString('en-IN', { month: 'short' }).toUpperCase()
+          : 'GEN';
+        debits.push({
+          date: e.date,
+          monthKey: e.date.slice(0, 7),
+          monthName: mName,
+          amount: dVal,
+          unpaid: dVal,
+        });
+      }
+    });
+
+    // FIFO allocation of credits against debits
+    for (const item of debits) {
+      if (availableCredit <= 0) break;
+      if (availableCredit >= item.unpaid) {
+        availableCredit -= item.unpaid;
+        item.unpaid = 0;
+      } else {
+        item.unpaid -= availableCredit;
+        availableCredit = 0;
+      }
+    }
+
+    // Group remaining unpaid amounts by month
+    const map = new Map<string, { monthName: string; amount: number }>();
+    debits.forEach((d) => {
+      if (d.unpaid > 0) {
+        const existing = map.get(d.monthKey);
+        if (existing) {
+          existing.amount += d.unpaid;
+        } else {
+          map.set(d.monthKey, {
+            monthName: d.monthName,
+            amount: d.unpaid,
+          });
+        }
+      }
+    });
+
+    const items = Array.from(map.entries()).map(([key, val]) => ({
+      key,
+      monthName: val.monthName,
+      amount: Math.round(val.amount),
+    }));
+
+    const totalUnpaid = items.reduce((sum, i) => sum + i.amount, 0);
+
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yy = String(today.getFullYear()).slice(-2);
+    const dateFormatted = `${dd}.${mm}.${yy}`;
+
+    return {
+      items,
+      totalUnpaid,
+      dateFormatted,
+    };
+  }, [displayEntries, ledgerData.entries, ledgerData.openingBalance, fromDate]);
+
   // Handlers for Sites Balance Adjustments
   const handleVerifySite = async (site: CustomerSite) => {
     try {
@@ -1962,26 +2071,30 @@ function MasterPartyLedgerContent() {
                   <span>+ Party Challan</span>
                 </Link>
 
-                <button
-                  type="button"
-                  onClick={handleRebuildLedgerFromChallans}
-                  disabled={isRebuilding}
-                  className="px-2.5 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50"
-                  title="Auto-fetch and attach all Delivery Challans for this Customer"
-                >
-                  <RefreshCw size={13} className={isRebuilding ? "animate-spin" : ""} />
-                  <span>Rebuild Ledger</span>
-                </button>
+                {isAdminUser && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleRebuildLedgerFromChallans}
+                      disabled={isRebuilding}
+                      className="px-2.5 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50"
+                      title="Auto-fetch and attach all Delivery Challans for this Customer"
+                    >
+                      <RefreshCw size={13} className={isRebuilding ? "animate-spin" : ""} />
+                      <span>Rebuild Ledger</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteEntireLedgerModal(true)}
-                  className="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer"
-                  title="Delete & Reset Entire Ledger for this Customer"
-                >
-                  <Trash2 size={13} />
-                  <span>Delete Ledger</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteEntireLedgerModal(true)}
+                      className="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+                      title="Delete & Reset Entire Ledger for this Customer"
+                    >
+                      <Trash2 size={13} />
+                      <span>Delete Ledger</span>
+                    </button>
+                  </>
+                )}
 
                 <button
                   type="button"
@@ -2168,15 +2281,17 @@ function MasterPartyLedgerContent() {
                   <span>Apply</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAddEntryModal(true)}
-                  className="btn-secondary py-1.5 px-3 text-xs font-bold text-surface-800 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center justify-center gap-1 whitespace-nowrap shadow-xs"
-                  title="Record manual receipt, payment or adjustment"
-                >
-                  <Plus size={13} />
-                  <span>Add Entry</span>
-                </button>
+                {isAdminUser && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddEntryModal(true)}
+                    className="btn-secondary py-1.5 px-3 text-xs font-bold text-surface-800 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center justify-center gap-1 whitespace-nowrap shadow-xs"
+                    title="Record manual receipt, payment or adjustment"
+                  >
+                    <Plus size={13} />
+                    <span>Add Entry</span>
+                  </button>
+                )}
 
                 <Link
                   href={`/challans/new?customerId=${encodeURIComponent(selectedCustomer.id || selectedCustomerId)}`}
@@ -2206,7 +2321,7 @@ function MasterPartyLedgerContent() {
                     <th className="py-2.5 px-3 text-center w-14 border border-zinc-700">Sr. No.</th>
                     <th className="py-2.5 px-3 text-center w-24 border border-zinc-700">Date</th>
                     <th className="py-2.5 px-3 border border-zinc-700">Particulars</th>
-                    <th className="py-2.5 px-3 text-center w-28 border border-zinc-700">Type</th>
+                    <th className="py-2.5 px-3 text-center w-28 border border-zinc-700">Site</th>
                     <th className="py-2.5 px-3 text-center w-32 border border-zinc-700">Vch No.</th>
                     <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Debit (₹)</th>
                     <th className="py-2.5 px-3 text-right w-32 border border-zinc-700">Credit (₹)</th>
@@ -2244,7 +2359,13 @@ function MasterPartyLedgerContent() {
                             </div>
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200">
-                            {renderPaymentTypeBadge(e.payment_type, e.debit > 0)}
+                            {e.site_name ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-100 text-surface-800 border border-surface-200 max-w-[120px] truncate" title={e.site_name}>
+                                {e.site_name}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-surface-400 font-mono">—</span>
+                            )}
                           </td>
                           <td className="py-2 px-3 text-center font-mono font-bold border border-surface-200">
                             <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -2272,24 +2393,28 @@ function MasterPartyLedgerContent() {
                             {formatAmountDisplay(e.credit)}
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditEntry(e)}
-                                className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
-                                title="Edit entry (Debit/Credit, Amount, Site, Reason)"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEntryToDelete(e)}
-                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                title="Delete entry from ledger"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
+                            {isAdminUser ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditEntry(e)}
+                                  className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                  title="Edit entry (Debit/Credit, Amount, Site, Reason)"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEntryToDelete(e)}
+                                  className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                  title="Delete entry from ledger"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-surface-400 font-mono">—</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -2376,7 +2501,13 @@ function MasterPartyLedgerContent() {
                             </div>
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200">
-                            {renderPaymentTypeBadge(e.payment_type, e.debit > 0)}
+                            {e.site_name ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-100 text-surface-800 border border-surface-200 max-w-[120px] truncate" title={e.site_name}>
+                                {e.site_name}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-surface-400 font-mono">—</span>
+                            )}
                           </td>
                           <td className="py-2 px-3 text-center font-mono font-bold border border-surface-200">
                             <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -2404,24 +2535,28 @@ function MasterPartyLedgerContent() {
                             {formatAmountDisplay(e.credit)}
                           </td>
                           <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditEntry(e)}
-                                className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
-                                title="Edit entry (Debit/Credit, Amount, Site, Reason)"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEntryToDelete(e)}
-                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                title="Delete entry from ledger"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
+                            {isAdminUser ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditEntry(e)}
+                                  className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                  title="Edit entry (Debit/Credit, Amount, Site, Reason)"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEntryToDelete(e)}
+                                  className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                  title="Delete entry from ledger"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-surface-400 font-mono">—</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -2550,7 +2685,13 @@ function MasterPartyLedgerContent() {
                               </div>
                             </td>
                             <td className="py-2 px-3 text-center border border-surface-200">
-                              {renderPaymentTypeBadge(e.payment_type, e.debit > 0)}
+                              {e.site_name ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-100 text-surface-800 border border-surface-200 max-w-[120px] truncate" title={e.site_name}>
+                                  {e.site_name}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-surface-400 font-mono">—</span>
+                              )}
                             </td>
                             <td className="py-2 px-3 text-center font-mono font-bold border border-surface-200">
                               <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -2578,24 +2719,28 @@ function MasterPartyLedgerContent() {
                               {formatAmountDisplay(e.credit)}
                             </td>
                             <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditEntry(e)}
-                                  className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
-                                  title="Edit entry (Debit/Credit, Amount, Site, Reason)"
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEntryToDelete(e)}
-                                  className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                  title="Delete entry from ledger"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
+                              {isAdminUser ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditEntry(e)}
+                                    className="p-1 text-surface-500 hover:text-surface-900 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                    title="Edit entry (Debit/Credit, Amount, Site, Reason)"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEntryToDelete(e)}
+                                    className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                    title="Delete entry from ledger"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-surface-400 font-mono">—</span>
+                              )}
                             </td>
                           </tr>
                         ))
@@ -2707,14 +2852,16 @@ function MasterPartyLedgerContent() {
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowAddSiteModal(true)}
-                className="btn-primary py-1.5 px-3 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center gap-1 shadow-xs print:hidden"
-              >
-                <Plus size={14} />
-                <span>Add Site</span>
-              </button>
+              {isAdminUser && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddSiteModal(true)}
+                  className="btn-primary py-1.5 px-3 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center gap-1 shadow-xs print:hidden"
+                >
+                  <Plus size={14} />
+                  <span>Add Site</span>
+                </button>
+              )}
             </div>
 
             {/* Sites Table */}
@@ -2854,22 +3001,26 @@ function MasterPartyLedgerContent() {
                               >
                                 <ChevronDown size={14} />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditSite(site)}
-                                className="p-1 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded transition-colors cursor-pointer"
-                                title="Edit site details & balances"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteSite(site)}
-                                className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                title="Delete site"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              {isAdminUser && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditSite(site)}
+                                    className="p-1 text-surface-500 hover:text-surface-800 hover:bg-surface-100 rounded transition-colors cursor-pointer"
+                                    title="Edit site details & balances"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSite(site)}
+                                    className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                    title="Delete site"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -2930,6 +3081,95 @@ function MasterPartyLedgerContent() {
                 <span>On Verify, the balance will be updated in the Closing Balance.</span>
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* PENDING OUTSTANDINGS (MONTHLY) - MATCHING EXACT USER SPEC    */}
+      {/* ============================================================ */}
+      {selectedCustomerId && (
+        <div className="bg-white rounded-xl border border-surface-200 shadow-2xs overflow-hidden mt-6">
+          <div className="p-4 bg-surface-50/80 border-b border-surface-200 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-200">
+                <CalendarClock size={16} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-surface-950 tracking-tight uppercase">
+                  Pending Outstandings (Monthly)
+                </h3>
+                <p className="text-[11px] text-surface-500 font-medium">
+                  FIFO-aged debit outstandings for {selectedCustomer?.name || 'Customer'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const lines = monthlyOutstandings.items.map(
+                  (m) => `Rs. ${m.amount.toLocaleString('en-IN')}/- (${m.monthName})`
+                );
+                const text = [
+                  `SHOWHOUSE DECOR STUDIO`,
+                  `PENDING OUTSTANDINGS`,
+                  `Client: ${selectedCustomer?.name || 'Customer'}`,
+                  ``,
+                  ...(lines.length > 0 ? lines : ['Rs. 0/- (All dues cleared)']),
+                  ``,
+                  `Rs. ${monthlyOutstandings.totalUnpaid.toLocaleString('en-IN')}/-(Total as on ${monthlyOutstandings.dateFormatted})`,
+                ].join('\n');
+                navigator.clipboard.writeText(text);
+                showToast('Copied pending outstandings to clipboard!', 'success');
+              }}
+              className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 cursor-pointer shadow-2xs hover:bg-surface-100"
+              title="Copy monthly outstanding summary in exact format"
+            >
+              <Copy size={13} />
+              <span>Copy Summary</span>
+            </button>
+          </div>
+
+          <div className="p-5">
+            {monthlyOutstandings.items.length === 0 ? (
+              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs font-semibold">
+                <Check size={16} className="text-emerald-600 stroke-[2.5]" />
+                <span>All dues cleared! No pending outstandings for this client.</span>
+                <span className="font-mono text-emerald-900 ml-auto">
+                  Rs. 0/-(Total as on {monthlyOutstandings.dateFormatted})
+                </span>
+              </div>
+            ) : (
+              <div className="max-w-md bg-surface-50/70 border border-surface-200 rounded-xl p-4 sm:p-5 space-y-2 font-mono text-xs sm:text-sm">
+                <div className="space-y-1.5 font-bold text-surface-800">
+                  {monthlyOutstandings.items.map((m) => (
+                    <div
+                      key={m.key}
+                      className="flex items-center justify-between py-1 border-b border-surface-200/70"
+                    >
+                      <span className="text-surface-900">
+                        Rs. {m.amount.toLocaleString('en-IN')}/-
+                      </span>
+                      <span className="text-surface-700 font-bold bg-white px-2 py-0.5 rounded border border-surface-200 text-xs shadow-2xs">
+                        ({m.monthName})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-3">
+                  <div className="flex items-center justify-between text-surface-950 font-black text-sm sm:text-base bg-white p-3 rounded-lg border-2 border-surface-900 shadow-xs">
+                    <span className="text-[#ea580c]">
+                      Rs. {monthlyOutstandings.totalUnpaid.toLocaleString('en-IN')}/-
+                    </span>
+                    <span className="text-xs font-bold text-surface-600 font-sans">
+                      (Total as on {monthlyOutstandings.dateFormatted})
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

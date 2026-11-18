@@ -61,7 +61,7 @@ export function resetLoginRateLimit(ip: string): void {
 export function verifyServerCredentials(
   username: string,
   pass: string
-): { valid: boolean; user?: AuthUser } {
+): { valid: boolean; user?: AuthUser; error?: string } {
   if (!username || !pass) return { valid: false };
 
   const cleanUser = username.trim().toLowerCase();
@@ -82,9 +82,17 @@ export function verifyServerCredentials(
     }
   }
 
-  // 2. Check Employee Accounts (10 Staff Logins)
+  // 2. Check Employee Accounts (Staff Logins)
   const emp = findEmployeeByUsername(cleanUser);
-  if (emp && emp.is_active !== false) {
+  if (emp) {
+    // If account has been banned or deactivated by admin
+    if (emp.is_active === false || emp.is_banned) {
+      return {
+        valid: false,
+        error: 'Your account has been banned by Administrator and is inaccessible to all tools.',
+      };
+    }
+
     const empPassBuf = Buffer.from(emp.password);
     const passBuf = Buffer.from(pass);
     if (empPassBuf.length === passBuf.length && crypto.timingSafeEqual(empPassBuf, passBuf)) {
@@ -183,19 +191,32 @@ export function verifySignedSessionToken(token: string | null | undefined): Sess
 
 // Extract and verify session from NextRequest cookies or Authorization header
 export function getAuthenticatedSession(req: NextRequest): SessionPayload | null {
+  let session: SessionPayload | null = null;
+
   // Check HttpOnly Cookie first
   const cookieToken = req.cookies.get(AUTH_COOKIE_NAME)?.value;
   if (cookieToken) {
-    const valid = verifySignedSessionToken(cookieToken);
-    if (valid) return valid;
+    session = verifySignedSessionToken(cookieToken);
   }
 
   // Fallback to Bearer token header if present
-  const authHeader = req.headers.get('authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7).trim();
-    return verifySignedSessionToken(token);
+  if (!session) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      session = verifySignedSessionToken(token);
+    }
   }
 
-  return null;
+  if (!session) return null;
+
+  // If this is an employee account, ensure they have not been banned
+  if (session.role === 'employee') {
+    const emp = findEmployeeByUsername(session.username);
+    if (!emp || emp.is_active === false || emp.is_banned) {
+      return null; // Banned employee session revoked
+    }
+  }
+
+  return session;
 }

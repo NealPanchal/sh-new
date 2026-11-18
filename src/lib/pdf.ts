@@ -64,11 +64,12 @@ export function generateChallanPDF({
   employeePhone,
   hideRate = false,
 }: PDFOptions): jsPDF {
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
-  const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
-  const margin = 14;
-  const contentWidth = pageWidth - margin * 2; // 182mm
+  // A5 Portrait Dimensions: 148mm × 210mm
+  const doc = new jsPDF('p', 'mm', 'a5');
+  const pageWidth = doc.internal.pageSize.getWidth(); // 148mm
+  const pageHeight = doc.internal.pageSize.getHeight(); // 210mm
+  const margin = 7;
+  const contentWidth = pageWidth - margin * 2; // 134mm
   let y = margin;
 
   // Resolve document type: 'DELIVERY CHALLAN' or 'PROFORMA INVOICE'
@@ -81,7 +82,6 @@ export function generateChallanPDF({
   const blackColor: [number, number, number] = [20, 20, 20];
   const goldColor: [number, number, number] = [190, 142, 42]; // #BE8E2A Gold
   const blueColor: [number, number, number] = [43, 94, 167]; // #2B5EA7 Navy Blue
-  const grayColor: [number, number, number] = [80, 80, 80];
 
   // Helper for uppercase date
   const rawDate = new Date(challan.challan_date);
@@ -94,139 +94,140 @@ export function generateChallanPDF({
     : challan.challan_date.toUpperCase();
 
   // ----------------------------------------------------
-  // 1. TOP HEADER SECTION
+  // 1. TOP HEADER SECTION (PAGE 1)
   // ----------------------------------------------------
 
   // Left Brand: Gold Logo + SHOWHOUSE Decor Studio
   try {
-    doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', margin, y - 2, 16, 16);
+    doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', margin, y - 1, 13, 13);
   } catch {
     doc.setDrawColor(...goldColor);
-    doc.setLineWidth(1.2);
-    doc.ellipse(margin + 8, y + 6, 7, 4);
+    doc.setLineWidth(1.0);
+    doc.ellipse(margin + 6, y + 5, 5, 3.5);
   }
 
   // Logo text
   doc.setFont('times', 'bold');
-  doc.setFontSize(18);
+  doc.setFontSize(14.5);
   doc.setTextColor(...goldColor);
-  doc.text('SHOWHOUSE', margin + 18, y + 6);
+  doc.text('SHOWHOUSE', margin + 15, y + 5);
 
   doc.setFont('times', 'normal');
-  doc.setFontSize(9.5);
+  doc.setFontSize(8);
   doc.setTextColor(...goldColor);
-  doc.text('Decor Studio', margin + 18, y + 10.5);
+  doc.text('Decor Studio', margin + 15, y + 8.8);
 
   // Right Header: Rounded Pill Box ("PROFORMA INVOICE" / "DELIVERY CHALLAN" / "DELIVERY SLIP")
   const titleText = hideRate ? 'DELIVERY SLIP' : resolvedDocType;
-  const boxWidth = hideRate ? 48 : isPI ? 52 : 56;
-  const boxHeight = 7.5;
+  const boxWidth = hideRate ? 40 : isPI ? 44 : 48;
+  const boxHeight = 6.2;
   const boxX = pageWidth - margin - boxWidth;
   const boxY = y;
 
   doc.setDrawColor(...blueColor);
-  doc.setLineWidth(0.6);
+  doc.setLineWidth(0.5);
   doc.setFillColor(252, 254, 255);
-  doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 1.5, 1.5, 'FD');
+  doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 1.2, 1.2, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
+  doc.setFontSize(8.8);
   doc.setTextColor(...blueColor);
-  doc.text(titleText, boxX + boxWidth / 2, boxY + 5.2, { align: 'center' });
+  doc.text(titleText, boxX + boxWidth / 2, boxY + 4.3, { align: 'center' });
 
   // Separate Document Number, Staff PO & Date (Right side below pill)
+  // Note: "PI REF" has been completely removed as requested
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.2);
+  doc.setFontSize(7.2);
   doc.setTextColor(...blackColor);
 
-  let docInfoY = y + 12.5;
+  let docInfoY = y + 10;
   if (isPI) {
     const piNum = challan.pi_number || challan.challan_number.replace(/^SH\//, 'PI/');
     doc.text(`PI NO : ${piNum}`, boxX, docInfoY);
-    docInfoY += 3.8;
+    docInfoY += 3.2;
     if (challan.reference_number) {
       doc.text(`PO NO : ${challan.reference_number}`, boxX, docInfoY);
-      docInfoY += 3.8;
+      docInfoY += 3.2;
     }
   } else {
     doc.text(`CHALLAN NO : ${challan.challan_number}`, boxX, docInfoY);
-    docInfoY += 3.8;
+    docInfoY += 3.2;
     if (challan.reference_number) {
       doc.text(`PO NO : ${challan.reference_number}`, boxX, docInfoY);
-      docInfoY += 3.8;
-    }
-    if (challan.pi_number && challan.pi_number !== challan.challan_number) {
-      doc.text(`PI REF : ${challan.pi_number}`, boxX, docInfoY);
-      docInfoY += 3.8;
+      docInfoY += 3.2;
     }
   }
   doc.text(`DATE : ${formattedDate}`, boxX, docInfoY);
-  docInfoY += 4.5;
+  docInfoY += 3.8;
 
   // ----------------------------------------------------
   // 2. COMPANY DETAILS (RIGHT) & CUSTOMER DETAILS (LEFT)
   // ----------------------------------------------------
-  const detailsY = Math.max(y + 22, docInfoY);
+  const detailsY = Math.max(y + 19, docInfoY);
 
-  // Left: Customer Details
+  // Left: Customer Details (Kind Attn replaced with CLIENT NAME)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.5);
+  doc.setTextColor(190, 50, 50);
+  doc.text('CLIENT', margin, detailsY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.8);
   doc.setTextColor(...blackColor);
-  doc.text(`Kind Attn: ${(challan.customer_name || 'CLIENT').toUpperCase()}`, margin, detailsY);
+  doc.text(`CLIENT NAME : ${(challan.customer_name || 'CLIENT').toUpperCase()}`, margin, detailsY + 3.5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.2);
   doc.setTextColor(...blackColor);
 
-  let leftDetailY = detailsY + 4;
+  let leftDetailY = detailsY + 6.8;
   if (challan.customer_phone) {
     doc.text(`Phone No: ${formatPhone(challan.customer_phone)}`, margin, leftDetailY);
-    leftDetailY += 3.8;
+    leftDetailY += 3.2;
   }
 
   const rawAddr = challan.delivery_address || challan.customer_address || 'THANE, MAHARASHTRA';
-  const addrLines = doc.splitTextToSize(`Address: ${rawAddr.toUpperCase()}`, 85);
+  const addrLines = doc.splitTextToSize(`Address: ${rawAddr.toUpperCase()}`, 64);
   doc.text(addrLines, margin, leftDetailY);
-  leftDetailY += addrLines.length * 3.8;
+  leftDetailY += addrLines.length * 3.2;
 
   if (challan.customer_gstin) {
     doc.text(`GSTIN: ${challan.customer_gstin}`, margin, leftDetailY);
-    leftDetailY += 3.8;
+    leftDetailY += 3.2;
   }
 
   // Right: Showhouse Decor Studio Company Info
+  // Strictly: LBS marg Nr. Makhmali Talao Thane, Web removed, GST placed below email
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.8);
   doc.setTextColor(...blackColor);
-  doc.text(profile.legal_name || 'Showhouse Decor Studio', boxX, detailsY);
+  doc.text(profile.legal_name || 'Showhouse Concept & Design LLP', boxX, detailsY);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.8);
+  doc.setFontSize(7.0);
   doc.setTextColor(...blackColor);
 
   const rightLines = [
-    'Vishram Baug, Lal Bahadur Shastri Rd',
-    'Near Makhmali Talao, Thane',
+    'LBS marg Nr. Makhmali Talao Thane',
     'Phone : 022 2538 7683',
     'Mobile : +91 93248 69306',
     'Email : forshowhouse@gmail.com',
-    'Web : www.showhouse.co.in',
+    `GST : ${profile.gstin || '27ACMF53838C1ZY'}`,
   ];
 
-  let rightDetailY = detailsY + 4;
+  let rightDetailY = detailsY + 3.5;
   rightLines.forEach((line) => {
     doc.text(line, boxX, rightDetailY);
-    rightDetailY += 3.5;
+    rightDetailY += 3.0;
   });
 
-  y = Math.max(leftDetailY, rightDetailY) + 3;
+  y = Math.max(leftDetailY, rightDetailY) + 2.5;
 
   // ----------------------------------------------------
-  // 3. ITEMS TABLE
+  // 3. ITEMS PREPARATION & CALCULATIONS
   // ----------------------------------------------------
   const transportCharges = Number(challan.transportation_charges) || 0;
   const loadingCharges = Number(challan.loading_charges) || 0;
-  const hasExtraCharges = transportCharges > 0 || loadingCharges > 0;
   const applyGst = Boolean(challan.apply_gst);
   const applyAdditional9 = Boolean(challan.apply_additional_9);
 
@@ -242,15 +243,15 @@ export function generateChallanPDF({
   const additional9Amount = challan.additional_9_amount ?? (applyAdditional9 && taxableSubtotal > 0 ? Math.round(taxableSubtotal * 0.09) : 0);
   const grandTotal = challan.total_amount || (taxableSubtotal + cgstAmount + sgstAmount + additional9Amount);
 
-  // Table Headers
+  // Table Headers & Column Widths fitted for 134mm contentWidth
   const headers = hideRate
     ? ['S/N', 'ITEM DESCRIPTION & BRAND', 'QUANTITY', 'UNIT']
     : ['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR'];
   const colWidths = hideRate
-    ? [14, 116, 26, 26]
-    : [12, 88, 24, 28, 30]; // Total = 182mm (exact contentWidth)
+    ? [8, 86, 20, 20] // Total = 134mm
+    : [8, 64, 18, 21, 23]; // Total = 134mm
 
-  const tableRows: (string | number)[][] = items.map((item, idx) => {
+  const allTableRows: (string | number)[][] = items.map((item, idx) => {
     let desc = (item.item_description || '').toUpperCase();
     if (item.brand) desc += ` [ ${item.brand.toUpperCase()} ]`;
     if (item.colour_finish) desc += ` - ${item.colour_finish.toUpperCase()}`;
@@ -285,53 +286,64 @@ export function generateChallanPDF({
     ];
   });
 
-  // Delivery Charges row matching Image 2 line (only if rate is shown)
+  // Extra charges rows
   if (!hideRate && transportCharges > 0) {
-    tableRows.push(['', 'DELIVERY CHARGES', '', '', formatAmountNum(transportCharges)]);
+    allTableRows.push(['', 'DELIVERY CHARGES', '', '', formatAmountNum(transportCharges)]);
   }
-
   if (!hideRate && loadingCharges > 0) {
-    tableRows.push(['', 'LOADING / UNLOADING CHARGES', '', '', formatAmountNum(loadingCharges)]);
+    allTableRows.push(['', 'LOADING / UNLOADING CHARGES', '', '', formatAmountNum(loadingCharges)]);
   }
 
-  // Draw Faint Watermark before or in table
-  try {
-    (doc as any).saveGraphicsState();
-    (doc as any).setGState(new (doc as any).GState({ opacity: 0.06 }));
-    doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', pageWidth / 2 - 25, y + 15, 50, 50);
-    (doc as any).restoreGraphicsState();
-  } catch {
-    doc.setFont('times', 'bold');
-    doc.setFontSize(36);
-    doc.setTextColor(245, 238, 215); // Very faint gold watermark
-    doc.text('SHOWHOUSE', pageWidth / 2, y + 40, { align: 'center' });
-    doc.setFontSize(14);
-    doc.text('Decor Studio', pageWidth / 2, y + 48, { align: 'center' });
-  }
+  // ----------------------------------------------------
+  // 4. PAGINATION: EXACTLY 8 ITEMS MAX ON PAGE 1
+  // Extra items shift to Page 2 (Continued), with totals on final page
+  // ----------------------------------------------------
+  const MAX_ITEMS_PAGE1 = 8;
+  const isMultiPage = allTableRows.length > MAX_ITEMS_PAGE1;
+  const page1Rows = isMultiPage ? allTableRows.slice(0, MAX_ITEMS_PAGE1) : allTableRows;
+  const page2Rows = isMultiPage ? allTableRows.slice(MAX_ITEMS_PAGE1) : [];
 
+  // Faint Watermark Helper
+  const drawWatermark = (watermarkY: number) => {
+    try {
+      (doc as any).saveGraphicsState();
+      (doc as any).setGState(new (doc as any).GState({ opacity: 0.05 }));
+      doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', pageWidth / 2 - 20, watermarkY, 40, 40);
+      (doc as any).restoreGraphicsState();
+    } catch {
+      doc.setFont('times', 'bold');
+      doc.setFontSize(26);
+      doc.setTextColor(245, 238, 215);
+      doc.text('SHOWHOUSE', pageWidth / 2, watermarkY + 25, { align: 'center' });
+    }
+  };
+
+  drawWatermark(y + 10);
+
+  // Render Page 1 Table (up to 8 items)
   autoTable(doc, {
     startY: y,
     head: [headers],
-    body: tableRows,
+    body: page1Rows,
     theme: 'grid',
     tableWidth: contentWidth,
     headStyles: {
       fillColor: [255, 255, 255],
       textColor: blackColor,
       fontStyle: 'bold',
-      fontSize: 8,
-      cellPadding: 2,
+      fontSize: 6.8,
+      cellPadding: 1.5,
       valign: 'middle',
       halign: 'center',
       lineColor: [0, 0, 0],
-      lineWidth: 0.3,
+      lineWidth: 0.25,
     },
     bodyStyles: {
-      fontSize: 8,
+      fontSize: 6.8,
       textColor: blackColor,
-      cellPadding: 2.2,
+      cellPadding: 1.6,
       lineColor: [0, 0, 0],
-      lineWidth: 0.25,
+      lineWidth: 0.2,
       valign: 'middle',
     },
     columnStyles: hideRate
@@ -353,145 +365,217 @@ export function generateChallanPDF({
 
   y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 
-  // ----------------------------------------------------
-  // 4. BOTTOM LEDGER & BANKING INFORMATION
-  // ----------------------------------------------------
-  // If remaining page height is too small, add a new page
-  if (y > pageHeight - 75) {
-    doc.addPage();
-    y = margin + 5;
+  // If there are more than 8 items, create Page 2 and continue items
+  if (isMultiPage) {
+    // Add continuation note at bottom of page 1
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.2);
+    doc.setTextColor(110, 110, 110);
+    doc.text('(Continued on Page 2...)', pageWidth - margin, y + 4.5, { align: 'right' });
+
+    // Page 2
+    doc.addPage('a5', 'p');
+    let page2Y = margin + 2;
+
+    // Page 2 Mini Header
+    doc.setFont('times', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...goldColor);
+    doc.text('SHOWHOUSE DECOR STUDIO', margin, page2Y + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...blackColor);
+    const page2DocNo = isPI
+      ? (challan.pi_number || challan.challan_number.replace(/^SH\//, 'PI/'))
+      : challan.challan_number;
+    doc.text(`${page2DocNo} (Page 2 of 2 - Continued)`, pageWidth - margin, page2Y + 4, { align: 'right' });
+
+    page2Y += 7.5;
+    drawWatermark(page2Y + 15);
+
+    // Page 2 Table (remaining items)
+    autoTable(doc, {
+      startY: page2Y,
+      head: [headers],
+      body: page2Rows,
+      theme: 'grid',
+      tableWidth: contentWidth,
+      headStyles: {
+        fillColor: [255, 255, 255],
+        textColor: blackColor,
+        fontStyle: 'bold',
+        fontSize: 6.8,
+        cellPadding: 1.5,
+        valign: 'middle',
+        halign: 'center',
+        lineColor: [0, 0, 0],
+        lineWidth: 0.25,
+      },
+      bodyStyles: {
+        fontSize: 6.8,
+        textColor: blackColor,
+        cellPadding: 1.6,
+        lineColor: [0, 0, 0],
+        lineWidth: 0.2,
+        valign: 'middle',
+      },
+      columnStyles: hideRate
+        ? {
+            0: { halign: 'center', cellWidth: colWidths[0] },
+            1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+            2: { halign: 'center', cellWidth: colWidths[2], fontStyle: 'bold' },
+            3: { halign: 'center', cellWidth: colWidths[3] },
+          }
+        : {
+            0: { halign: 'center', cellWidth: colWidths[0] },
+            1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+            2: { halign: 'center', cellWidth: colWidths[2] },
+            3: { halign: 'right', cellWidth: colWidths[3] },
+            4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
+          },
+      margin: { left: margin, right: margin },
+    });
+
+    y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
   }
 
-  const bottomHeight = 62;
-  const leftColWidth = 114;
-  const rightColWidth = contentWidth - leftColWidth; // 68mm
+  // ----------------------------------------------------
+  // 5. BOTTOM LEDGER, BANKING & DUAL SIGNATURES (ON FINAL PAGE)
+  // ----------------------------------------------------
+  const bottomHeight = 54;
+  const leftColWidth = 78;
+  const rightColWidth = contentWidth - leftColWidth; // 56mm
 
-  // Outer border box around the bottom ledger
+  // If table ran very long on page, adjust y or add new page
+  if (y > pageHeight - bottomHeight - 12) {
+    doc.addPage('a5', 'p');
+    y = margin + 4;
+  } else {
+    y = Math.max(y + 2.5, pageHeight - bottomHeight - margin - 8);
+  }
+
+  // Outer border box around the bottom section
   doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.3);
+  doc.setLineWidth(0.25);
   doc.rect(margin, y, contentWidth, bottomHeight);
 
   // Vertical dividing line between left info and right totals
   doc.line(margin + leftColWidth, y, margin + leftColWidth, y + bottomHeight);
 
   // ---- LEFT COLUMN CONTENT ----
-  let leftY = y + 4;
-  const leftX = margin + 2.5;
+  let leftY = y + 3;
+  const leftX = margin + 2;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(6.5);
   doc.setTextColor(...blackColor);
   doc.text('BANKING INFORMATION:', leftX, leftY);
-  leftY += 3.5;
+  leftY += 2.8;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text('NAME OF THE BENEFICIARY - SHOW HOUSE CONCEPTS AND DESIGN LLP', leftX, leftY);
+  doc.setFontSize(5.8);
+  doc.text('BENEFICIARY - SHOW HOUSE CONCEPTS AND DESIGN LLP', leftX, leftY);
+  leftY += 2.4;
+  doc.text('A/C NO: 50200003880041 | HDFC BANK LTD, THANE', leftX, leftY);
+  leftY += 2.4;
+  doc.text('ADDRESS: DR. MOOSE RD, TALAO PALI, THANE (W) | RTGS: HDFC0000146', leftX, leftY);
   leftY += 3.2;
-  doc.text('ACCOUNT NUMBER: 50200003880041', leftX, leftY);
-  leftY += 3.2;
-  doc.text('BENEFICIARY BANK - HDFC BANK LTD, THANE', leftX, leftY);
-  leftY += 3.2;
-  doc.text('ADDRESS: DR. MOOSE RD, TALAO PALI, THANE (W)', leftX, leftY);
-  leftY += 3.2;
-  doc.text('RTGS: HDFC0000146', leftX, leftY);
-  leftY += 4.5;
 
   // Divider
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.2);
-  doc.line(leftX, leftY - 1, margin + leftColWidth - 2, leftY - 1);
+  doc.setDrawColor(210, 210, 210);
+  doc.setLineWidth(0.15);
+  doc.line(leftX, leftY - 0.8, margin + leftColWidth - 2, leftY - 0.8);
 
   // Prepared By / Contact
-  const creator = challan.created_by || challan.prepared_by || 'NEAL PANCHAL';
-  doc.text(`EMAIL : info@showhousedecor.com`, leftX, leftY + 2);
+  const creator = challan.created_by || challan.prepared_by || 'VRUSHANK';
+  doc.text(`EMAIL : info@showhousedecor.com`, leftX, leftY + 1.2);
   doc.setFont('helvetica', 'bold');
-  doc.text(`PREPARED BY : ${creator.toUpperCase()}`, leftX, leftY + 5.2);
+  doc.text(`PREPARED BY : ${creator.toUpperCase()}`, leftX, leftY + 3.8);
   doc.setFont('helvetica', 'normal');
 
-  // Dynamic Contact Number (Employee phone if configured, otherwise showroom mobile)
   const staffPhone = employeePhone || lookupStaffPhone(creator);
   const mobileText =
     staffPhone && staffPhone.trim() && staffPhone !== '+91 93248 69306'
       ? `MOBILE : +91 93248 69306 / ${staffPhone.trim()}`
       : `MOBILE : +91 93248 69306`;
-  doc.text(mobileText, leftX, leftY + 8.4);
-  leftY += 10.5;
+  doc.text(mobileText, leftX, leftY + 6.4);
+  leftY += 8.2;
 
   // Terms & Conditions
-  doc.line(leftX, leftY - 1, margin + leftColWidth - 2, leftY - 1);
+  doc.line(leftX, leftY - 0.8, margin + leftColWidth - 2, leftY - 0.8);
   doc.setFont('helvetica', 'bold');
-  doc.text('TERMS :', leftX, leftY + 2);
-  leftY += 5;
-
+  doc.setFontSize(5.8);
+  doc.text('TERMS : VALIDITY: 1 WEEK | WALLPAPER/LAMINATE RATES INCL. INSTALLATION', leftX, leftY + 1.4);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.text('VALIDITY: ONE (1) WEEK', leftX, leftY);
-  leftY += 2.8;
-  doc.text('WALL PAPER / LAMINATE RATES ARE INCLUDING INSTALLATION', leftX, leftY);
-  leftY += 2.8;
-  doc.text('DELIVERY: WITHIN (TWO) 2 DAYS AFTER CONFIRMATION OF ORDER', leftX, leftY);
-  leftY += 2.8;
-  doc.text('PAYMENT: 50% ADVANCE, REMAINING 50% ON THE TIME OF DELIVERY', leftX, leftY);
+  doc.setFontSize(5.4);
+  doc.text('DELIVERY: WITHIN 2 DAYS OF CONFIRMATION | PAYMENT: 50% ADVANCE, 50% ON DELIVERY', leftX, leftY + 3.8);
+  leftY += 5.5;
 
-  // ---- RIGHT COLUMN CONTENT (TOTALS & SIGNATORY) ----
+  // Left Signature: RECEIVER'S SIGNATURE (Distinct column)
+  doc.line(leftX, leftY, margin + leftColWidth - 2, leftY);
+  const receiverSigY = y + bottomHeight - 3.2;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(...blackColor);
+  doc.text("RECEIVER'S SIGNATURE", leftX + (leftColWidth - 4) / 2, receiverSigY - 3, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.2);
+  doc.setTextColor(90, 90, 90);
+  doc.text('(Goods received in good condition)', leftX + (leftColWidth - 4) / 2, receiverSigY, { align: 'center' });
+
+  // ---- RIGHT COLUMN CONTENT (TOTALS & AUTHORIZED SIGNATORY) ----
   const rightX = margin + leftColWidth;
   let totalsY = y;
 
   if (hideRate) {
-    // Delivery Verification & Receiver's Acknowledgment Box (No Prices)
-    doc.setFillColor(235, 235, 235);
-    doc.rect(rightX, totalsY, rightColWidth, 6, 'F');
+    // Delivery Verification (No Prices)
+    doc.setFillColor(240, 240, 240);
+    doc.rect(rightX, totalsY, rightColWidth, 5, 'F');
     doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.25);
-    doc.line(rightX, totalsY + 6, rightX + rightColWidth, totalsY + 6);
+    doc.setLineWidth(0.2);
+    doc.line(rightX, totalsY + 5, rightX + rightColWidth, totalsY + 5);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
+    doc.setFontSize(6.8);
     doc.setTextColor(...blackColor);
-    doc.text('DELIVERY ACKNOWLEDGMENT', rightX + rightColWidth / 2, totalsY + 4.2, { align: 'center' });
-    totalsY += 9;
+    doc.text('DELIVERY ACKNOWLEDGMENT', rightX + rightColWidth / 2, totalsY + 3.5, { align: 'center' });
+    totalsY += 7.5;
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text(`TOTAL ITEMS : ${items.length}`, rightX + 3.5, totalsY);
+    doc.setFontSize(6.5);
+    doc.text(`TOTAL ITEMS : ${items.length}`, rightX + 3, totalsY);
+    totalsY += 3.5;
+    doc.text(`TOTAL QUANTITY : ${challan.total_quantity}`, rightX + 3, totalsY);
     totalsY += 4.5;
-    doc.text(`TOTAL QUANTITY : ${challan.total_quantity}`, rightX + 3.5, totalsY);
-    totalsY += 5.5;
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text('[   ] Received goods in good condition', rightX + 3.5, totalsY);
-    totalsY += 6;
-
-    doc.text("Receiver's Signature / Stamp:", rightX + 3.5, totalsY);
-    totalsY += 6;
-    doc.setLineWidth(0.2);
-    doc.line(rightX + 3.5, totalsY, rightX + rightColWidth - 3.5, totalsY);
-
+    doc.setFontSize(5.8);
+    doc.text('[   ] Verified and Received', rightX + 3, totalsY);
     totalsY += 5;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('For Showhouse Concepts & Designs LLP', rightX + rightColWidth / 2, totalsY, { align: 'center' });
 
-    const sigY = y + bottomHeight - 4;
-    doc.text('Authorized Signatory', rightX + rightColWidth / 2, sigY, { align: 'center' });
+    // Authorized Signatory
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.text('For Showhouse Concepts & Designs LLP', rightX + rightColWidth / 2, totalsY + 6, { align: 'center' });
+    doc.text('Authorized Signatory', rightX + rightColWidth / 2, y + bottomHeight - 3.2, { align: 'center' });
   } else {
+    // Standard Totals Rows
     const renderTotalRow = (label: string, value: string, isGrandTotal = false) => {
-      const rowH = isGrandTotal ? 6 : 5;
+      const rowH = isGrandTotal ? 5.2 : 4.2;
       if (isGrandTotal) {
-        doc.setFillColor(220, 220, 220); // Shaded gray bar matching Image 2
+        doc.setFillColor(225, 225, 225); // Shaded gray bar
         doc.rect(rightX, totalsY, rightColWidth, rowH, 'F');
       }
       doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.25);
+      doc.setLineWidth(0.2);
       doc.line(rightX, totalsY + rowH, rightX + rightColWidth, totalsY + rowH);
-      doc.line(rightX + rightColWidth - 26, totalsY, rightX + rightColWidth - 26, totalsY + rowH);
+      doc.line(rightX + rightColWidth - 21, totalsY, rightX + rightColWidth - 21, totalsY + rowH);
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(isGrandTotal ? 8.5 : 7.5);
+      doc.setFontSize(isGrandTotal ? 7.2 : 6.4);
       doc.setTextColor(...blackColor);
-      doc.text(label, rightX + 2, totalsY + (isGrandTotal ? 4.2 : 3.5));
-      doc.text(value, rightX + rightColWidth - 2, totalsY + (isGrandTotal ? 4.2 : 3.5), {
+      doc.text(label, rightX + 2, totalsY + (isGrandTotal ? 3.6 : 3.0));
+      doc.text(value, rightX + rightColWidth - 1.5, totalsY + (isGrandTotal ? 3.6 : 3.0), {
         align: 'right',
       });
 
@@ -516,47 +600,50 @@ export function generateChallanPDF({
 
     renderTotalRow('GRAND TOTAL', formatAmountNum(grandTotal), true);
 
-    // Authorized Signatory Box below Grand Total
-    totalsY += 4;
+    // Authorized Signatory Box below Grand Total (Right Column)
+    totalsY += 3.0;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
+    doc.setFontSize(6.4);
     doc.setTextColor(...blackColor);
     doc.text('For and on behalf of', rightX + rightColWidth / 2, totalsY, { align: 'center' });
-    totalsY += 3.5;
+    totalsY += 2.8;
     doc.text('Showhouse Concepts & Designs LLP', rightX + rightColWidth / 2, totalsY, { align: 'center' });
 
     // Signature line
-    const sigY = y + bottomHeight - 4;
+    const authSigY = y + bottomHeight - 3.2;
+    doc.setDrawColor(180, 180, 180);
+    doc.setLineWidth(0.2);
+    doc.line(rightX + 6, authSigY - 4.5, rightX + rightColWidth - 6, authSigY - 4.5);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('Authorized Signatory', rightX + rightColWidth / 2, sigY, { align: 'center' });
+    doc.setFontSize(6.5);
+    doc.text('Authorized Signatory', rightX + rightColWidth / 2, authSigY, { align: 'center' });
   }
 
   // ----------------------------------------------------
-  // 5. BOTTOM TAGLINE (BLUE ITALIC BOLD)
+  // 6. BOTTOM TAGLINE (BLUE ITALIC BOLD)
   // ----------------------------------------------------
-  const taglineY = y + bottomHeight + 6;
+  const taglineY = y + bottomHeight + 4.5;
   doc.setFont('times', 'bolditalic');
-  doc.setFontSize(11);
+  doc.setFontSize(9.5);
   doc.setTextColor(...blueColor);
-  doc.text('" YOUR CONCEPTS, OUR DESIGNS "', pageWidth / 2, Math.min(taglineY, pageHeight - 8), {
+  doc.text('" YOUR CONCEPTS, OUR DESIGNS "', pageWidth / 2, Math.min(taglineY, pageHeight - 3), {
     align: 'center',
   });
 
   // ----------------------------------------------------
-  // 6. PAID RUBBER STAMP (IF PAID)
+  // 7. PAID RUBBER STAMP (IF PAID)
   // ----------------------------------------------------
   if (challan.payment_status === 'paid') {
     try {
       doc.saveGraphicsState();
       doc.setDrawColor(22, 163, 74);
       doc.setTextColor(22, 163, 74);
-      doc.setLineWidth(0.6);
+      doc.setLineWidth(0.5);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('★ PAID ★', pageWidth - 28, 22, { angle: -6, align: 'center' });
-      doc.setFontSize(6);
-      doc.text('SHOWHOUSE VERIFIED', pageWidth - 28, 25.5, { angle: -6, align: 'center' });
+      doc.setFontSize(10);
+      doc.text('★ PAID ★', pageWidth - 20, 18, { angle: -6, align: 'center' });
+      doc.setFontSize(5.2);
+      doc.text('SHOWHOUSE VERIFIED', pageWidth - 20, 21, { angle: -6, align: 'center' });
       doc.restoreGraphicsState();
     } catch {}
   }

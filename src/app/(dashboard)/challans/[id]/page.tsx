@@ -101,7 +101,8 @@ export default function ChallanDetailPage() {
     challan?.payment_status === 'paid' ||
     (challan?.total_amount && challan.paid_amount && challan.paid_amount >= challan.total_amount)
   );
-  const canEdit = !isEmp || !isApproved;
+  // Only Administrator can edit or delete challan data
+  const canEdit = !isEmp;
 
   const handleUpdateDeliveryStatus = async (
     newStatus: ChallanStatus,
@@ -727,7 +728,7 @@ export default function ChallanDetailPage() {
           )}
         >
           <FileText size={14} />
-          <span>Delivery Challan (A4)</span>
+          <span>Delivery Challan (A5)</span>
         </button>
 
         <button
@@ -743,7 +744,7 @@ export default function ChallanDetailPage() {
           )}
         >
           <FileText size={14} />
-          <span>Proforma Invoice PI (A4)</span>
+          <span>Proforma Invoice PI (A5)</span>
         </button>
 
         <button

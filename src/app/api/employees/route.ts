@@ -36,6 +36,25 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    // Fast 1-click ban / unban action
+    if (body.action === 'toggle_ban' && body.employeeId) {
+      const current = getEmployeeAccounts();
+      const updated = current.map((emp) => {
+        if (emp.id === body.employeeId || emp.username.toLowerCase() === String(body.employeeId).toLowerCase()) {
+          const willBan = body.banned !== undefined ? Boolean(body.banned) : (emp.is_active !== false);
+          return {
+            ...emp,
+            is_active: !willBan,
+            is_banned: willBan,
+          };
+        }
+        return emp;
+      });
+      saveEmployeeAccounts(updated);
+      return NextResponse.json({ success: true, employees: updated });
+    }
+
     if (!body || !Array.isArray(body.employees)) {
       return NextResponse.json(
         { success: false, error: 'employees array is required' },
@@ -46,6 +65,8 @@ export async function POST(req: NextRequest) {
     const current = getEmployeeAccounts();
     const updated: EmployeeAccount[] = body.employees.map((item: any, idx: number) => {
       const existing = current.find((c) => c.id === item.id) || current[idx];
+      const isActive = item.is_active !== undefined ? Boolean(item.is_active) : (existing?.is_active ?? true);
+      const isBanned = item.is_banned !== undefined ? Boolean(item.is_banned) : (!isActive);
       return {
         id: item.id || existing?.id || `emp_${Date.now()}_${idx}`,
         username: (item.username || existing?.username || `staff${idx + 1}`).trim().toLowerCase(),
@@ -53,7 +74,8 @@ export async function POST(req: NextRequest) {
         phone: item.phone !== undefined ? String(item.phone).trim() : (existing?.phone || ''),
         password: item.password || existing?.password || `staff${idx + 1}@sh26`,
         role: 'employee' as const,
-        is_active: item.is_active !== undefined ? Boolean(item.is_active) : true,
+        is_active: isActive && !isBanned,
+        is_banned: isBanned,
         po_prefix: item.po_prefix ? String(item.po_prefix).trim().toUpperCase() : (existing?.po_prefix || `PO ST${idx + 1}`),
       };
     });

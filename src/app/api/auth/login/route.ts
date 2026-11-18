@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     if (!authResult.valid || !authResult.user) {
       recordFailedLogin(ip);
       return NextResponse.json(
-        { success: false, error: 'Invalid username or password. Please check your credentials.' },
+        { success: false, error: authResult.error || 'Invalid username or password. Please check your credentials.' },
         { status: 401 }
       );
     }

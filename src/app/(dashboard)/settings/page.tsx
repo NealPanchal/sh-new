@@ -26,11 +26,13 @@ import {
   Copy,
   Lock,
   FileSpreadsheet,
+  Ban,
 } from 'lucide-react';
 import { BusinessProfile, EmployeeAccount } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn, formatDateIndian } from '@/lib/utils';
 import { exportMonthSalesToExcel } from '@/lib/excel-export';
+import { getClientAuthToken } from '@/lib/auth';
 import * as store from '@/lib/demo-store';
 
 function formatMonthYearLabel(monthKey: string): string {
@@ -224,13 +226,17 @@ export default function SettingsPage() {
     setDeleteAccountTarget(null);
 
     try {
+      const token = getClientAuthToken();
       await fetch('/api/employees', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ employees: updated }),
       });
       const activeNames = updated
-        .filter((a) => a.is_active !== false)
+        .filter((a) => a.is_active !== false && !a.is_banned)
         .map((a) => a.name.trim())
         .filter(Boolean);
       setEmployees(activeNames);
@@ -244,18 +250,78 @@ export default function SettingsPage() {
     }
   };
 
+  const handleToggleBanAccount = async (targetId: string) => {
+    const target = employeeAccounts.find((a) => a.id === targetId);
+    if (!target) return;
+    const isCurrentlyActive = target.is_active !== false && !target.is_banned;
+    const willBan = isCurrentlyActive;
+
+    const updated = employeeAccounts.map((a) => {
+      if (a.id === targetId) {
+        return {
+          ...a,
+          is_active: !willBan,
+          is_banned: willBan,
+        };
+      }
+      return a;
+    });
+    setEmployeeAccounts(updated);
+
+    try {
+      const token = getClientAuthToken();
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'toggle_ban',
+          employeeId: targetId,
+          banned: willBan,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const activeNames = updated
+          .filter((a) => a.is_active !== false && !a.is_banned)
+          .map((a) => a.name.trim())
+          .filter(Boolean);
+        setEmployees(activeNames);
+        saveProfile({ employees: activeNames });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('showhouse_employee_cache', JSON.stringify(updated));
+        }
+        if (willBan) {
+          showToast(`User "${target.name}" is now BANNED & inaccessible to all tools.`, 'error');
+        } else {
+          showToast(`User "${target.name}" has been UNBANNED and activated.`, 'success');
+        }
+      } else {
+        showToast(data.error || 'Failed to update user ban status', 'error');
+      }
+    } catch {
+      showToast('Network error while toggling ban status', 'error');
+    }
+  };
+
   const handleSaveAccounts = async () => {
     setSavingAccounts(true);
     try {
+      const token = getClientAuthToken();
       const res = await fetch('/api/employees', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ employees: employeeAccounts }),
       });
       const data = await res.json();
       if (data.success) {
         const activeNames = employeeAccounts
-          .filter((a) => a.is_active !== false)
+          .filter((a) => a.is_active !== false && !a.is_banned)
           .map((a) => a.name.trim())
           .filter(Boolean);
         setEmployees(activeNames);
@@ -720,23 +786,47 @@ export default function SettingsPage() {
                           </div>
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleUpdateAccount(idx, 'is_active', !acc.is_active)
-                            }
-                            className={cn(
-                              'text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer border transition-colors',
-                              acc.is_active !== false
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-surface-100 text-surface-500 border-surface-200 hover:bg-surface-200'
-                            )}
-                          >
-                            {acc.is_active !== false ? 'Active' : 'Disabled'}
-                          </button>
+                          {acc.is_active !== false && !acc.is_banned ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>Active</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                              <Ban size={10} className="text-rose-600" />
+                              <span>Banned</span>
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <div className="flex items-center justify-end gap-1">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleBanAccount(acc.id)}
+                              className={cn(
+                                'px-2 py-1 rounded text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors border',
+                                acc.is_active !== false && !acc.is_banned
+                                  ? 'text-rose-700 bg-rose-50/80 hover:bg-rose-100 border-rose-200'
+                                  : 'text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100 border-emerald-200'
+                              )}
+                              title={
+                                acc.is_active !== false && !acc.is_banned
+                                  ? `Ban ${acc.name} (Revoke login & tools access immediately)`
+                                  : `Unban ${acc.name} (Restore access)`
+                              }
+                            >
+                              {acc.is_active !== false && !acc.is_banned ? (
+                                <>
+                                  <Ban size={12} />
+                                  <span>Ban User</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check size={12} />
+                                  <span>Unban</span>
+                                </>
+                              )}
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleCopyCredentials(acc)}
