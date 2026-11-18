@@ -14,13 +14,14 @@ import {
   MapPin,
   X,
   FilePlus,
+  BookOpen,
 } from 'lucide-react';
 import { formatPhone, cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CustomerFormModal } from '@/components/customers/customer-form-modal';
 
 export default function CustomersPage() {
-  const { customers, deleteCustomer, showToast } = useApp();
+  const { customers, deleteCustomer, getCustomerChallans, showToast } = useApp();
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -114,6 +115,14 @@ export default function CustomersPage() {
 
                 <div className="flex items-center gap-1">
                   <Link
+                    href={`/ledger?customerId=${encodeURIComponent(c.id)}&rebuild=true`}
+                    className="p-1.5 bg-amber-50 text-amber-800 hover:bg-amber-100 rounded-md border border-amber-200 flex items-center gap-1 text-[11px] font-bold"
+                    title="1-Click: Rebuild / View Customer Ledger with all Challans"
+                  >
+                    <BookOpen size={13} />
+                    <span>Ledger ({getCustomerChallans(c.id).length})</span>
+                  </Link>
+                  <Link
                     href={`/challans/new?customerId=${c.id}`}
                     className="p-1.5 bg-primary-50 text-primary-600 rounded-md hover:bg-primary-100"
                     title="New Challan"
@@ -142,10 +151,10 @@ export default function CustomersPage() {
                     </a>
                   </div>
                 )}
-                {c.billing_address && (
+                {(c.delivery_address || c.billing_address) && (
                   <div className="flex items-center gap-1.5 text-surface-500 text-[11px] truncate">
                     <MapPin size={12} className="text-surface-400 shrink-0" />
-                    <span className="truncate">{c.billing_address}</span>
+                    <span className="truncate">{c.delivery_address || c.billing_address}</span>
                   </div>
                 )}
               </div>
@@ -163,7 +172,7 @@ export default function CustomersPage() {
                 <th>Customer / Business</th>
                 <th>Contact</th>
                 <th>Phone</th>
-                <th>Address</th>
+                <th>Delivery Address</th>
                 <th>GSTIN</th>
                 <th className="text-right">Actions</th>
               </tr>
@@ -197,11 +206,19 @@ export default function CustomersPage() {
                       )}
                     </td>
                     <td className="text-xs text-surface-500 max-w-xs truncate">
-                      {c.billing_address || '—'}
+                      {c.delivery_address || c.billing_address || '—'}
                     </td>
                     <td className="text-xs font-mono text-surface-600">{c.gstin || '—'}</td>
                     <td className="text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
+                        <Link
+                          href={`/ledger?customerId=${encodeURIComponent(c.id)}&rebuild=true`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md transition-colors shadow-2xs mr-1"
+                          title="1-Click: Generate / View Party Ledger with All Delivery Challans"
+                        >
+                          <BookOpen size={12} className="text-amber-700" />
+                          <span>New Ledger ({getCustomerChallans(c.id).length})</span>
+                        </Link>
                         <Link
                           href={`/challans/new?customerId=${c.id}`}
                           className="p-1 text-primary-600 hover:bg-primary-50 rounded"

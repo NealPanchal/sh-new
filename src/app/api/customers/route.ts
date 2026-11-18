@@ -45,10 +45,10 @@ export async function POST(req: NextRequest) {
       material_rates,
     } = body;
 
-    const custName = (name || business_name || company_name || '').trim();
+    const custName = (name || business_name || company_name || contact_person || '').trim();
     if (!custName) {
       return NextResponse.json(
-        { success: false, error: 'Customer name is required' },
+        { success: false, error: 'Contact person or customer name is required' },
         { status: 400 }
       );
     }

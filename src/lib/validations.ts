@@ -14,8 +14,8 @@ const indianPhoneRegex = /^[6-9]\d{9}$/;
 const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
 export const customerSchema = z.object({
-  business_name: z.string().min(1, 'Business name is required').max(200),
-  contact_person: z.string().max(100).optional().or(z.literal('')),
+  business_name: z.string().max(200).optional().or(z.literal('')),
+  contact_person: z.string().min(1, 'Contact person is required').max(100),
   phone: z
     .string()
     .min(10, 'Phone number is required')
@@ -26,7 +26,7 @@ export const customerSchema = z.object({
         return indianPhoneRegex.test(cleaned.slice(2));
       return false;
     }, 'Enter a valid 10-digit Indian mobile number'),
-  billing_address: z.string().min(1, 'Billing address is required').max(500),
+  billing_address: z.string().max(500).optional().or(z.literal('')),
   delivery_address: z.string().max(500).optional().or(z.literal('')),
   gstin: z
     .string()

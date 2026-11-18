@@ -1065,6 +1065,154 @@ export function deleteLedgerEntry(
   return { success: false };
 }
 
+/**
+ * Completely clear / delete a customer's ledger transactions and custom sites
+ */
+export function clearCustomerLedger(
+  customerId: string,
+  user: string
+): { success: boolean; clearedCount: number } {
+  const allCusts = getAllCustomers();
+  const cust = allCusts.find(
+    (c) =>
+      c.id === customerId ||
+      c.name?.toLowerCase() === customerId.toLowerCase() ||
+      c.business_name?.toLowerCase() === customerId.toLowerCase()
+  );
+
+  const targetId = (customerId || '').trim().toLowerCase();
+  const custId = (cust?.id || '').trim().toLowerCase();
+  const custName = (cust?.name || '').trim().toLowerCase();
+  const custBiz = (cust?.business_name || '').trim().toLowerCase();
+
+  const isMatchThisCust = (itemCustId?: string, itemCustName?: string) => {
+    const id = (itemCustId || '').trim().toLowerCase();
+    const name = (itemCustName || '').trim().toLowerCase();
+    if (targetId && (id === targetId || name === targetId)) return true;
+    if (targetId && (name.includes(targetId) || targetId.includes(name))) return true;
+    if (custId && (id === custId || name === custId)) return true;
+    if (custName && (name === custName || name.includes(custName) || custName.includes(name))) return true;
+    if (custBiz && (name === custBiz || name.includes(custBiz) || custBiz.includes(name))) return true;
+    if (
+      (targetId === 'cust_rk_sales' || targetId.includes('rk') || custName.includes('rk')) &&
+      (name.includes('r k') || name.includes('rk sales'))
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  let clearedCount = 0;
+
+  // 1. Clear manual ledger entries
+  const allManual = getManualLedgerEntries();
+  const remainingManual = allManual.filter((m) => {
+    if (isMatchThisCust(m.customer_id)) {
+      clearedCount++;
+      return false;
+    }
+    return true;
+  });
+  if (allManual.length !== remainingManual.length) {
+    saveManualLedgerEntries(remainingManual);
+  }
+
+  // 2. Clear payments for this customer
+  const allPayments = getPayments();
+  const remainingPayments = allPayments.filter((p: PaymentRecord) => {
+    if (isMatchThisCust(p.customer_id, p.customer_name)) {
+      clearedCount++;
+      return false;
+    }
+    return true;
+  });
+  if (allPayments.length !== remainingPayments.length) {
+    savePayments(remainingPayments);
+  }
+
+  // 3. Clear customer sites
+  const allSites = getCustomerSites();
+  const remainingSites = allSites.filter((s) => {
+    if (isMatchThisCust(s.customer_id)) {
+      clearedCount++;
+      return false;
+    }
+    return true;
+  });
+  if (allSites.length !== remainingSites.length) {
+    saveCustomerSites(remainingSites);
+  }
+
+  recordAuditLog({
+    entity_type: 'site_adjustment',
+    entity_id: customerId,
+    user_id: user,
+    user_name: user,
+    action: 'CLEAR_ENTIRE_CUSTOMER_LEDGER',
+    reason: `Completely deleted and cleared ledger for customer: ${customerId}`,
+  });
+
+  return { success: true, clearedCount };
+}
+
+/**
+ * Rebuild / initialize a customer's ledger from all delivery challans with 1-click
+ */
+export function rebuildCustomerLedgerFromChallans(
+  customerId: string,
+  user: string
+): { success: boolean; challansAttached: number; sitesCreated: number } {
+  const allCusts = getAllCustomers();
+  const cust = allCusts.find(
+    (c) =>
+      c.id === customerId ||
+      c.name?.toLowerCase() === customerId.toLowerCase() ||
+      c.business_name?.toLowerCase() === customerId.toLowerCase()
+  );
+
+  const targetId = (customerId || '').trim().toLowerCase();
+  const custId = (cust?.id || customerId).trim();
+  const custName = (cust?.name || cust?.business_name || '').trim().toLowerCase();
+
+  const isMatchThisCust = (c: Challan) => {
+    const cId = (c.customer_id || '').trim().toLowerCase();
+    const cName = (c.customer_name || '').trim().toLowerCase();
+    if (targetId && (cId === targetId || cName === targetId)) return true;
+    if (targetId && (cName.includes(targetId) || targetId.includes(cName))) return true;
+    if (custName && (cName === custName || cName.includes(custName) || custName.includes(cName))) return true;
+    if (
+      (targetId === 'cust_rk_sales' || targetId.includes('rk') || custName.includes('rk')) &&
+      (cName.includes('r k') || cName.includes('rk sales'))
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const allChallans = getAllChallans();
+  const matchedChallans = allChallans.filter(
+    (c) => isMatchThisCust(c) && !c.is_deleted && c.status !== 'cancelled' && c.status !== 'void'
+  );
+
+  // Auto-detect sites and save
+  const detectedSites = getSitesByCustomerId(custId, matchedChallans);
+
+  recordAuditLog({
+    entity_type: 'challan',
+    entity_id: custId,
+    user_id: user,
+    user_name: user,
+    action: 'REBUILD_LEDGER_FROM_CHALLANS',
+    reason: `Rebuilt ledger with ${matchedChallans.length} challans and ${detectedSites.length} sites`,
+  });
+
+  return {
+    success: true,
+    challansAttached: matchedChallans.length,
+    sitesCreated: detectedSites.length,
+  };
+}
+
 // ----------------------------------------------------
 // 9. PARTY LEDGER COMPUTATION (TALLY STYLE)
 // ----------------------------------------------------

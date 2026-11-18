@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   BookOpen,
   Calendar,
@@ -132,8 +132,12 @@ function renderPaymentTypeBadge(type?: string, isDebit?: boolean) {
   return <span className="text-surface-700 font-semibold">{t}</span>;
 }
 
-export default function MasterPartyLedgerPage() {
+function MasterPartyLedgerContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const paramParty = searchParams.get('party') || searchParams.get('customerId') || searchParams.get('customer');
+  const paramRebuild = searchParams.get('rebuild') === 'true';
+
   const { customers: contextCustomers, challans: contextChallans } = useApp();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'ledger' | 'sites' | 'credit' | 'tally'>('ledger');
@@ -141,6 +145,11 @@ export default function MasterPartyLedgerPage() {
   // Customer & Site lists
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('cust_rk_sales');
+
+  // Delete Entire Ledger & Rebuild states
+  const [showDeleteEntireLedgerModal, setShowDeleteEntireLedgerModal] = useState(false);
+  const [isDeletingEntireLedger, setIsDeletingEntireLedger] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
 
   // Filter toolbar
   const [fromDate, setFromDate] = useState('2024-02-01');
@@ -323,6 +332,26 @@ export default function MasterPartyLedgerPage() {
       setCustomers(contextCustomers);
     }
   }, [contextCustomers, customers.length]);
+
+  // Handle customer ID from URL search params (e.g. ?customerId=XYZ or ?party=XYZ)
+  useEffect(() => {
+    if (paramParty) {
+      const lower = paramParty.toLowerCase();
+      const matched = customers.find(
+        (c) =>
+          c.id === paramParty ||
+          c.id.toLowerCase() === lower ||
+          c.name?.toLowerCase() === lower ||
+          c.business_name?.toLowerCase() === lower ||
+          (c.name && c.name.toLowerCase().includes(lower))
+      );
+      if (matched) {
+        setSelectedCustomerId(matched.id);
+      } else {
+        setSelectedCustomerId(paramParty);
+      }
+    }
+  }, [paramParty, customers]);
 
   // Fetch ledger data whenever selected customer, date filters, or triggers change
   const fetchLedger = async () => {
@@ -1669,6 +1698,81 @@ export default function MasterPartyLedgerPage() {
     showToast(`PDF exported for ${selectedCustomer.name}!`);
   };
 
+  // Delete Entire Ledger Handler
+  const handleDeleteEntireLedger = async () => {
+    if (!selectedCustomerId) return;
+    try {
+      setIsDeletingEntireLedger(true);
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`/api/ledger?customer_id=${encodeURIComponent(selectedCustomerId)}&clear_all=true`, {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (res.ok) {
+        showToast(`Entire ledger for ${selectedCustomer?.name || 'Customer'} has been deleted and reset.`, 'success');
+        setShowDeleteEntireLedgerModal(false);
+        await fetchLedger();
+        await fetchCustomerChallans(selectedCustomerId);
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to delete ledger', 'error');
+      }
+    } catch {
+      showToast('Error deleting customer ledger', 'error');
+    } finally {
+      setIsDeletingEntireLedger(false);
+    }
+  };
+
+  // Rebuild Ledger from all Customer Challans (1-Click)
+  const handleRebuildLedgerFromChallans = async () => {
+    if (!selectedCustomerId) return;
+    try {
+      setIsRebuilding(true);
+      const token = getClientAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch('/api/ledger', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'rebuild',
+          customer_id: selectedCustomerId,
+        }),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        showToast(`Ledger synchronized with ${d.challansAttached || 0} challans and ${d.sitesCreated || 0} sites!`, 'success');
+        await fetchLedger();
+        await fetchCustomerChallans(selectedCustomerId);
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to rebuild ledger', 'error');
+      }
+    } catch {
+      showToast('Error rebuilding customer ledger', 'error');
+    } finally {
+      setIsRebuilding(false);
+    }
+  };
+
+  // Auto rebuild if URL has ?rebuild=true
+  useEffect(() => {
+    if (paramRebuild && selectedCustomerId) {
+      handleRebuildLedgerFromChallans();
+    }
+  }, [paramRebuild, selectedCustomerId]);
+
   // If user is employee, show restricted access
   if (currentUser?.role === 'employee') {
     return (
@@ -1857,6 +1961,27 @@ export default function MasterPartyLedgerPage() {
                   <FilePlus size={14} className="text-[#ea580c]" />
                   <span>+ Party Challan</span>
                 </Link>
+
+                <button
+                  type="button"
+                  onClick={handleRebuildLedgerFromChallans}
+                  disabled={isRebuilding}
+                  className="px-2.5 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50"
+                  title="Auto-fetch and attach all Delivery Challans for this Customer"
+                >
+                  <RefreshCw size={13} className={isRebuilding ? "animate-spin" : ""} />
+                  <span>Rebuild Ledger</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteEntireLedgerModal(true)}
+                  className="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+                  title="Delete & Reset Entire Ledger for this Customer"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete Ledger</span>
+                </button>
 
                 <button
                   type="button"
@@ -4059,6 +4184,71 @@ export default function MasterPartyLedgerPage() {
           </div>
         </div>
       )}
+
+      {/* ============================================================ */}
+      {/* MODAL: DELETE ENTIRE CUSTOMER LEDGER                         */}
+      {/* ============================================================ */}
+      {showDeleteEntireLedgerModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-rose-200 p-5 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-sm text-surface-950">
+                  Delete &amp; Reset Entire Customer Ledger?
+                </h3>
+                <p className="text-xs text-surface-600 leading-relaxed">
+                  Are you sure you want to completely delete the ledger records for <b className="text-surface-900">{selectedCustomer?.name || 'this customer'}</b>?
+                </p>
+                <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-[11px] text-rose-800 space-y-1 mt-2">
+                  <p className="font-bold">⚠️ What will happen:</p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-rose-700">
+                    <li>All manual ledger adjustments &amp; payment receipts will be deleted.</li>
+                    <li>Customer site adjustments will be reset.</li>
+                    <li>Original delivery challans remain safe and can be re-attached at any time via <b>&quot;Rebuild Ledger&quot;</b>.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-surface-100">
+              <button
+                type="button"
+                onClick={() => setShowDeleteEntireLedgerModal(false)}
+                disabled={isDeletingEntireLedger}
+                className="px-3 py-1.5 text-xs font-semibold text-surface-600 hover:bg-surface-100 rounded-lg cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteEntireLedger}
+                disabled={isDeletingEntireLedger}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 size={13} />
+                <span>{isDeletingEntireLedger ? 'Deleting...' : 'Yes, Delete Entire Ledger'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function MasterPartyLedgerPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="w-8 h-8 border-2 border-[#ea580c] border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <MasterPartyLedgerContent />
+    </React.Suspense>
   );
 }

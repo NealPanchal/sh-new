@@ -178,13 +178,19 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       (m) => m.particulars?.trim() || m.code?.trim() || m.company_name?.trim() || m.rate > 0
     );
 
+    const cleanContact = data.contact_person.trim();
+    const cleanBusiness = data.business_name?.trim() || cleanContact;
+    const cleanDelivery = data.delivery_address?.trim() || '';
+    const cleanBilling = cleanDelivery || 'Showhouse Site';
+
     if (editId) {
       updateCustomer(editId, {
-        business_name: data.business_name,
-        contact_person: data.contact_person || null,
+        name: cleanBusiness,
+        business_name: cleanBusiness,
+        contact_person: cleanContact,
         phone: data.phone,
-        billing_address: data.billing_address,
-        delivery_address: data.delivery_address || null,
+        billing_address: cleanBilling,
+        delivery_address: cleanDelivery || null,
         gstin: data.gstin ? data.gstin.toUpperCase() : null,
         notes: data.notes || null,
         material_rates: validRates,
@@ -192,11 +198,12 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       showToast('Customer updated successfully', 'success');
     } else {
       createCustomer({
-        business_name: data.business_name,
-        contact_person: data.contact_person || null,
+        name: cleanBusiness,
+        business_name: cleanBusiness,
+        contact_person: cleanContact,
         phone: data.phone,
-        billing_address: data.billing_address,
-        delivery_address: data.delivery_address || null,
+        billing_address: cleanBilling,
+        delivery_address: cleanDelivery || null,
         gstin: data.gstin ? data.gstin.toUpperCase() : null,
         notes: data.notes || null,
         material_rates: validRates,
@@ -222,16 +229,15 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-4 sm:p-5 space-y-4">
-          <div>
-            <label className="label">Business / Customer Name *</label>
-            <input {...register('business_name')} className={`input ${errors.business_name ? 'input-error' : ''}`} placeholder="e.g. Sharma Interiors" />
-            {errors.business_name && <p className="error-text">{errors.business_name.message}</p>}
-          </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">Contact Person</label>
-              <input {...register('contact_person')} className="input" placeholder="e.g. Rajesh Sharma" />
+              <label className="label">Contact Person *</label>
+              <input
+                {...register('contact_person')}
+                className={`input ${errors.contact_person ? 'input-error' : ''}`}
+                placeholder="e.g. Rajesh Sharma"
+              />
+              {errors.contact_person && <p className="error-text">{errors.contact_person.message}</p>}
             </div>
 
             <div>
@@ -251,36 +257,35 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">Billing Address *</label>
-              <textarea
-                {...register('billing_address')}
-                className={`input min-h-[70px] ${errors.billing_address ? 'input-error' : ''}`}
-                placeholder="Complete billing address"
-                rows={2}
+              <label className="label">Business / Customer Name (Optional)</label>
+              <input
+                {...register('business_name')}
+                className="input"
+                placeholder="e.g. Sharma Interiors (Optional)"
               />
-              {errors.billing_address && <p className="error-text">{errors.billing_address.message}</p>}
+              {errors.business_name && <p className="error-text">{errors.business_name.message}</p>}
             </div>
 
             <div>
-              <label className="label">Delivery Address</label>
-              <textarea
-                {...register('delivery_address')}
-                className="input min-h-[70px]"
-                placeholder="If different from billing address"
-                rows={2}
+              <label className="label">GSTIN (Optional)</label>
+              <input
+                {...register('gstin')}
+                className={`input uppercase font-mono ${errors.gstin ? 'input-error' : ''}`}
+                placeholder="22AAAAA0000A1Z5"
+                maxLength={15}
               />
+              {errors.gstin && <p className="error-text">{errors.gstin.message}</p>}
             </div>
           </div>
 
           <div>
-            <label className="label">GSTIN</label>
-            <input
-              {...register('gstin')}
-              className={`input uppercase font-mono ${errors.gstin ? 'input-error' : ''}`}
-              placeholder="22AAAAA0000A1Z5"
-              maxLength={15}
+            <label className="label">Delivery / Site Address</label>
+            <textarea
+              {...register('delivery_address')}
+              className="input min-h-[60px]"
+              placeholder="e.g. Kalpataru Paramount, Kapurbawdi, Thane (W)"
+              rows={2}
             />
-            {errors.gstin && <p className="error-text">{errors.gstin.message}</p>}
           </div>
 
           {/* Material & Rate Contract Matrix (Room, Particulars, Code, Company, Rate) */}

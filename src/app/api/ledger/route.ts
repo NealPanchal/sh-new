@@ -44,6 +44,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    // 1-Click Rebuild customer ledger with all challans
+    if (body.action === 'rebuild' || body.action === 'rebuild_customer_ledger') {
+      const { customer_id } = body;
+      if (!customer_id) {
+        return NextResponse.json({ success: false, error: 'Customer ID is required' }, { status: 400 });
+      }
+      const { rebuildCustomerLedgerFromChallans } = await import('@/lib/server-accounting');
+      const result = rebuildCustomerLedgerFromChallans(customer_id, operatorName);
+      return NextResponse.json(result);
+    }
+
     const { customer_id, date, particulars, payment_type, voucher_no, debit, credit, site_name, challan_id } = body;
 
     if (!customer_id || !particulars || (!debit && !credit)) {
@@ -352,6 +364,16 @@ export async function DELETE(req: NextRequest) {
     let bodyData: any = {};
     if (req.headers.get('content-type')?.includes('application/json')) {
       bodyData = await req.json().catch(() => ({}));
+    }
+
+    const customerId = searchParams.get('customer_id') || bodyData.customer_id;
+    const isClearAll = searchParams.get('clear_all') === 'true' || searchParams.get('all') === 'true' || bodyData.clear_all === true || bodyData.action === 'clear_all';
+
+    // Wipe / Delete entire ledger for customer
+    if (isClearAll && customerId) {
+      const { clearCustomerLedger } = await import('@/lib/server-accounting');
+      const clearRes = clearCustomerLedger(customerId, operatorName);
+      return NextResponse.json({ ...clearRes });
     }
 
     const targetId = id || bodyData.id || bodyData.entryId;
