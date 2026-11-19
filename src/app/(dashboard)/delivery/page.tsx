@@ -26,7 +26,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { useApp } from '@/lib/context';
-import { Challan } from '@/types';
+import { Challan, ChallanStatus } from '@/types';
 import { getCurrentUser, isAdmin } from '@/lib/auth';
 import { formatDateIndian, formatCurrency, cn } from '@/lib/utils';
 import {
@@ -51,7 +51,16 @@ export default function DeliveryManagementPage() {
 
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [statusTab, setStatusTab] = useState<'all' | 'pending' | 'out_for_delivery' | 'delivered'>('pending');
+  const [statusTab, setStatusTab] = useState<
+    | 'all'
+    | 'pending'
+    | 'approved'
+    | 'out_for_delivery'
+    | 'delivered'
+    | 'partially_delivered'
+    | 'cancelled'
+    | 'goods_returned'
+  >('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -68,15 +77,19 @@ export default function DeliveryManagementPage() {
   // Filter valid, non-deleted challans
   const activeChallans = useMemo(() => {
     return (challans || []).filter(
-      (c) => !c.is_deleted && c.status !== 'cancelled' && c.status !== 'void'
+      (c) => !c.is_deleted && c.status !== 'void'
     );
   }, [challans, dataVersion]);
 
   // Status counts for top stats
   const stats = useMemo(() => {
     let pending = 0;
+    let approved = 0;
     let outForDelivery = 0;
     let delivered = 0;
+    let partiallyDelivered = 0;
+    let cancelled = 0;
+    let goodsReturned = 0;
 
     activeChallans.forEach((c) => {
       const isDelivered = c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean(c.is_delivered);
@@ -84,6 +97,14 @@ export default function DeliveryManagementPage() {
         delivered++;
       } else if (c.status === 'out_for_delivery') {
         outForDelivery++;
+      } else if (c.status === 'approved') {
+        approved++;
+      } else if (c.status === 'partially_delivered') {
+        partiallyDelivered++;
+      } else if (c.status === 'cancelled') {
+        cancelled++;
+      } else if (c.status === 'goods_returned') {
+        goodsReturned++;
       } else {
         pending++;
       }
@@ -92,8 +113,12 @@ export default function DeliveryManagementPage() {
     return {
       total: activeChallans.length,
       pending,
+      approved,
       outForDelivery,
       delivered,
+      partiallyDelivered,
+      cancelled,
+      goodsReturned,
     };
   }, [activeChallans]);
 
@@ -103,9 +128,15 @@ export default function DeliveryManagementPage() {
       const isDelivered = c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean(c.is_delivered);
 
       // Status tab filter
-      if (statusTab === 'delivered' && !isDelivered) return false;
-      if (statusTab === 'out_for_delivery' && (c.status !== 'out_for_delivery' || isDelivered)) return false;
-      if (statusTab === 'pending' && (isDelivered || c.status === 'out_for_delivery')) return false;
+      if (statusTab !== 'all') {
+        if (statusTab === 'delivered' && !isDelivered) return false;
+        if (statusTab === 'out_for_delivery' && (c.status !== 'out_for_delivery' || isDelivered)) return false;
+        if (statusTab === 'pending' && (isDelivered || (c.status !== 'pending' && c.status !== 'draft'))) return false;
+        if (statusTab === 'approved' && c.status !== 'approved') return false;
+        if (statusTab === 'partially_delivered' && c.status !== 'partially_delivered') return false;
+        if (statusTab === 'cancelled' && c.status !== 'cancelled') return false;
+        if (statusTab === 'goods_returned' && c.status !== 'goods_returned') return false;
+      }
 
       // Customer filter
       if (selectedCustomerId !== 'all') {
@@ -210,6 +241,51 @@ export default function DeliveryManagementPage() {
       showToast(`Challan ${challan.challan_number} is now OUT FOR DELIVERY (In Transit).`, 'info');
     } catch (err: any) {
       showToast(err.message || 'Failed to update status', 'error');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Handler: Update Delivery Status (Dropdown & Checkbox)
+  const handleUpdateDeliveryStatus = async (
+    challan: Challan,
+    newStatus: ChallanStatus,
+    confirmed?: boolean
+  ) => {
+    try {
+      setUpdatingId(challan.id);
+      const isDelivering = newStatus === 'delivered' || confirmed === true;
+
+      if (isDelivering) {
+        await handleMarkAsDelivered(challan);
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const updatedChallanData: Partial<Challan> = {
+        status: newStatus,
+        delivery_status: newStatus,
+        is_delivered: false,
+        updated_at: now,
+      };
+
+      await updateChallanStatus(challan.id, newStatus);
+      await updateChallan(challan.id, updatedChallanData);
+
+      const statusLabels: Record<string, string> = {
+        pending: 'Pending',
+        approved: 'Approved',
+        out_for_delivery: 'Out for Delivery (In Transit)',
+        delivered: 'Delivered',
+        partially_delivered: 'Partially Delivered',
+        cancelled: 'Cancelled',
+        goods_returned: 'Goods Returned',
+      };
+
+      showToast(`Challan ${challan.challan_number} status updated to ${statusLabels[newStatus] || newStatus}`, 'info');
+    } catch (err: any) {
+      console.error('Failed to update status:', err);
+      showToast(err.message || 'Error updating status', 'error');
     } finally {
       setUpdatingId(null);
     }
@@ -415,12 +491,24 @@ export default function DeliveryManagementPage() {
       <div className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs space-y-3">
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           {/* Status Tabs */}
-          <div className="flex items-center gap-1 bg-surface-100 p-1 rounded-xl shrink-0 overflow-x-auto">
+          <div className="flex items-center gap-1 bg-surface-100 p-1 rounded-xl shrink-0 overflow-x-auto max-w-full">
+            <button
+              type="button"
+              onClick={() => setStatusTab('all')}
+              className={cn(
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
+                statusTab === 'all'
+                  ? 'bg-white text-surface-900 shadow-xs'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              All ({stats.total})
+            </button>
             <button
               type="button"
               onClick={() => setStatusTab('pending')}
               className={cn(
-                'px-3 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap',
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
                 statusTab === 'pending'
                   ? 'bg-white text-amber-800 shadow-xs'
                   : 'text-surface-600 hover:text-surface-900'
@@ -430,21 +518,33 @@ export default function DeliveryManagementPage() {
             </button>
             <button
               type="button"
+              onClick={() => setStatusTab('approved')}
+              className={cn(
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
+                statusTab === 'approved'
+                  ? 'bg-white text-indigo-800 shadow-xs'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              Approved ({stats.approved})
+            </button>
+            <button
+              type="button"
               onClick={() => setStatusTab('out_for_delivery')}
               className={cn(
-                'px-3 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap',
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
                 statusTab === 'out_for_delivery'
                   ? 'bg-white text-blue-700 shadow-xs'
                   : 'text-surface-600 hover:text-surface-900'
               )}
             >
-              In Transit ({stats.outForDelivery})
+              Out for Delivery ({stats.outForDelivery})
             </button>
             <button
               type="button"
               onClick={() => setStatusTab('delivered')}
               className={cn(
-                'px-3 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap',
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
                 statusTab === 'delivered'
                   ? 'bg-white text-emerald-800 shadow-xs'
                   : 'text-surface-600 hover:text-surface-900'
@@ -454,15 +554,39 @@ export default function DeliveryManagementPage() {
             </button>
             <button
               type="button"
-              onClick={() => setStatusTab('all')}
+              onClick={() => setStatusTab('partially_delivered')}
               className={cn(
-                'px-3 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap',
-                statusTab === 'all'
-                  ? 'bg-white text-surface-900 shadow-xs'
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
+                statusTab === 'partially_delivered'
+                  ? 'bg-white text-teal-800 shadow-xs'
                   : 'text-surface-600 hover:text-surface-900'
               )}
             >
-              All ({stats.total})
+              Partially Delivered ({stats.partiallyDelivered})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusTab('cancelled')}
+              className={cn(
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
+                statusTab === 'cancelled'
+                  ? 'bg-white text-rose-800 shadow-xs'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              Cancelled ({stats.cancelled})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusTab('goods_returned')}
+              className={cn(
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
+                statusTab === 'goods_returned'
+                  ? 'bg-white text-purple-800 shadow-xs'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              Goods Returned ({stats.goodsReturned})
             </button>
           </div>
 
@@ -614,34 +738,74 @@ export default function DeliveryManagementPage() {
                         </div>
                       </td>
 
-                      {/* Delivery Status Badge */}
-                      <td className="py-3 px-3 align-top text-center whitespace-nowrap">
-                        {isDelivered ? (
-                          <div className="inline-flex flex-col items-center">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              <CheckCircle2 size={12} />
-                              <span>DELIVERED</span>
-                            </span>
-                            <span className="text-[9px] text-emerald-700 font-semibold mt-0.5">
-                              In Party Ledger ✓
-                            </span>
-                            {c.delivered_at && (
-                              <span className="text-[9px] text-surface-400">
-                                {formatDateIndian(c.delivered_at)}
-                              </span>
-                            )}
+                      {/* Delivery Status & Dropdown (Checkbox + 7 Status Options) */}
+                      <td className="py-3 px-3 align-top min-w-[210px]">
+                        <div className="space-y-1.5 bg-surface-50/80 p-2 rounded-lg border border-surface-200">
+                          {/* [ ] Mark as Delivered Checkbox */}
+                          <label className="flex items-center gap-2 cursor-pointer font-bold text-zinc-900 select-none text-xs">
+                            <input
+                              type="checkbox"
+                              checked={isDelivered}
+                              disabled={isUpdating}
+                              onChange={(e) => {
+                                const isChecked = e.target.checked;
+                                handleUpdateDeliveryStatus(c, isChecked ? 'delivered' : 'pending', isChecked);
+                              }}
+                              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-400 cursor-pointer disabled:opacity-50"
+                            />
+                            <span className="text-xs">Mark as Delivered</span>
+                          </label>
+
+                          {/* Status Dropdown with 7 exact options */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-zinc-500 font-semibold text-[11px]">Status:</span>
+                            <select
+                              value={c.status || 'pending'}
+                              disabled={isUpdating}
+                              onChange={(e) => {
+                                const newStatus = e.target.value as ChallanStatus;
+                                handleUpdateDeliveryStatus(c, newStatus, newStatus === 'delivered');
+                              }}
+                              className={cn(
+                                "px-2 py-0.5 rounded-md border text-xs font-bold shadow-2xs cursor-pointer flex-1",
+                                isDelivered
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                  : isOut
+                                  ? "bg-blue-50 text-blue-800 border-blue-300"
+                                  : c.status === 'approved'
+                                  ? "bg-indigo-50 text-indigo-800 border-indigo-300"
+                                  : c.status === 'partially_delivered'
+                                  ? "bg-teal-50 text-teal-800 border-teal-300"
+                                  : c.status === 'cancelled'
+                                  ? "bg-rose-50 text-rose-800 border-rose-300"
+                                  : c.status === 'goods_returned'
+                                  ? "bg-purple-50 text-purple-800 border-purple-300"
+                                  : "bg-amber-50 text-amber-800 border-amber-300"
+                              )}
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="approved">Approved</option>
+                              <option value="out_for_delivery">Out for Delivery</option>
+                              <option value="delivered">Delivered</option>
+                              <option value="partially_delivered">Partially Delivered</option>
+                              <option value="cancelled">Cancelled</option>
+                              <option value="goods_returned">Goods Returned</option>
+                            </select>
                           </div>
-                        ) : isOut ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
-                            <Truck size={12} />
-                            <span>OUT FOR DELIVERY</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">
-                            <Clock size={12} />
-                            <span>PENDING DELIVERY</span>
-                          </span>
-                        )}
+
+                          {/* Ledger Status Note */}
+                          {isDelivered && (
+                            <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 pt-0.5">
+                              <CheckCircle2 size={11} className="text-emerald-600" />
+                              <span>In Party Ledger ✓</span>
+                              {c.delivered_at && (
+                                <span className="text-surface-400 font-normal">
+                                  ({formatDateIndian(c.delivered_at)})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       {/* Actions */}

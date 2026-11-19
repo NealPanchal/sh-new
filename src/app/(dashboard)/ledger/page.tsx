@@ -134,6 +134,89 @@ function renderPaymentTypeBadge(type?: string, isDebit?: boolean) {
   return <span className="text-surface-700 font-semibold">{t}</span>;
 }
 
+interface LocalManualEntry {
+  id: string;
+  customer_id: string;
+  customer_name?: string;
+  date: string;
+  particulars: string;
+  payment_type: string;
+  voucher_no: string;
+  debit: number;
+  credit: number;
+  site_name?: string;
+  challan_id?: string;
+  created_at?: string;
+  created_by?: string;
+  reason?: string;
+}
+
+const LOCAL_MANUAL_ENTRIES_KEY = 'showhouse_manual_ledger_entries';
+
+function getLocalManualEntries(): LocalManualEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_MANUAL_ENTRIES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalManualEntry(entry: LocalManualEntry) {
+  if (typeof window === 'undefined') return;
+  try {
+    const entries = getLocalManualEntries();
+    const idx = entries.findIndex(
+      (e) =>
+        e.id === entry.id ||
+        (entry.voucher_no && e.voucher_no && e.voucher_no.toLowerCase() === entry.voucher_no.toLowerCase())
+    );
+    if (idx >= 0) {
+      entries[idx] = { ...entries[idx], ...entry };
+    } else {
+      entries.push(entry);
+    }
+    localStorage.setItem(LOCAL_MANUAL_ENTRIES_KEY, JSON.stringify(entries));
+  } catch (err) {
+    console.warn('saveLocalManualEntry note:', err);
+  }
+}
+
+function removeLocalManualEntry(id: string, voucherNo?: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const entries = getLocalManualEntries();
+    const filtered = entries.filter((e) => {
+      if (e.id === id) return false;
+      if (voucherNo && e.voucher_no && e.voucher_no.toLowerCase() === voucherNo.toLowerCase()) return false;
+      return true;
+    });
+    localStorage.setItem(LOCAL_MANUAL_ENTRIES_KEY, JSON.stringify(filtered));
+  } catch (err) {
+    console.warn('removeLocalManualEntry note:', err);
+  }
+}
+
+function clearLocalManualEntriesForCustomer(customerId: string, customerName?: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const entries = getLocalManualEntries();
+    const targetId = (customerId || '').trim().toLowerCase();
+    const targetName = (customerName || '').trim().toLowerCase();
+    const filtered = entries.filter((e) => {
+      const eId = (e.customer_id || '').trim().toLowerCase();
+      const eName = (e.customer_name || '').trim().toLowerCase();
+      if (targetId && (eId === targetId || eName === targetId)) return false;
+      if (targetName && (eName === targetName || eId === targetName)) return false;
+      return true;
+    });
+    localStorage.setItem(LOCAL_MANUAL_ENTRIES_KEY, JSON.stringify(filtered));
+  } catch (err) {
+    console.warn('clearLocalManualEntriesForCustomer note:', err);
+  }
+}
+
 function MasterPartyLedgerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -415,6 +498,7 @@ function MasterPartyLedgerContent() {
       });
 
       const params = new URLSearchParams({ customerId: selectedCustomerId });
+      if (custName) params.append('customerName', custName);
       if (fromDate) params.append('fromDate', fromDate);
       if (toDate) params.append('toDate', toDate);
       if (typeFilter && typeFilter !== 'all') params.append('type', typeFilter);
@@ -446,6 +530,25 @@ function MasterPartyLedgerContent() {
         };
       }
 
+      // Sync any manual entries returned from server into local persistence
+      (baseLedger.entries || []).forEach((e: any) => {
+        if (e.source_type === 'manual') {
+          saveLocalManualEntry({
+            id: e.id,
+            customer_id: selectedCustomerId,
+            customer_name: custName,
+            date: e.date,
+            particulars: e.particulars,
+            payment_type: e.payment_type || (e.debit > 0 ? 'Sales GST' : 'Receipt'),
+            voucher_no: e.reference,
+            debit: e.debit,
+            credit: e.credit,
+            site_name: e.site_name,
+            challan_id: e.challan_id,
+          });
+        }
+      });
+
       // Merge any client-side delivered challans that are not yet in baseLedger.entries
       const existingRefKeys = new Set(
         (baseLedger.entries || []).map((e: any) => (e.reference || '').trim().toLowerCase())
@@ -455,6 +558,44 @@ function MasterPartyLedgerContent() {
       );
 
       let mergedEntries = [...(baseLedger.entries || [])];
+
+      // Merge local manual entries for this customer so transactions never vanish
+      const localEntries = getLocalManualEntries();
+      localEntries.forEach((lme) => {
+        const lId = (lme.customer_id || '').trim().toLowerCase();
+        const lName = (lme.customer_name || '').trim().toLowerCase();
+        let matches = false;
+        if (targetId && (lId === targetId || lName === targetId)) matches = true;
+        if (targetName && (lName === targetName || lId === targetName || lName.includes(targetName) || targetName.includes(lName))) matches = true;
+
+        if (!matches) return;
+
+        const refKey = (lme.voucher_no || '').trim().toLowerCase();
+        const exists = mergedEntries.some(
+          (e: any) =>
+            (e.id && e.id === lme.id) ||
+            (refKey && e.reference && e.reference.trim().toLowerCase() === refKey)
+        );
+
+        if (!exists) {
+          const isDebit = (Number(lme.debit) || 0) > 0;
+          mergedEntries.push({
+            id: lme.id,
+            date: toInputDateFormat(lme.date),
+            particulars: lme.particulars,
+            reference: lme.voucher_no,
+            voucher_type: isDebit ? 'sales_gst' : 'receipt',
+            source_type: 'manual',
+            payment_type: (lme.payment_type as any) || (isDebit ? 'Sales GST' : 'Receipt'),
+            site_name: lme.site_name || undefined,
+            debit: Number(lme.debit) || 0,
+            credit: Number(lme.credit) || 0,
+            running_balance: 0,
+            challan_id: lme.challan_id || undefined,
+            is_paid: !isDebit,
+          });
+        }
+      });
 
       matchingContextChallans.forEach((c: any) => {
         const vch = (c.challan_number || c.reference_number || '').trim().toLowerCase();
@@ -1515,6 +1656,9 @@ function MasterPartyLedgerContent() {
         await deleteChallan(chId);
       }
 
+      // Remove from local persistence
+      removeLocalManualEntry(toDelete.id, toDelete.reference);
+
       setEntryToDelete(null);
 
       // 3. API deletion call
@@ -1697,7 +1841,24 @@ function MasterPartyLedgerContent() {
       };
     });
 
-    // 2. Persist to server API in background
+    const custName = (selectedCustomer?.name || selectedCustomer?.business_name || '').trim();
+
+    // 2. Persist to local storage immediately so entries NEVER vanish
+    saveLocalManualEntry({
+      id: newEntry.id,
+      customer_id: custId,
+      customer_name: custName || undefined,
+      date: safeDate,
+      particulars: formattedParticulars,
+      payment_type: safeType,
+      voucher_no: safeVoucher,
+      debit: isDebit ? numAmt : 0,
+      credit: !isDebit ? numAmt : 0,
+      site_name: safeSite || undefined,
+      challan_id: selectedChallanForEntry || undefined,
+    });
+
+    // 3. Persist to server API in background
     try {
       const token = getClientAuthToken();
       const headers: Record<string, string> = {
@@ -1710,6 +1871,7 @@ function MasterPartyLedgerContent() {
         headers,
         body: JSON.stringify({
           customer_id: custId,
+          customer_name: custName || undefined,
           date: safeDate,
           particulars: formattedParticulars,
           payment_type: safeType,
@@ -1721,7 +1883,7 @@ function MasterPartyLedgerContent() {
         }),
       });
 
-      await fetchLedger();
+      await fetchLedger(true);
     } catch (err) {
       console.warn('Server ledger save note:', err);
     }
@@ -1803,6 +1965,21 @@ function MasterPartyLedgerContent() {
           reference_number: editEntryVoucherNo.trim() || undefined,
         });
       }
+
+      // Update local storage persistence
+      saveLocalManualEntry({
+        id: editingEntry.id,
+        customer_id: selectedCustomer?.id || selectedCustomerId,
+        customer_name: (selectedCustomer?.name || selectedCustomer?.business_name || '').trim() || undefined,
+        date: toInputDateFormat(editEntryDate),
+        particulars: editEntryParticulars.trim(),
+        payment_type: editEntryType,
+        voucher_no: editEntryVoucherNo.trim(),
+        debit: isDebit ? numAmt : 0,
+        credit: !isDebit ? numAmt : 0,
+        site_name: editEntrySiteName.trim() || undefined,
+        challan_id: editingEntry.challan_id,
+      });
 
       const token = getClientAuthToken();
       const headers: Record<string, string> = {
@@ -1893,12 +2070,26 @@ function MasterPartyLedgerContent() {
         return;
       }
 
+      // Persist payment receipt to local storage so payments never vanish
+      saveLocalManualEntry({
+        id: d.payment?.id || `pay_${Date.now()}`,
+        customer_id: selectedCustomerId,
+        customer_name: (selectedCustomer.name || selectedCustomer.business_name || '').trim() || undefined,
+        date: payDate,
+        particulars: `By ${payMode.toUpperCase()} PAYMENT${payRef.trim() ? ` [${payRef.trim()}]` : ''}`,
+        payment_type: payMode.toUpperCase(),
+        voucher_no: d.payment?.receipt_number || `REC-${Date.now().toString().slice(-4)}`,
+        debit: 0,
+        credit: numAmt,
+        site_name: paySiteName || undefined,
+      });
+
       showToast(`Payment of ₹${numAmt.toLocaleString('en-IN')} recorded & credited to ledger!`);
       setShowPaymentModal(false);
       setPayAmount('');
       setPayRef('');
       setPayNotes('');
-      await fetchLedger();
+      await fetchLedger(true);
     } catch {
       showToast('Network error recording payment', 'error');
     } finally {
@@ -1944,6 +2135,7 @@ function MasterPartyLedgerContent() {
       });
 
       if (res.ok) {
+        clearLocalManualEntriesForCustomer(selectedCustomerId, selectedCustomer?.name);
         showToast(`Entire ledger for ${selectedCustomer?.name || 'Customer'} has been deleted and reset.`, 'success');
         setShowDeleteEntireLedgerModal(false);
         const initialOpening = Number(selectedCustomer?.opening_balance) || 0;
@@ -2291,14 +2483,18 @@ function MasterPartyLedgerContent() {
             {/* Customer / Party Details (Centered) */}
             <div className="text-center space-y-0.5 max-w-md mx-auto">
               <h2 className="text-xl sm:text-2xl font-black text-surface-950 tracking-tight">
-                {selectedCustomer.name || selectedCustomer.business_name || 'R K Sales'}
+                {(selectedCustomer.name || '').trim() ||
+                  (selectedCustomer.business_name || '').trim() ||
+                  (selectedCustomer.contact_person || '').trim() ||
+                  'Customer Ledger'}
               </h2>
               <p className="text-xs font-bold text-surface-700">
                 Ledger Account
               </p>
               <div className="text-[11px] text-surface-600 leading-snug whitespace-pre-line pt-0.5">
                 {selectedCustomer.billing_address ||
-                  '3rd Floor, Building No. A-4,\nFlat No 307,\nAvadh Complex, Kasheli Village,\nBhiwandi Railway Station,\nKasheli Bhiwandi\nThane-421302'}
+                  selectedCustomer.delivery_address ||
+                  'LBS marg Nr. Makhmali Talao Thane'}
               </div>
             </div>
 

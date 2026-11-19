@@ -12,6 +12,7 @@ import {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const customerId = searchParams.get('customerId');
+  const customerName = searchParams.get('customerName') || undefined;
   const siteId = searchParams.get('siteId') || undefined;
   const siteName = searchParams.get('siteName') || undefined;
   const fromDate = searchParams.get('fromDate') || undefined;
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = computeCustomerLedger(customerId, {
+      customerName,
       siteId,
       siteName,
       fromDate,
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(result);
     }
 
-    const { customer_id, date, particulars, payment_type, voucher_no, debit, credit, site_name, challan_id } = body;
+    const { customer_id, customer_name, date, particulars, payment_type, voucher_no, debit, credit, site_name, challan_id } = body;
 
     if (!customer_id || !particulars || (!debit && !credit)) {
       return NextResponse.json(
@@ -76,6 +78,7 @@ export async function POST(req: NextRequest) {
     const entry: ManualLedgerEntry = {
       id: `mle_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       customer_id,
+      customer_name: customer_name ? customer_name.trim() : undefined,
       date: date || new Date().toISOString().slice(0, 10),
       particulars: particulars.trim(),
       payment_type: payment_type || (debit > 0 ? 'Sales GST' : 'Receipt'),

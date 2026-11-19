@@ -29,15 +29,35 @@ import {
   CustomerCreditStatus,
 } from '@/types';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const SEED_DATA_DIR = path.join(process.cwd(), 'data');
+const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const DATA_DIR = IS_SERVERLESS ? path.join('/tmp', 'showhouse-data') : SEED_DATA_DIR;
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 
 function ensureDataDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      if (IS_SERVERLESS && fs.existsSync(SEED_DATA_DIR)) {
+        try {
+          const files = fs.readdirSync(SEED_DATA_DIR);
+          files.forEach((file) => {
+            const src = path.join(SEED_DATA_DIR, file);
+            const dest = path.join(DATA_DIR, file);
+            if (fs.statSync(src).isFile() && !fs.existsSync(dest)) {
+              fs.copyFileSync(src, dest);
+            }
+          });
+        } catch (err) {
+          console.warn('Seed copy note:', err);
+        }
+      }
+    }
+    if (!fs.existsSync(BACKUP_DIR)) {
+      fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('ensureDataDir note:', err);
   }
 }
 
@@ -46,7 +66,19 @@ function readJsonFile<T>(filename: string, fallback: T): T {
     ensureDataDir();
     const filePath = path.join(DATA_DIR, filename);
     if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2), 'utf-8');
+      const seedPath = path.join(SEED_DATA_DIR, filename);
+      if (fs.existsSync(seedPath)) {
+        const seedRaw = fs.readFileSync(seedPath, 'utf-8');
+        if (seedRaw.trim()) {
+          try {
+            fs.writeFileSync(filePath, seedRaw, 'utf-8');
+          } catch {}
+          return JSON.parse(seedRaw);
+        }
+      }
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2), 'utf-8');
+      } catch {}
       return fallback;
     }
     const raw = fs.readFileSync(filePath, 'utf-8');
@@ -65,9 +97,11 @@ function writeJsonFile<T>(filename: string, data: T, backup = false): void {
     const content = JSON.stringify(data, null, 2);
 
     if (backup) {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupPath = path.join(BACKUP_DIR, `${filename.replace('.json', '')}-${ts}.json`);
-      fs.writeFileSync(backupPath, content, 'utf-8');
+      try {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = path.join(BACKUP_DIR, `${filename.replace('.json', '')}-${ts}.json`);
+        fs.writeFileSync(backupPath, content, 'utf-8');
+      } catch {}
     }
 
     // Atomic write via temp file + rename to prevent corruption or partial writes
@@ -594,6 +628,7 @@ export function deleteCustomerSite(siteId: string, user: string): boolean {
 export interface ManualLedgerEntry {
   id: string;
   customer_id: string;
+  customer_name?: string;
   date: string;
   particulars: string;
   payment_type: 'Receipt' | 'Sales GST' | 'Payment' | 'Journal' | 'Goods Return';
@@ -1267,6 +1302,7 @@ export interface LedgerComputationResult {
 export function computeCustomerLedger(
   customerId: string,
   options?: {
+    customerName?: string;
     siteId?: string;
     siteName?: string;
     fromDate?: string;
@@ -1300,13 +1336,16 @@ export function computeCustomerLedger(
   // Universal customer matcher (handles UUIDs, names, business aliases reliably)
   const isMatchCust = (recCustId?: string | null, recCustName?: string | null): boolean => {
     const target = (customerId || '').trim().toLowerCase();
+    const targetName = (options?.customerName || '').trim().toLowerCase();
     const rId = (recCustId || '').trim().toLowerCase();
     const rName = (recCustName || '').trim().toLowerCase();
 
-    if (rId && rId === target) return true;
-    if (rName && rName === target) return true;
+    if (rId && (rId === target || (targetName && rId === targetName))) return true;
+    if (rName && (rName === target || (targetName && rName === targetName))) return true;
     if (target && rName && (rName.includes(target) || target.includes(rName))) return true;
+    if (targetName && rName && (rName.includes(targetName) || targetName.includes(rName))) return true;
     if (target && rId && (rId.includes(target) || target.includes(rId))) return true;
+    if (targetName && rId && (rId.includes(targetName) || targetName.includes(rId))) return true;
 
     if (cust) {
       const cId = (cust.id || '').trim().toLowerCase();
@@ -1370,7 +1409,7 @@ export function computeCustomerLedger(
 
   // 1. Manual Ledger Entries (processed first so manual overrides & admin edits take precedence)
   manualEntries.forEach((mle) => {
-    if (!isMatchCust(mle.customer_id, mle.customer_id)) {
+    if (!isMatchCust(mle.customer_id, mle.customer_name || mle.customer_id)) {
       return;
     }
     if (options?.siteName && mle.site_name && mle.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;
