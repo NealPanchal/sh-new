@@ -485,17 +485,21 @@ export function generateChallanPDF({
   // ---- LEFT COLUMN CONTENT ----
   const leftX = margin + 2;
 
-  // 1. Embedded PhonePe Payment QR (Scannable, 3:4 aspect ratio)
-  const qrWidth = 19;
-  const qrHeight = 25.33;
-  const qrX = margin + leftColWidth - qrWidth - 2.5;
-  const qrY = y + 1.5;
+  // 1. Embedded Square Payment QR (Scannable UPI / PhonePe QR)
+  const qrSize = 22;
+  const qrX = margin + leftColWidth - qrSize - 3.0;
+  const qrY = y + 2.0;
 
   try {
-    doc.addImage(SHOWHOUSE_PAYMENT_QR_BASE64, 'JPEG', qrX, qrY, qrWidth, qrHeight);
+    doc.addImage(SHOWHOUSE_PAYMENT_QR_BASE64, 'JPEG', qrX, qrY, qrSize, qrSize);
     doc.setDrawColor(215, 215, 215);
     doc.setLineWidth(0.15);
-    doc.rect(qrX, qrY, qrWidth, qrHeight);
+    doc.rect(qrX, qrY, qrSize, qrSize);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.2);
+    doc.setTextColor(...blackColor);
+    doc.text('SCAN TO PAY', qrX + qrSize / 2, qrY + qrSize + 2.4, { align: 'center' });
   } catch {}
 
   // 2. Streamlined Banking Details (Strictly Account No & RTGS/IFSC as ordered)
