@@ -3,7 +3,7 @@
  * Shares directly to customer's WhatsApp phone number along with PDF download & live document link
  */
 
-import { Challan, BusinessProfile, ChallanItem, CustomerMaterialRate } from '@/types';
+import { Challan, BusinessProfile, ChallanItem, CustomerMaterialRate, Quotation } from '@/types';
 import { getWhatsAppNumber, formatDateIndian } from '@/lib/utils';
 import { downloadChallanPDF, getChallanPDFBlob } from '@/lib/pdf';
 
@@ -732,5 +732,92 @@ export function shareCustomerRatesViaWhatsApp(options: {
   const targetPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
   openWhatsApp(targetPhone, message);
   onToast?.(`WhatsApp opened with Selection message for ${customerName}!`, 'success');
+  return true;
+}
+
+/**
+ * Generate WhatsApp estimate message for a formal customer quotation
+ */
+export function generateQuotationWhatsAppMessage(
+  quotation: Quotation,
+  profile?: BusinessProfile | null,
+  creatorPhone?: string
+): string {
+  const businessName = profile?.business_name || 'Showhouse Decor Studio';
+  const attendee = quotation.prepared_by || 'Showhouse Sales';
+  const formattedDate = formatDateIndian(quotation.quotation_date);
+
+  let msg = `*${businessName.toUpperCase()}*\n`;
+  msg += `*ESTIMATE / MATERIAL QUOTATION*\n`;
+  msg += `────────────────────────────\n`;
+  msg += `*Quotation No:* ${quotation.quotation_number}\n`;
+  msg += `*Date:* ${formattedDate}\n`;
+  msg += `*Client Name:* ${quotation.customer_name}\n`;
+  if (quotation.site_name || quotation.delivery_address) {
+    const siteLabel = quotation.site_name ? `${quotation.site_name}` : 'Target Site';
+    const siteAddr = quotation.delivery_address ? ` (${quotation.delivery_address})` : '';
+    msg += `*Site:* ${siteLabel}${siteAddr}\n`;
+  }
+  msg += `*Prepared By:* ${attendee}\n`;
+  msg += `────────────────────────────\n\n`;
+
+  msg += `*ESTIMATED ITEMS & RATES:*\n`;
+  quotation.items.forEach((item, idx) => {
+    const qtyStr = `${item.quantity} ${item.unit || 'sheets'}`;
+    const rateStr = `₹${Number(item.rate || 0).toLocaleString('en-IN')}`;
+    const amtStr = `₹${Number(item.amount || (item.quantity * item.rate) || 0).toLocaleString('en-IN')}`;
+    msg += `${idx + 1}. *${item.item_description}*\n`;
+    msg += `   • Qty: ${qtyStr}  |  Rate: ${rateStr}\n`;
+    msg += `   • Amount: *${amtStr}*\n\n`;
+  });
+
+  msg += `────────────────────────────\n`;
+  msg += `*Total Quantity:* ${quotation.total_quantity} items\n`;
+  msg += `*Subtotal:* ₹${Number(quotation.subtotal_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+
+  if (quotation.apply_gst) {
+    const cgst = quotation.cgst_amount ?? Math.round(quotation.subtotal_amount * 0.09 * 100) / 100;
+    const sgst = quotation.sgst_amount ?? Math.round(quotation.subtotal_amount * 0.09 * 100) / 100;
+    msg += `*CGST (9%):* ₹${Number(cgst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+    msg += `*SGST (9%):* ₹${Number(sgst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+  }
+
+  msg += `*GRAND TOTAL: ₹${Number(quotation.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}*\n`;
+  msg += `────────────────────────────\n\n`;
+
+  // Bank Info for Advance
+  msg += `*BANKING & PAYMENT DETAILS:*\n`;
+  msg += `Name: Showhouse Concepts & Design LLP\n`;
+  msg += `A/C No: 50200003880041\n`;
+  msg += `RTGS / IFSC: HDFC0000146\n`;
+  msg += `Bank: HDFC Bank Ltd, Thane\n\n`;
+
+  // Terms
+  msg += `*TERMS & CONDITIONS:*\n`;
+  msg += `• Validity: 1 Week\n`;
+  msg += `• Payment: 50% advance with confirmation, remaining on delivery\n`;
+  msg += `• Delivery: Within 2 days of order confirmation\n\n`;
+
+  msg += `_" YOUR CONCEPTS, OUR DESIGNS "_\n`;
+  msg += `📞 +91 93248 69306 / 022 - 2538 7683`;
+
+  return msg;
+}
+
+export function shareQuotationViaWhatsApp(options: {
+  quotation: Quotation;
+  profile?: BusinessProfile | null;
+  onToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
+}): boolean {
+  const { quotation, profile, onToast } = options;
+  if (!quotation.items || quotation.items.length === 0) {
+    onToast?.('Cannot share quotation with 0 items', 'error');
+    return false;
+  }
+
+  const message = generateQuotationWhatsAppMessage(quotation, profile);
+  const targetPhone = quotation.customer_phone ? quotation.customer_phone.replace(/[^0-9]/g, '') : '';
+  openWhatsApp(targetPhone, message);
+  onToast?.(`WhatsApp opened with Quotation ${quotation.quotation_number}!`, 'success');
   return true;
 }

@@ -24,13 +24,15 @@ import {
   AlertTriangle,
   Tag,
   Percent,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { getTodayISO, cn, formatCurrency, formatDate } from '@/lib/utils';
 import { UNIT_OPTIONS } from '@/lib/validations';
-import { ChallanItemFormData, UnitType, Customer, Product, CustomerSite, CustomerCreditStatus, Challan } from '@/types';
+import { ChallanItemFormData, UnitType, Customer, Product, CustomerSite, CustomerCreditStatus, Challan, Quotation } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
 import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
+import { SiteModal } from '@/components/customers/site-modal';
 
 const emptyItem = (): ChallanItemFormData => ({
   product_id: '',
@@ -55,10 +57,13 @@ function CreateChallanContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedCustomerId = searchParams.get('customerId');
+  const preselectedQuotationId = searchParams.get('quotationId');
   const {
     customers,
     products,
     getCustomer,
+    getQuotation,
+    updateQuotation,
     peekNextChallanNumber,
     getNextChallanNumber,
     peekNextPINumber,
@@ -85,6 +90,8 @@ function CreateChallanContent() {
   const [isPoManual, setIsPoManual] = useState(false);
   const [createdBy, setCreatedBy] = useState('');
   const [showExtraDetails, setShowExtraDetails] = useState(false);
+  const [sourceQuotation, setSourceQuotation] = useState<Quotation | null>(null);
+  const [showSiteModal, setShowSiteModal] = useState(false);
 
   // Site Management State
   const [availableSites, setAvailableSites] = useState<CustomerSite[]>([]);
@@ -206,6 +213,41 @@ function CreateChallanContent() {
       ) || null
     );
   }, [customers, selectedCustomerId, customerName]);
+
+  const customerSites: CustomerSite[] = useMemo(() => {
+    const list: CustomerSite[] = [];
+    const seen = new Set<string>();
+
+    if (matchedCustomer?.sites && Array.isArray(matchedCustomer.sites)) {
+      matchedCustomer.sites.forEach((s) => {
+        if (s.id && !seen.has(s.id)) {
+          seen.add(s.id);
+          list.push(s);
+        }
+      });
+    }
+
+    availableSites.forEach((s) => {
+      if (s.id && !seen.has(s.id)) {
+        seen.add(s.id);
+        list.push(s);
+      }
+    });
+
+    if (list.length === 0 && (matchedCustomer?.delivery_address || deliveryAddress)) {
+      const addr = matchedCustomer?.delivery_address || deliveryAddress;
+      list.push({
+        id: `site_1_${matchedCustomer?.id || 'default'}`,
+        customer_id: matchedCustomer?.id || '',
+        site_name: 'Site 1',
+        name: 'Site 1',
+        site_address: addr,
+        location: addr,
+        created_at: new Date().toISOString(),
+      });
+    }
+    return list;
+  }, [matchedCustomer?.sites, matchedCustomer?.delivery_address, availableSites, deliveryAddress, matchedCustomer?.id]);
 
   const handleLoadCustomerAgreedMaterials = () => {
     if (!matchedCustomer?.material_rates || matchedCustomer.material_rates.length === 0) return;
@@ -368,6 +410,54 @@ function CreateChallanContent() {
     }
   }, [preselectedCustomerId, getCustomer]);
 
+  // Pre-load from quotation if quotationId is passed in URL
+  useEffect(() => {
+    if (preselectedQuotationId) {
+      const q = getQuotation(preselectedQuotationId);
+      if (q) {
+        setSourceQuotation(q);
+        if (q.customer_id) {
+          const c = getCustomer(q.customer_id);
+          if (c) {
+            selectCustomer(c);
+          } else {
+            setSelectedCustomerId(q.customer_id);
+            setCustomerName(q.customer_name);
+            setCustomerPhone(q.customer_phone || '');
+          }
+        }
+        if (q.site_id) setSelectedSiteId(q.site_id);
+        if (q.site_name) setSelectedSiteName(q.site_name);
+        if (q.delivery_address) setDeliveryAddress(q.delivery_address);
+        if (q.apply_gst) setApplyGst(true);
+
+        if (q.items && q.items.length > 0) {
+          setItems(
+            q.items.map((it) => ({
+              product_id: it.product_id || '',
+              item_description: it.item_description,
+              brand: it.brand || '',
+              colour_finish: it.colour_finish || '',
+              size: it.size || '',
+              unit: it.unit || 'sheets',
+              quantity: String(it.quantity),
+              rate: String(it.rate),
+              discount_type: 'percent',
+              discount_value: '',
+              discount_amount: '',
+              amount: String(it.amount),
+              length: '',
+              width: '',
+              dimension_unit: 'ft',
+              calculated_sqft: '',
+            }))
+          );
+        }
+        showToast(`⚡ Pre-filled items & rates from Quotation ${q.quotation_number}`, 'info');
+      }
+    }
+  }, [preselectedQuotationId, getQuotation, getCustomer]);
+
   const filteredCustomers = useMemo(() => {
     let list = customers;
     if (currentUser?.role === 'employee') {
@@ -407,7 +497,15 @@ function CreateChallanContent() {
     setSelectedCustomerId(customer.id);
     setCustomerName(customer.business_name);
     setCustomerPhone(customer.phone || '');
-    setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
+    if (customer.sites && customer.sites.length > 0) {
+      setSelectedSiteId(customer.sites[0].id);
+      setSelectedSiteName(customer.sites[0].site_name || 'Site 1');
+      setDeliveryAddress(customer.sites[0].site_address || customer.delivery_address || customer.billing_address || '');
+    } else {
+      setSelectedSiteId('');
+      setSelectedSiteName('Site 1');
+      setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
+    }
     setCustomerSearch('');
     setShowCustomerDropdown(false);
   };
@@ -701,6 +799,14 @@ function CreateChallanContent() {
         }
       }
 
+      if (sourceQuotation) {
+        updateQuotation(sourceQuotation.id, {
+          status: 'converted',
+          converted_challan_id: challan.id,
+          converted_challan_number: challan.challan_number,
+        });
+      }
+
       showToast(`Challan ${challan.challan_number} saved successfully!`);
       router.push(`/challans/${challan.id}`);
     } catch (err) {
@@ -845,36 +951,89 @@ function CreateChallanContent() {
             {errors.customer && <p className="error-text text-xs mt-1">{errors.customer}</p>}
           </div>
 
-          {/* Customer Site Selector (if registered sites exist) */}
-          {availableSites.length > 0 && (
-            <div className="sm:col-span-6">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-zinc-700 flex items-center gap-1">
-                  <Building2 size={13} className="text-primary-600" />
-                  <span>Target Site / Project</span>
-                </label>
-                <span className="text-[10px] text-zinc-400">{availableSites.length} registered</span>
+          {/* Pre-filled Quotation Linked Banner */}
+          {sourceQuotation && (
+            <div className="sm:col-span-12 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-300 rounded-xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-600 text-white shrink-0">
+                  <FileSpreadsheet size={16} />
+                </div>
+                <div>
+                  <span className="font-bold text-blue-950">
+                    ⚡ Pre-filled from Quotation {sourceQuotation.quotation_number}
+                  </span>
+                  <p className="text-[11px] text-blue-800 mt-0.5">
+                    Imported {sourceQuotation.items?.length || 0} items ({sourceQuotation.total_quantity} sheets) · Quotation Amount: ₹{Number(sourceQuotation.total_amount || 0).toLocaleString('en-IN')}. Review quantities &amp; save to issue Delivery Challan.
+                  </p>
+                </div>
               </div>
-              <select
-                value={selectedSiteId}
-                onChange={(e) => {
-                  const sid = e.target.value;
-                  setSelectedSiteId(sid);
-                  const match = availableSites.find((s) => s.id === sid);
-                  setSelectedSiteName(match?.name || '');
-                  if (match?.location) {
-                    setDeliveryAddress(match.location);
-                  }
-                }}
-                className="input text-xs font-semibold text-zinc-900 bg-white cursor-pointer h-9 w-full"
-              >
-                <option value="">-- General Account (No specific site) --</option>
-                {availableSites.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} {s.location ? `— ${s.location}` : ''}
-                  </option>
-                ))}
-              </select>
+              <span className="px-2 py-0.5 rounded-full bg-blue-200 text-blue-950 font-black text-[10px] uppercase shrink-0">
+                Quotation Linked
+              </span>
+            </div>
+          )}
+
+          {/* Multiple Site Selector for Customer */}
+          {(matchedCustomer || customerSites.length > 0) && (
+            <div className="sm:col-span-12 p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
+                  <Building2 size={14} className="text-[#ea580c]" />
+                  <span>Target Delivery Site ({customerSites.length} Configured)</span>
+                </label>
+                {matchedCustomer && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSiteModal(true)}
+                    className="py-1 px-2.5 text-[11px] font-bold bg-white text-[#ea580c] hover:bg-orange-50 border border-orange-300 rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <Plus size={12} />
+                    <span>+ Add Site ({`Site ${customerSites.length + 1}`})</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Site Selection Pills */}
+              <div className="flex flex-wrap items-center gap-2">
+                {customerSites.map((s, idx) => {
+                  const isSelected = selectedSiteId === s.id || selectedSiteName === s.site_name;
+                  return (
+                    <button
+                      key={s.id || idx}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSiteId(s.id);
+                        setSelectedSiteName(s.site_name || s.name || `Site ${idx + 1}`);
+                        const addr = s.site_address || s.location || '';
+                        if (addr) setDeliveryAddress(addr);
+                        showToast(`📍 Selected ${s.site_name || `Site ${idx + 1}`}`, 'info');
+                      }}
+                      className={cn(
+                        'py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border',
+                        isSelected
+                          ? 'bg-[#ea580c] text-white border-[#ea580c] shadow-sm'
+                          : 'bg-white text-surface-700 hover:bg-surface-100 border-surface-200'
+                      )}
+                    >
+                      <MapPin size={12} className={isSelected ? 'text-amber-200' : 'text-[#ea580c]'} />
+                      <span>{s.site_name || s.name || `Site ${idx + 1}`}</span>
+                      {s.site_address && (
+                        <span className={cn('text-[10px] font-normal truncate max-w-[140px]', isSelected ? 'text-white/80' : 'text-surface-400')}>
+                          ({s.site_address})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selected site active address confirmation */}
+              {deliveryAddress && (
+                <div className="text-[11px] text-surface-600 flex items-center gap-1.5 pt-1 border-t border-amber-200/50">
+                  <span className="font-semibold text-surface-700">Delivery Address:</span>
+                  <span className="truncate">{deliveryAddress}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1649,6 +1808,19 @@ function CreateChallanContent() {
         onConfirm={() => router.push('/challans')}
         onCancel={() => setShowCancel(false)}
       />
+
+      {/* Quick Add Site Modal */}
+      {showSiteModal && matchedCustomer && (
+        <SiteModal
+          customer={matchedCustomer}
+          onClose={() => setShowSiteModal(false)}
+          onSaved={(newSite) => {
+            setSelectedSiteId(newSite.id);
+            setSelectedSiteName(newSite.site_name);
+            if (newSite.site_address) setDeliveryAddress(newSite.site_address);
+          }}
+        />
+      )}
     </div>
   );
 }

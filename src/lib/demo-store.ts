@@ -13,6 +13,9 @@ import {
   ChallanStatus,
   ShareStatus,
   DashboardStats,
+  Quotation,
+  QuotationItem,
+  QuotationStatus,
 } from '@/types';
 import { generateId, getFinancialYear, generateChallanNumber, getTodayISO } from '@/lib/utils';
 import { getNextStaffPONumber } from '@/lib/po-sequence';
@@ -65,6 +68,7 @@ interface DemoState {
   products: Product[];
   challans: Challan[];
   challanItems: ChallanItem[];
+  quotations: Quotation[];
   activityLog: ChallanActivityLog[];
   isSetupComplete: boolean;
   challanSequence: number;
@@ -77,6 +81,7 @@ function getDefaultState(): DemoState {
     products: [],
     challans: [],
     challanItems: [],
+    quotations: [],
     activityLog: [],
     isSetupComplete: false,
     challanSequence: 0,
@@ -87,7 +92,11 @@ function loadState(): DemoState {
   if (typeof window === 'undefined') return getDefaultState();
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed.quotations)) parsed.quotations = [];
+      return parsed;
+    }
   } catch {
     // ignore
   }
@@ -1484,6 +1493,167 @@ export function importBackupData(parsed: {
   state.isSetupComplete = true;
   saveState(state);
   broadcastChallansUpdate(state.challans);
+}
+
+// ============================================================
+// Quotations (Pre-Challan Estimates)
+// ============================================================
+
+export function getQuotations(): Quotation[] {
+  return (state.quotations || []).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+
+export function getCustomerQuotations(customerId: string): Quotation[] {
+  return (state.quotations || [])
+    .filter((q) => q.customer_id === customerId)
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+}
+
+export function getQuotation(id: string): Quotation | undefined {
+  return (state.quotations || []).find((q) => q.id === id);
+}
+
+export function peekNextQuotationNumber(targetDate?: Date | string): string {
+  const d = targetDate ? new Date(targetDate) : new Date();
+  const monthPadded = String(!isNaN(d.getTime()) ? d.getMonth() + 1 : new Date().getMonth() + 1).padStart(2, '0');
+  const quotes = state.quotations || [];
+  let maxSeq = 0;
+  const pattern = new RegExp(`^QT\\/${monthPadded}\\/(\\d+)$`, 'i');
+
+  quotes.forEach((q) => {
+    const m = q.quotation_number.match(pattern);
+    if (m && m[1]) {
+      const num = parseInt(m[1], 10);
+      if (!isNaN(num) && num > maxSeq) maxSeq = num;
+    }
+  });
+
+  return `QT/${monthPadded}/${String(maxSeq + 1).padStart(3, '0')}`;
+}
+
+export function createQuotation(data: Partial<Quotation>, items: Partial<QuotationItem>[]): Quotation {
+  const now = new Date().toISOString();
+  const qId = generateId();
+  const qNumber = data.quotation_number || peekNextQuotationNumber(data.quotation_date || now);
+
+  const cleanItems: QuotationItem[] = (items || []).map((it, idx) => {
+    const qty = Number(it.quantity) || 0;
+    const rate = Number(it.rate) || 0;
+    return {
+      id: generateId(),
+      quotation_id: qId,
+      serial_number: idx + 1,
+      item_description: it.item_description || '',
+      brand: it.brand || null,
+      colour_finish: it.colour_finish || null,
+      size: it.size || null,
+      unit: it.unit || 'sheets',
+      quantity: qty,
+      rate: rate,
+      amount: it.amount != null ? Number(it.amount) : qty * rate,
+    };
+  });
+
+  const totalQty = cleanItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+  const subtotal = cleanItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const applyGst = Boolean(data.apply_gst);
+  const cgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+  const sgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+  const total = subtotal + cgst + sgst;
+
+  const quotation: Quotation = {
+    id: qId,
+    quotation_number: qNumber,
+    quotation_date: data.quotation_date || getTodayISO(),
+    customer_id: data.customer_id || '',
+    customer_name: data.customer_name || '',
+    customer_phone: data.customer_phone || '',
+    customer_address: data.customer_address || '',
+    site_id: data.site_id || null,
+    site_name: data.site_name || null,
+    delivery_address: data.delivery_address || null,
+    status: data.status || 'draft',
+    items: cleanItems,
+    total_quantity: totalQty,
+    subtotal_amount: subtotal,
+    apply_gst: applyGst,
+    cgst_amount: cgst,
+    sgst_amount: sgst,
+    total_amount: total,
+    notes: data.notes || null,
+    terms_conditions: data.terms_conditions || null,
+    prepared_by: data.prepared_by || null,
+    created_by: data.created_by || null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  if (!state.quotations) state.quotations = [];
+  state.quotations.push(quotation);
+  saveState(state);
+  return quotation;
+}
+
+export function updateQuotation(id: string, data: Partial<Quotation>, items?: Partial<QuotationItem>[]): Quotation | null {
+  if (!state.quotations) state.quotations = [];
+  const idx = state.quotations.findIndex((q) => q.id === id);
+  if (idx === -1) return null;
+
+  const prev = state.quotations[idx];
+  let cleanItems = prev.items;
+
+  if (items && Array.isArray(items)) {
+    cleanItems = items.map((it, i) => {
+      const qty = Number(it.quantity) || 0;
+      const rate = Number(it.rate) || 0;
+      return {
+        id: it.id || generateId(),
+        quotation_id: id,
+        serial_number: i + 1,
+        item_description: it.item_description || '',
+        brand: it.brand || null,
+        colour_finish: it.colour_finish || null,
+        size: it.size || null,
+        unit: it.unit || 'sheets',
+        quantity: qty,
+        rate: rate,
+        amount: it.amount != null ? Number(it.amount) : qty * rate,
+      };
+    });
+  }
+
+  const totalQty = cleanItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+  const subtotal = cleanItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const applyGst = data.apply_gst !== undefined ? Boolean(data.apply_gst) : Boolean(prev.apply_gst);
+  const cgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+  const sgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+  const total = subtotal + cgst + sgst;
+
+  state.quotations[idx] = {
+    ...prev,
+    ...data,
+    items: cleanItems,
+    total_quantity: totalQty,
+    subtotal_amount: subtotal,
+    apply_gst: applyGst,
+    cgst_amount: cgst,
+    sgst_amount: sgst,
+    total_amount: total,
+    updated_at: new Date().toISOString(),
+  };
+
+  saveState(state);
+  return state.quotations[idx];
+}
+
+export function deleteQuotation(id: string): boolean {
+  if (!state.quotations) return false;
+  const initialLen = state.quotations.length;
+  state.quotations = state.quotations.filter((q) => q.id !== id);
+  saveState(state);
+  return state.quotations.length < initialLen;
 }
 
 export function clearAllData(): void {

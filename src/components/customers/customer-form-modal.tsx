@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useApp } from '@/lib/context';
 import { customerSchema, CustomerFormValues } from '@/lib/validations';
-import { X, Plus, Trash2, Layers, Download, Send, CheckSquare, Square, ShieldAlert, Compass, User, Building } from 'lucide-react';
+import { X, Plus, Trash2, Layers, Download, Send, CheckSquare, Square, ShieldAlert, Compass, User, Building, Building2, MapPin } from 'lucide-react';
 import { CustomerMaterialRate } from '@/types';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
 import { shareCustomerRatesViaWhatsApp } from '@/lib/whatsapp';
@@ -46,6 +46,9 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
   const [isPartyArchitect, setIsPartyArchitect] = useState(false);
   const [materialRates, setMaterialRates] = useState<CustomerMaterialRate[]>([]);
   const [selectedRateIds, setSelectedRateIds] = useState<Set<string>>(new Set());
+  const [customerSites, setCustomerSites] = useState<Array<{ id: string; site_name: string; site_address: string }>>([
+    { id: 'site_1', site_name: 'Site 1', site_address: '' },
+  ]);
 
   useEffect(() => {
     if (editId) {
@@ -66,6 +69,21 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
           gstin: customer.gstin || '',
           notes: customer.notes || '',
         });
+        if (Array.isArray(customer.sites) && customer.sites.length > 0) {
+          setCustomerSites(
+            customer.sites.map((s, idx) => ({
+              id: s.id || `site_${idx + 1}`,
+              site_name: s.site_name || `Site ${idx + 1}`,
+              site_address: s.site_address || '',
+            }))
+          );
+        } else if (customer.delivery_address) {
+          setCustomerSites([
+            { id: `site_1_${customer.id}`, site_name: 'Site 1', site_address: customer.delivery_address },
+          ]);
+        } else {
+          setCustomerSites([{ id: 'site_1', site_name: 'Site 1', site_address: '' }]);
+        }
         if (Array.isArray(customer.material_rates) && customer.material_rates.length > 0) {
           setMaterialRates(customer.material_rates);
         } else {
@@ -75,6 +93,7 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
     } else {
       setIsPartyArchitect(false);
       setMaterialRates([]);
+      setCustomerSites([{ id: 'site_1', site_name: 'Site 1', site_address: '' }]);
     }
   }, [editId, getCustomer, reset]);
 
@@ -191,10 +210,23 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       (m) => m.particulars?.trim() || m.code?.trim() || m.company_name?.trim() || m.rate > 0
     );
 
+    const validSites = customerSites
+      .filter((s) => s.site_address?.trim())
+      .map((s, idx) => ({
+        id: s.id || `site_${editId || 'new'}_${Date.now()}_${idx}`,
+        customer_id: editId || '',
+        site_name: s.site_name?.trim() || `Site ${idx + 1}`,
+        name: s.site_name?.trim() || `Site ${idx + 1}`,
+        site_address: s.site_address.trim(),
+        location: s.site_address.trim(),
+        created_at: new Date().toISOString(),
+        is_active: true,
+      }));
+
     const user = getCurrentUser();
     const cleanContact = data.contact_person.trim();
     const cleanBusiness = data.business_name?.trim() || cleanContact;
-    const cleanDelivery = data.delivery_address?.trim() || '';
+    const cleanDelivery = validSites[0]?.site_address || data.delivery_address?.trim() || '';
     const cleanBilling = cleanDelivery || 'Showhouse Site';
     const isArch = isPartyArchitect;
 
@@ -209,6 +241,7 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       architect_firm: isArch ? (data.architect_firm?.trim() || cleanBusiness || cleanContact) : null,
       billing_address: cleanBilling,
       delivery_address: cleanDelivery || null,
+      sites: validSites,
       gstin: data.gstin ? data.gstin.toUpperCase() : null,
       notes: data.notes || null,
       material_rates: validRates,
@@ -352,27 +385,90 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">GSTIN (Optional)</label>
-              <input
-                {...register('gstin')}
-                className={`input uppercase font-mono ${errors.gstin ? 'input-error' : ''}`}
-                placeholder="22AAAAA0000A1Z5"
-                maxLength={15}
-              />
-              {errors.gstin && <p className="error-text">{errors.gstin.message}</p>}
+          <div>
+            <label className="label">GSTIN (Optional)</label>
+            <input
+              {...register('gstin')}
+              className={`input uppercase font-mono ${errors.gstin ? 'input-error' : ''}`}
+              placeholder="22AAAAA0000A1Z5"
+              maxLength={15}
+            />
+            {errors.gstin && <p className="error-text">{errors.gstin.message}</p>}
+          </div>
+
+          {/* Multiple Delivery Sites Section */}
+          <div className="space-y-2 p-3 bg-surface-50 rounded-xl border border-surface-200">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
+                <Building2 size={14} className="text-[#ea580c]" />
+                <span>Delivery Sites (Multiple Projects)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setCustomerSites((prev) => [
+                    ...prev,
+                    {
+                      id: `site_${Date.now()}`,
+                      site_name: `Site ${prev.length + 1}`,
+                      site_address: '',
+                    },
+                  ])
+                }
+                className="py-1 px-2 text-[11px] font-bold bg-white text-[#ea580c] hover:bg-orange-50 border border-orange-200 rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer"
+              >
+                <Plus size={11} />
+                <span>+ Add Site ({`Site ${customerSites.length + 1}`})</span>
+              </button>
             </div>
 
-            <div>
-              <label className="label">
-                {isPartyArchitect ? 'Studio / Office / Site Address' : 'Delivery / Site Address'}
-              </label>
-              <input
-                {...register('delivery_address')}
-                className="input"
-                placeholder={isPartyArchitect ? 'e.g. Office 2508, Kopri, Thane (E)' : 'e.g. Kalpataru Paramount, Kapurbawdi, Thane (W)'}
-              />
+            <div className="space-y-2">
+              {customerSites.map((site, sIdx) => (
+                <div key={site.id || sIdx} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={site.site_name}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomerSites((prev) => {
+                        const copy = [...prev];
+                        copy[sIdx] = { ...copy[sIdx], site_name: val };
+                        return copy;
+                      });
+                    }}
+                    placeholder={`Site ${sIdx + 1}`}
+                    className="input text-xs font-bold w-28 shrink-0 bg-white"
+                  />
+                  <input
+                    type="text"
+                    value={site.site_address}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomerSites((prev) => {
+                        const copy = [...prev];
+                        copy[sIdx] = { ...copy[sIdx], site_address: val };
+                        return copy;
+                      });
+                    }}
+                    placeholder={
+                      sIdx === 0
+                        ? (isPartyArchitect ? 'Studio / Office / Site Address (Primary)' : 'Primary Delivery Site Address (e.g. 2902, Runwal Sanctuary, Mulund)')
+                        : `Site ${sIdx + 1} Address`
+                    }
+                    className="input text-xs flex-1 bg-white"
+                  />
+                  {customerSites.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomerSites((prev) => prev.filter((_, i) => i !== sIdx))}
+                      className="p-1.5 text-surface-400 hover:text-rose-600 cursor-pointer"
+                      title="Remove site"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 

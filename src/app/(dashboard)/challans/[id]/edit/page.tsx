@@ -19,6 +19,7 @@ import {
   Building2,
   Tag,
   Clock,
+  MapPin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getCurrentUser, isEmployee, isAdmin } from '@/lib/auth';
@@ -75,7 +76,6 @@ export default function EditChallanPage() {
   // Site state
   const [siteId, setSiteId] = useState('');
   const [siteName, setSiteName] = useState('');
-  const [customerSites, setCustomerSites] = useState<CustomerSite[]>([]);
 
   // Form state
   const [challanDate, setChallanDate] = useState('');
@@ -263,11 +263,57 @@ export default function EditChallanPage() {
     ).slice(0, 8);
   }, [products, productSearch]);
 
+  const matchedCustomer = useMemo(() => {
+    return (
+      customers.find(
+        (c) =>
+          (selectedCustomerId && c.id === selectedCustomerId) ||
+          c.business_name.toLowerCase() === customerName.trim().toLowerCase()
+      ) || null
+    );
+  }, [customers, selectedCustomerId, customerName]);
+
+  const customerSites: CustomerSite[] = useMemo(() => {
+    const list: CustomerSite[] = [];
+    const seen = new Set<string>();
+
+    if (matchedCustomer?.sites && Array.isArray(matchedCustomer.sites)) {
+      matchedCustomer.sites.forEach((s) => {
+        if (s.id && !seen.has(s.id)) {
+          seen.add(s.id);
+          list.push(s);
+        }
+      });
+    }
+
+    if (list.length === 0 && (matchedCustomer?.delivery_address || deliveryAddress)) {
+      const addr = matchedCustomer?.delivery_address || deliveryAddress;
+      list.push({
+        id: `site_1_${matchedCustomer?.id || 'default'}`,
+        customer_id: matchedCustomer?.id || '',
+        site_name: 'Site 1',
+        name: 'Site 1',
+        site_address: addr,
+        location: addr,
+        created_at: new Date().toISOString(),
+      });
+    }
+    return list;
+  }, [matchedCustomer?.sites, matchedCustomer?.delivery_address, deliveryAddress, matchedCustomer?.id]);
+
   const selectCustomer = (c: Customer) => {
     setSelectedCustomerId(c.id);
     setCustomerName(c.business_name);
     setCustomerPhone(c.phone || '');
-    setDeliveryAddress(c.delivery_address || c.billing_address || '');
+    if (c.sites && c.sites.length > 0) {
+      setSiteId(c.sites[0].id);
+      setSiteName(c.sites[0].site_name || 'Site 1');
+      setDeliveryAddress(c.sites[0].site_address || c.delivery_address || c.billing_address || '');
+    } else {
+      setSiteId('');
+      setSiteName('Site 1');
+      setDeliveryAddress(c.delivery_address || c.billing_address || '');
+    }
     setShowCustomerDropdown(false);
     setCustomerSearch('');
   };
@@ -689,6 +735,60 @@ export default function EditChallanPage() {
             )}
             {errors.customer && <p className="error-text text-xs mt-1">{errors.customer}</p>}
           </div>
+
+          {/* Multiple Site Selector for Customer */}
+          {(matchedCustomer || customerSites.length > 0) && (
+            <div className="sm:col-span-12 p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
+                  <Building2 size={14} className="text-[#ea580c]" />
+                  <span>Target Delivery Site ({customerSites.length} Configured)</span>
+                </label>
+              </div>
+
+              {/* Site Selection Pills */}
+              <div className="flex flex-wrap items-center gap-2">
+                {customerSites.map((s, idx) => {
+                  const isSelected = siteId === s.id || siteName === s.site_name;
+                  return (
+                    <button
+                      key={s.id || idx}
+                      type="button"
+                      onClick={() => {
+                        setSiteId(s.id);
+                        setSiteName(s.site_name || s.name || `Site ${idx + 1}`);
+                        const addr = s.site_address || s.location || '';
+                        if (addr) setDeliveryAddress(addr);
+                        showToast(`📍 Selected ${s.site_name || `Site ${idx + 1}`}`, 'info');
+                      }}
+                      className={cn(
+                        'py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border',
+                        isSelected
+                          ? 'bg-[#ea580c] text-white border-[#ea580c] shadow-sm'
+                          : 'bg-white text-surface-700 hover:bg-surface-100 border-surface-200'
+                      )}
+                    >
+                      <MapPin size={12} className={isSelected ? 'text-amber-200' : 'text-[#ea580c]'} />
+                      <span>{s.site_name || s.name || `Site ${idx + 1}`}</span>
+                      {s.site_address && (
+                        <span className={cn('text-[10px] font-normal truncate max-w-[140px]', isSelected ? 'text-white/80' : 'text-surface-400')}>
+                          ({s.site_address})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selected site active address confirmation */}
+              {deliveryAddress && (
+                <div className="text-[11px] text-surface-600 flex items-center gap-1.5 pt-1 border-t border-amber-200/50">
+                  <span className="font-semibold text-surface-700">Delivery Address:</span>
+                  <span className="truncate">{deliveryAddress}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="sm:col-span-3">
             <label className="label text-xs">Date *</label>

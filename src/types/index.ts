@@ -17,6 +17,57 @@ export type UnitType = 'sheets' | 'pieces' | 'boxes' | 'bundles' | 'sq.ft' | 'ru
 
 export type UserRole = 'admin' | 'accountant' | 'employee';
 
+export type QuotationStatus = 'draft' | 'sent' | 'approved' | 'converted';
+
+export interface QuotationItem {
+  id: string;
+  quotation_id: string;
+  serial_number: number;
+  item_description: string;
+  product_id?: string | null;
+  brand?: string | null;
+  colour_finish?: string | null;
+  size?: string | null;
+  unit: UnitType;
+  quantity: number;
+  rate: number;
+  amount: number;
+}
+
+export interface Quotation {
+  id: string;
+  quotation_number: string;
+  quotation_date: string;
+  customer_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string;
+  site_id?: string | null;
+  site_name?: string | null;
+  delivery_address?: string | null;
+  status: QuotationStatus;
+  items: QuotationItem[];
+  total_quantity: number;
+  subtotal_amount: number;
+  discount_type?: 'percent' | 'amount' | null;
+  discount_value?: number | null;
+  discount_amount?: number | null;
+  apply_gst?: boolean;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  apply_additional_9?: boolean;
+  additional_9_amount?: number;
+  total_amount: number;
+  notes?: string | null;
+  terms_conditions?: string | null;
+  prepared_by?: string | null;
+  created_by?: string | null;
+  converted_challan_id?: string | null;
+  converted_challan_number?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AuthUser {
   username: string;
   name: string;
@@ -95,6 +146,7 @@ export interface CustomerSite {
   challan_number?: string;    // Attached challan number
   attached_challans?: Array<{ id?: string; challan_number: string; amount?: number }>;
   order_index?: number;       // Custom sorting order index (for Move Up / Move Down)
+  is_default?: boolean;
   audit_history?: Array<{
     action: string;
     user: string;

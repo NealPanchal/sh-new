@@ -13,6 +13,13 @@ export const UNIT_OPTIONS = [
 const indianPhoneRegex = /^[6-9]\d{9}$/;
 const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
+export const customerSiteSchema = z.object({
+  id: z.string().optional(),
+  site_name: z.string().min(1, 'Site name is required'),
+  site_address: z.string().min(1, 'Site address is required'),
+  is_default: z.boolean().optional(),
+});
+
 export const customerSchema = z.object({
   business_name: z.string().max(200).optional().or(z.literal('')),
   contact_person: z.string().min(1, 'Contact person is required').max(100),
@@ -32,6 +39,7 @@ export const customerSchema = z.object({
   architect_firm: z.string().max(200).optional().or(z.literal('')),
   billing_address: z.string().max(500).optional().or(z.literal('')),
   delivery_address: z.string().max(500).optional().or(z.literal('')),
+  sites: z.array(customerSiteSchema).optional(),
   gstin: z
     .string()
     .optional()

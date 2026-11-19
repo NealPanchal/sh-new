@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
       credit_days,
       notes,
       material_rates,
+      sites,
     } = body;
 
     const custName = (name || business_name || company_name || contact_person || '').trim();
@@ -128,6 +129,11 @@ export async function POST(req: NextRequest) {
       credit_limit: Number(credit_limit) || 200000,
       credit_days: Number(credit_days) || 45,
       notes: notes ? notes.trim() : null,
+      sites: Array.isArray(sites)
+        ? sites
+        : existingIdx >= 0 && Array.isArray(customers[existingIdx].sites)
+        ? customers[existingIdx].sites
+        : undefined,
       material_rates: Array.isArray(material_rates)
         ? material_rates
         : existingIdx >= 0

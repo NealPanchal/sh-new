@@ -18,19 +18,39 @@ import {
   Download,
   Trash2,
   ShieldCheck,
+  FileSpreadsheet,
+  ArrowRight,
+  ExternalLink,
 } from 'lucide-react';
 import { formatPhone, formatDateIndian } from '@/lib/utils';
 import { CustomerFormModal } from '@/components/customers/customer-form-modal';
+import { QuotationModal } from '@/components/quotations/quotation-modal';
+import { SiteModal } from '@/components/customers/site-modal';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
-import { shareCustomerRatesViaWhatsApp } from '@/lib/whatsapp';
+import { exportQuotationToPDF } from '@/lib/pdf-quotation';
+import { shareCustomerRatesViaWhatsApp, shareQuotationViaWhatsApp } from '@/lib/whatsapp';
 import { getCurrentUser } from '@/lib/auth';
-import { CustomerMaterialRate } from '@/types';
+import { CustomerMaterialRate, CustomerSite, Quotation } from '@/types';
 
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { getCustomer, getCustomerChallans, updateCustomer, showToast } = useApp();
+  const {
+    getCustomer,
+    getCustomerChallans,
+    getCustomerQuotations,
+    deleteQuotation,
+    updateCustomer,
+    profile,
+    showToast,
+  } = useApp();
+
   const [showEdit, setShowEdit] = useState(false);
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
+  const [showSiteModal, setShowSiteModal] = useState(false);
+  const [editingSite, setEditingSite] = useState<CustomerSite | null>(null);
+
   const [selectedRateIds, setSelectedRateIds] = useState<Set<string>>(new Set());
 
   const customerId = params.id as string;
@@ -39,10 +59,44 @@ export default function CustomerDetailPage() {
     () => getCustomerChallans(customerId),
     [getCustomerChallans, customerId]
   );
+  const quotations = useMemo(
+    () => getCustomerQuotations(customerId),
+    [getCustomerQuotations, customerId]
+  );
 
   const materialRates: CustomerMaterialRate[] = useMemo(() => {
     return Array.isArray(customer?.material_rates) ? customer.material_rates : [];
   }, [customer?.material_rates]);
+
+  // Multiple Sites derivation
+  const customerSites: CustomerSite[] = useMemo(() => {
+    if (Array.isArray(customer?.sites) && customer.sites.length > 0) {
+      return customer.sites;
+    }
+    if (customer?.delivery_address) {
+      return [
+        {
+          id: `site_1_${customer.id}`,
+          customer_id: customer.id,
+          site_name: 'Site 1',
+          site_address: customer.delivery_address,
+          created_at: customer.created_at || new Date().toISOString(),
+        },
+      ];
+    }
+    return [];
+  }, [customer?.sites, customer?.delivery_address, customer?.id, customer?.created_at]);
+
+  const handleDeleteSite = (siteId: string, siteName: string) => {
+    if (!customer) return;
+    if (!confirm(`Are you sure you want to delete ${siteName}?`)) return;
+
+    const remaining = (customer.sites || []).filter((s) => s.id !== siteId);
+    updateCustomer(customer.id, {
+      sites: remaining,
+    });
+    showToast(`Removed ${siteName}`, 'info');
+  };
 
   const toggleSelectRate = (id: string) => {
     setSelectedRateIds((prev) => {
@@ -114,6 +168,25 @@ export default function CustomerDetailPage() {
     });
   };
 
+  const handleDeleteQuotation = (q: Quotation) => {
+    if (!confirm(`Delete quotation ${q.quotation_number}?`)) return;
+    deleteQuotation(q.id);
+    showToast(`Quotation ${q.quotation_number} deleted`, 'info');
+  };
+
+  const handleShareQuotationWhatsApp = (q: Quotation) => {
+    shareQuotationViaWhatsApp({
+      quotation: q,
+      profile,
+      onToast: showToast,
+    });
+  };
+
+  const handleDownloadQuotationPDF = (q: Quotation) => {
+    exportQuotationToPDF(q, profile);
+    showToast(`Downloaded Quotation ${q.quotation_number} PDF!`, 'success');
+  };
+
   if (!customer) {
     return (
       <div className="card p-8 text-center max-w-md mx-auto">
@@ -134,13 +207,18 @@ export default function CustomerDetailPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => router.back()}
-            className="p-1.5 rounded-lg text-surface-500 hover:text-surface-900 hover:bg-surface-100"
+            className="p-1.5 rounded-lg text-surface-500 hover:text-surface-900 hover:bg-surface-100 cursor-pointer"
           >
             <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-surface-900 tracking-tight">
-              {customer.business_name}
+            <h1 className="text-lg sm:text-xl font-bold text-surface-900 tracking-tight flex items-center gap-2">
+              <span>{customer.business_name}</span>
+              {customer.is_architect && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 uppercase tracking-wide border border-purple-200">
+                  Architect VIP
+                </span>
+              )}
             </h1>
             {customer.contact_person && (
               <p className="text-xs text-surface-500">{customer.contact_person}</p>
@@ -151,11 +229,25 @@ export default function CustomerDetailPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowEdit(true)}
-            className="btn-secondary py-1.5 px-3 text-xs flex items-center gap-1"
+            className="btn-secondary py-1.5 px-3 text-xs flex items-center gap-1 cursor-pointer"
           >
             <Edit size={14} />
-            <span>Edit</span>
+            <span>Edit Profile</span>
           </button>
+
+          {/* New Quotation Button */}
+          <button
+            onClick={() => {
+              setEditingQuotation(null);
+              setShowQuotationModal(true);
+            }}
+            className="py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
+          >
+            <Plus size={14} />
+            <span>+ New Quotation</span>
+          </button>
+
+          {/* New Challan Button */}
           <Link
             href={`/challans/new?customerId=${customer.id}`}
             className="btn-primary py-1.5 px-3 text-xs font-semibold flex items-center gap-1 shadow-xs"
@@ -167,51 +259,318 @@ export default function CustomerDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5">
-        {/* Customer Info Card */}
-        <div className="card p-4 space-y-3">
-          <div className="text-xs font-bold text-surface-500 uppercase tracking-wider">
-            Customer Information
+        {/* Customer Info Card & Multiple Sites */}
+        <div className="space-y-3">
+          <div className="card p-4 space-y-3">
+            <div className="text-xs font-bold text-surface-500 uppercase tracking-wider">
+              Customer Information
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {customer.phone && (
+                <div className="flex items-center gap-2 text-surface-700">
+                  <Phone size={14} className="text-surface-400 shrink-0" />
+                  <a href={`tel:${customer.phone}`} className="hover:text-primary-600 font-medium">
+                    {formatPhone(customer.phone)}
+                  </a>
+                </div>
+              )}
+
+              {customer.billing_address && (
+                <div className="flex items-start gap-2 text-surface-600">
+                  <MapPin size={14} className="text-surface-400 shrink-0 mt-0.5" />
+                  <span>{customer.billing_address}</span>
+                </div>
+              )}
+
+              {customer.gstin && (
+                <div className="flex items-center gap-2 text-surface-700 pt-1 border-t border-surface-100">
+                  <FileText size={14} className="text-surface-400 shrink-0" />
+                  <span className="font-mono text-xs">{customer.gstin}</span>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-2 text-xs">
-            {customer.phone && (
-              <div className="flex items-center gap-2 text-surface-700">
-                <Phone size={14} className="text-surface-400 shrink-0" />
-                <a href={`tel:${customer.phone}`} className="hover:text-primary-600 font-medium">
-                  {formatPhone(customer.phone)}
-                </a>
+          {/* Multiple Delivery Sites Card */}
+          <div className="card p-4 space-y-3 border-l-4 border-l-[#ea580c]">
+            <div className="flex items-center justify-between pb-1.5 border-b border-surface-100">
+              <div className="flex items-center gap-1.5">
+                <Building2 size={15} className="text-[#ea580c]" />
+                <span className="text-xs font-bold text-surface-900 uppercase tracking-wider">
+                  Delivery Sites ({customerSites.length})
+                </span>
               </div>
-            )}
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingSite(null);
+                  setShowSiteModal(true);
+                }}
+                className="py-1 px-2 text-[11px] font-bold bg-orange-50 hover:bg-orange-100 text-[#ea580c] border border-orange-200 rounded-md flex items-center gap-1 cursor-pointer"
+              >
+                <Plus size={11} />
+                <span>Add Site</span>
+              </button>
+            </div>
 
-            {customer.billing_address && (
-              <div className="flex items-start gap-2 text-surface-600">
-                <MapPin size={14} className="text-surface-400 shrink-0 mt-0.5" />
-                <span>{customer.billing_address}</span>
+            {customerSites.length === 0 ? (
+              <div className="text-xs text-surface-400 py-2">
+                No delivery sites added yet. Click &quot;Add Site&quot; to configure Site 1, Site 2, etc.
               </div>
-            )}
-
-            {customer.delivery_address && (
-              <div className="flex items-start gap-2 text-surface-600 pt-1 border-t border-surface-100">
-                <MapPin size={14} className="text-primary-500 shrink-0 mt-0.5" />
-                <div>
-                  <span className="text-[10px] text-surface-400 uppercase font-semibold block">Delivery Site</span>
-                  <span>{customer.delivery_address}</span>
-                </div>
-              </div>
-            )}
-
-            {customer.gstin && (
-              <div className="flex items-center gap-2 text-surface-700 pt-1 border-t border-surface-100">
-                <FileText size={14} className="text-surface-400 shrink-0" />
-                <span className="font-mono text-xs">{customer.gstin}</span>
+            ) : (
+              <div className="space-y-2">
+                {customerSites.map((site, idx) => (
+                  <div
+                    key={site.id || idx}
+                    className="p-2.5 rounded-lg border border-surface-200 bg-surface-50/70 space-y-1 hover:bg-surface-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-surface-900 flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.2 rounded bg-[#ea580c]/10 text-[#ea580c] text-[10px] font-black uppercase">
+                          {site.site_name || `Site ${idx + 1}`}
+                        </span>
+                        {idx === 0 && (
+                          <span className="text-[9px] text-surface-400 font-normal">(Primary)</span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSite(site);
+                            setShowSiteModal(true);
+                          }}
+                          className="p-1 text-surface-400 hover:text-surface-700 cursor-pointer"
+                          title="Edit site"
+                        >
+                          <Edit size={12} />
+                        </button>
+                        {customerSites.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSite(site.id, site.site_name)}
+                            className="p-1 text-surface-400 hover:text-rose-600 cursor-pointer"
+                            title="Delete site"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-surface-600 leading-snug">
+                      {site.site_address}
+                    </p>
+                    {site.contact_person && (
+                      <p className="text-[10px] text-surface-400">
+                        Incharge: {site.contact_person} {site.phone ? `(${site.phone})` : ''}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Section: Agreed Material Rates & Challan History */}
+        {/* Right Section: Quotations, Agreed Material Rates & Challan History */}
         <div className="lg:col-span-2 space-y-3.5">
-          {/* Agreed Material Rates & Quotation Card */}
+          {/* 1. Quotations / Pre-Challan Estimates Card */}
+          <div className="card p-3.5 sm:p-4 space-y-3 border-l-4 border-l-blue-600">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-surface-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-100 text-blue-700">
+                  <FileSpreadsheet size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-surface-900 flex items-center gap-2">
+                    <span>Quotations &amp; Estimates</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-blue-100 text-blue-800">
+                      {quotations.length}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-surface-500">
+                    Pre-challan item, qty, rate &amp; amount estimates. Send via WhatsApp or convert to Challan.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingQuotation(null);
+                  setShowQuotationModal(true);
+                }}
+                className="py-1 px-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer self-start sm:self-auto"
+              >
+                <Plus size={12} />
+                <span>+ Create Quotation</span>
+              </button>
+            </div>
+
+            {quotations.length === 0 ? (
+              <div className="p-4 bg-surface-50 rounded-xl border border-dashed border-surface-200 text-center text-xs text-surface-500 space-y-1">
+                <p className="font-semibold text-surface-700">No quotations generated yet</p>
+                <p className="text-[11px] text-surface-400">
+                  Click &quot;+ Create Quotation&quot; to prepare an itemized quote with qty, rate &amp; amount before issuing a delivery challan.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Mobile Quotation Cards */}
+                <div className="sm:hidden space-y-2">
+                  {quotations.map((q) => (
+                    <div
+                      key={q.id}
+                      className="p-3 rounded-lg border border-surface-200 bg-surface-50/60 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-xs text-blue-700">
+                          {q.quotation_number}
+                        </span>
+                        <span className="text-[10px] uppercase font-bold text-blue-800 px-1.5 py-0.5 rounded bg-blue-100">
+                          {q.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-surface-500">
+                        <span>{formatDateIndian(q.quotation_date)}</span>
+                        {q.site_name && (
+                          <span className="font-medium text-surface-700">{q.site_name}</span>
+                        )}
+                        <span className="font-bold text-surface-900 font-mono">
+                          ₹{Number(q.total_amount || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 pt-2 border-t border-surface-200">
+                        <button
+                          type="button"
+                          onClick={() => handleShareQuotationWhatsApp(q)}
+                          className="flex-1 py-1 px-2 text-[11px] font-bold bg-emerald-600 text-white rounded flex items-center justify-center gap-1"
+                        >
+                          <Send size={11} />
+                          <span>WhatsApp</span>
+                        </button>
+                        <Link
+                          href={`/challans/new?customerId=${customer.id}&quotationId=${q.id}`}
+                          className="flex-1 py-1 px-2 text-[11px] font-bold bg-[#ea580c] text-white rounded flex items-center justify-center gap-1"
+                        >
+                          <ArrowRight size={11} />
+                          <span>To Challan</span>
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Quotation Table */}
+                <div className="hidden sm:block border border-surface-200 rounded-xl overflow-hidden overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="bg-surface-50 border-b border-surface-200 text-surface-700 font-bold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2 px-3">Quotation No.</th>
+                        <th className="py-2 px-2.5">Date</th>
+                        <th className="py-2 px-2.5">Target Site</th>
+                        <th className="py-2 px-2 text-right">Items &amp; Qty</th>
+                        <th className="py-2 px-2.5 text-right">Total Amount</th>
+                        <th className="py-2 px-2 text-center">Status</th>
+                        <th className="py-2 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-100">
+                      {quotations.map((q) => (
+                        <tr key={q.id} className="hover:bg-blue-50/40 transition-colors">
+                          <td className="p-2.5 font-mono font-bold text-blue-700">
+                            {q.quotation_number}
+                          </td>
+                          <td className="p-2.5 text-surface-600">
+                            {formatDateIndian(q.quotation_date)}
+                          </td>
+                          <td className="p-2.5 font-medium text-surface-800">
+                            {q.site_name ? (
+                              <span className="px-1.5 py-0.5 rounded bg-surface-100 text-[11px] font-semibold">
+                                {q.site_name}
+                              </span>
+                            ) : (
+                              <span className="text-surface-400 italic">General Site</span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-right font-medium text-surface-700">
+                            {q.items?.length || 0} items ({q.total_quantity} sheets)
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold text-surface-900">
+                            ₹{Number(q.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200">
+                              {q.status}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {/* WhatsApp Share */}
+                              <button
+                                type="button"
+                                onClick={() => handleShareQuotationWhatsApp(q)}
+                                className="p-1.5 rounded-lg text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 cursor-pointer"
+                                title="Share Quotation via WhatsApp"
+                              >
+                                <Send size={13} />
+                              </button>
+
+                              {/* PDF Download */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadQuotationPDF(q)}
+                                className="p-1.5 rounded-lg text-surface-700 bg-surface-100 hover:bg-surface-200 border border-surface-300 cursor-pointer"
+                                title="Download Quotation PDF"
+                              >
+                                <Download size={13} />
+                              </button>
+
+                              {/* Convert to Challan */}
+                              <Link
+                                href={`/challans/new?customerId=${customer.id}&quotationId=${q.id}`}
+                                className="p-1.5 rounded-lg text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 cursor-pointer inline-flex items-center gap-1 font-bold text-[10px]"
+                                title="Convert this quotation directly into a Delivery Challan"
+                              >
+                                <ArrowRight size={12} />
+                                <span>Challan</span>
+                              </Link>
+
+                              {/* Edit */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingQuotation(q);
+                                  setShowQuotationModal(true);
+                                }}
+                                className="p-1.5 rounded-lg text-surface-500 hover:text-surface-900 hover:bg-surface-100 cursor-pointer"
+                                title="Edit Quotation"
+                              >
+                                <Edit size={13} />
+                              </button>
+
+                              {/* Delete */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteQuotation(q)}
+                                className="p-1.5 rounded-lg text-surface-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                title="Delete Quotation"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Agreed Material Rates & Quotation Card (Rate Contract) */}
           <div className="card p-3.5 sm:p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-surface-100">
               <div className="flex items-center gap-2">
@@ -220,18 +579,18 @@ export default function CustomerDetailPage() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-surface-900 flex items-center gap-2">
-                    <span>Agreed Material Rates &amp; Quotations</span>
+                    <span>Agreed Material Rates &amp; Catalog</span>
                     <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-surface-100 text-surface-700">
                       {materialRates.length}
                     </span>
                   </h3>
                   <p className="text-[11px] text-surface-500">
-                    Room-wise agreed rates. Auto-fetches in Challans &amp; WhatsApp share.
+                    Room-wise agreed rates matrix. Auto-fetches in Quotations &amp; Challans.
                   </p>
                 </div>
               </div>
 
-              {/* Action Toolbar: Selection, Delete, Download, WhatsApp, Edit */}
+              {/* Action Toolbar */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 {selectedRateIds.size > 0 && (
                   <button
@@ -251,7 +610,7 @@ export default function CustomerDetailPage() {
                       type="button"
                       onClick={handleDownloadPDF}
                       className="py-1 px-2.5 text-xs font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 border border-surface-300 rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                      title="Download clean customer PDF (Room, Particulars & Rate only)"
+                      title="Download clean customer PDF"
                     >
                       <Download size={12} />
                       <span>{selectedRateIds.size > 0 ? `PDF (${selectedRateIds.size})` : 'Download PDF'}</span>
@@ -261,7 +620,7 @@ export default function CustomerDetailPage() {
                       type="button"
                       onClick={handleShareWhatsApp}
                       className="py-1 px-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                      title="Send WhatsApp quotation to customer (Room, Particulars & Rate only)"
+                      title="Send WhatsApp rate card"
                     >
                       <Send size={12} />
                       <span>{selectedRateIds.size > 0 ? `WhatsApp (${selectedRateIds.size})` : 'WhatsApp Share'}</span>
@@ -283,7 +642,9 @@ export default function CustomerDetailPage() {
             {materialRates.length === 0 ? (
               <div className="p-4 bg-surface-50 rounded-xl border border-dashed border-surface-200 text-center text-xs text-surface-500 space-y-1">
                 <p className="font-semibold text-surface-700">No agreed materials configured yet</p>
-                <p className="text-[11px] text-surface-400">Click &quot;+ Manage Rates&quot; to configure room-wise particulars, internal codes &amp; agreed rates.</p>
+                <p className="text-[11px] text-surface-400">
+                  Click &quot;+ Manage Rates&quot; to configure room-wise particulars, internal codes &amp; agreed rates.
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -363,98 +724,120 @@ export default function CustomerDetailPage() {
             )}
           </div>
 
-          {/* Challan History */}
+          {/* 3. Challan History */}
           <div className="card p-3 sm:p-4 space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-surface-100">
-            <h3 className="text-sm font-bold text-surface-900">
-              Challan History ({challans.length})
-            </h3>
-            <Link
-              href={`/challans/new?customerId=${customer.id}`}
-              className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1"
-            >
-              <Plus size={13} />
-              <span>Create Challan</span>
-            </Link>
-          </div>
-
-          {challans.length === 0 ? (
-            <div className="py-8 text-center text-xs text-surface-400">
-              No challans generated for this customer yet.
+            <div className="flex items-center justify-between pb-2 border-b border-surface-100">
+              <h3 className="text-sm font-bold text-surface-900">
+                Challan History ({challans.length})
+              </h3>
+              <Link
+                href={`/challans/new?customerId=${customer.id}`}
+                className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
+                <Plus size={13} />
+                <span>Create Challan</span>
+              </Link>
             </div>
-          ) : (
-            <>
-              {/* Mobile Card list */}
-              <div className="sm:hidden space-y-2">
-                {challans.map((c) => (
-                  <Link
-                    key={c.id}
-                    href={`/challans/${c.id}`}
-                    className="p-2.5 rounded-lg border border-surface-200 bg-surface-50/50 block hover:bg-white transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono font-bold text-xs text-primary-600">{c.challan_number}</span>
-                      <span className="text-[10px] uppercase font-bold text-surface-600 px-1.5 py-0.5 rounded bg-surface-200">
-                        {c.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-surface-500">
-                      <span>{formatDateIndian(c.challan_date)}</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-surface-900">{c.total_quantity} sheets</span>
-                        {c.total_amount && c.total_amount > 0 ? (
-                          <span className="font-mono text-primary-700 font-bold bg-primary-50 px-1 rounded text-[10px]">
-                            ₹{c.total_amount.toLocaleString('en-IN')}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
 
-              {/* Desktop Table */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="table text-xs">
-                  <thead>
-                    <tr>
-                      <th>Challan No.</th>
-                      <th>Date</th>
-                      <th className="text-right">Qty</th>
-                      <th className="text-right">Total Amount</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-100">
-                    {challans.map((c) => (
-                      <tr key={c.id} className="hover:bg-surface-50">
-                        <td>
-                          <Link href={`/challans/${c.id}`} className="font-mono font-bold text-primary-600 hover:underline">
-                            {c.challan_number}
-                          </Link>
-                        </td>
-                        <td className="text-surface-600">{formatDateIndian(c.challan_date)}</td>
-                        <td className="text-right font-bold text-surface-900">{c.total_quantity}</td>
-                        <td className="text-right font-mono font-bold text-surface-900">
-                          {c.total_amount && c.total_amount > 0 ? `₹${c.total_amount.toLocaleString('en-IN')}` : '—'}
-                        </td>
-                        <td>
-                          <span className="text-[10px] font-bold uppercase text-surface-600 px-2 py-0.5 rounded bg-surface-100 border border-surface-200">
-                            {c.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {challans.length === 0 ? (
+              <div className="py-8 text-center text-xs text-surface-400">
+                No challans generated for this customer yet.
               </div>
-            </>
-          )}
+            ) : (
+              <>
+                {/* Mobile Card list */}
+                <div className="sm:hidden space-y-2">
+                  {challans.map((c) => (
+                    <Link
+                      key={c.id}
+                      href={`/challans/${c.id}`}
+                      className="p-2.5 rounded-lg border border-surface-200 bg-surface-50/50 block hover:bg-white transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-mono font-bold text-xs text-primary-600">{c.challan_number}</span>
+                        <span className="text-[10px] uppercase font-bold text-surface-600 px-1.5 py-0.5 rounded bg-surface-200">
+                          {c.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-surface-500">
+                        <span>{formatDateIndian(c.challan_date)}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-surface-900">{c.total_quantity} sheets</span>
+                          {c.total_amount && c.total_amount > 0 ? (
+                            <span className="font-mono text-primary-700 font-bold bg-primary-50 px-1 rounded text-[10px]">
+                              ₹{c.total_amount.toLocaleString('en-IN')}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="table text-xs">
+                    <thead>
+                      <tr>
+                        <th>Challan No.</th>
+                        <th>Date</th>
+                        <th className="text-right">Qty</th>
+                        <th className="text-right">Total Amount</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-100">
+                      {challans.map((c) => (
+                        <tr key={c.id} className="hover:bg-surface-50">
+                          <td>
+                            <Link href={`/challans/${c.id}`} className="font-mono font-bold text-primary-600 hover:underline">
+                              {c.challan_number}
+                            </Link>
+                          </td>
+                          <td className="text-surface-600">{formatDateIndian(c.challan_date)}</td>
+                          <td className="text-right font-bold text-surface-900">{c.total_quantity}</td>
+                          <td className="text-right font-mono font-bold text-surface-900">
+                            {c.total_amount && c.total_amount > 0 ? `₹${c.total_amount.toLocaleString('en-IN')}` : '—'}
+                          </td>
+                          <td>
+                            <span className="text-[10px] font-bold uppercase text-surface-600 px-2 py-0.5 rounded bg-surface-100 border border-surface-200">
+                              {c.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {showEdit && <CustomerFormModal editId={customer.id} onClose={() => setShowEdit(false)} />}
+
+      {showQuotationModal && (
+        <QuotationModal
+          customer={customer}
+          editQuotation={editingQuotation}
+          onClose={() => {
+            setShowQuotationModal(false);
+            setEditingQuotation(null);
+          }}
+        />
+      )}
+
+      {showSiteModal && (
+        <SiteModal
+          customer={customer}
+          editSite={editingSite}
+          onClose={() => {
+            setShowSiteModal(false);
+            setEditingSite(null);
+          }}
+        />
+      )}
     </div>
   );
 }

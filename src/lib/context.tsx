@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { BusinessProfile, Customer, Product, Challan, ChallanItem, DashboardStats, ChallanStatus, ShareStatus, ChallanActivityLog, AuthUser } from '@/types';
+import { BusinessProfile, Customer, Product, Challan, ChallanItem, DashboardStats, ChallanStatus, ShareStatus, ChallanActivityLog, AuthUser, Quotation, QuotationItem } from '@/types';
 import * as store from '@/lib/demo-store';
 import { getCurrentUser } from '@/lib/auth';
 import { getNextStaffPONumber as calcNextStaffPONumber } from '@/lib/po-sequence';
@@ -27,6 +27,16 @@ interface AppContextType {
   updateCustomer: (id: string, data: Partial<Customer>) => Customer | null;
   deleteCustomer: (id: string) => boolean;
   getCustomerChallans: (customerId: string) => Challan[];
+
+  // Quotations
+  quotations: Quotation[];
+  getQuotations: () => Quotation[];
+  getCustomerQuotations: (customerId: string) => Quotation[];
+  getQuotation: (id: string) => Quotation | undefined;
+  peekNextQuotationNumber: (targetDate?: Date | string) => string;
+  createQuotation: (data: Partial<Quotation>, items: Partial<QuotationItem>[]) => Quotation;
+  updateQuotation: (id: string, data: Partial<Quotation>, items?: Partial<QuotationItem>[]) => Quotation | null;
+  deleteQuotation: (id: string) => boolean;
 
   // Products
   refreshProducts: (search?: string) => void;
@@ -77,6 +87,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [challans, setChallans] = useState<Challan[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -93,6 +104,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCustomers(store.getCustomers());
     setProducts(store.getProducts());
     setChallans(store.getChallans());
+    setQuotations(store.getQuotations());
     setIsLoading(false);
 
     // Initial fetch from Cloud Firestore & Server Database API
@@ -420,6 +432,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [dataVersion, challans, getChallansFn]);
 
+  const createQuotationFn = useCallback((data: Partial<Quotation>, items: Partial<QuotationItem>[]) => {
+    const user = getCurrentUser();
+    const q = store.createQuotation(
+      {
+        ...data,
+        prepared_by: data.prepared_by || user?.name || user?.username || 'Staff',
+        created_by: data.created_by || user?.username || 'admin',
+      },
+      items
+    );
+    setQuotations([...store.getQuotations()]);
+    setDataVersion((v) => v + 1);
+    return q;
+  }, []);
+
+  const updateQuotationFn = useCallback((id: string, data: Partial<Quotation>, items?: Partial<QuotationItem>[]) => {
+    const q = store.updateQuotation(id, data, items);
+    setQuotations([...store.getQuotations()]);
+    setDataVersion((v) => v + 1);
+    return q;
+  }, []);
+
+  const deleteQuotationFn = useCallback((id: string) => {
+    const res = store.deleteQuotation(id);
+    setQuotations([...store.getQuotations()]);
+    setDataVersion((v) => v + 1);
+    return res;
+  }, []);
+
   const value: AppContextType = {
     isLoading,
     isSetupComplete,
@@ -427,6 +468,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     customers,
     products,
     challans,
+    quotations,
+    getQuotations: store.getQuotations,
+    getCustomerQuotations: store.getCustomerQuotations,
+    getQuotation: store.getQuotation,
+    peekNextQuotationNumber: store.peekNextQuotationNumber,
+    createQuotation: createQuotationFn,
+    updateQuotation: updateQuotationFn,
+    deleteQuotation: deleteQuotationFn,
     dataVersion,
     currentUser,
     isAdmin: currentUser?.role === 'admin' || !currentUser,
