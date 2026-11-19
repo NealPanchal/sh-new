@@ -489,6 +489,12 @@ export function generateChallanPDF({
   const qrSize = 22;
   const qrX = margin + leftColWidth - qrSize - 3.0;
   const qrY = y + 2.0;
+  const termsDividerY = y + 27.5;
+
+  // Vertical separator between banking/prepared details and QR code
+  doc.setDrawColor(215, 215, 215);
+  doc.setLineWidth(0.2);
+  doc.line(qrX - 2.5, y, qrX - 2.5, termsDividerY);
 
   try {
     doc.addImage(SHOWHOUSE_PAYMENT_QR_BASE64, 'JPEG', qrX, qrY, qrSize, qrSize);
@@ -508,7 +514,7 @@ export function generateChallanPDF({
   doc.setFontSize(6.4);
   doc.setTextColor(...blackColor);
   doc.text('BANKING & PAYMENT DETAILS:', leftX, bankY);
-  bankY += 3.4;
+  bankY += 3.3;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.0);
@@ -516,7 +522,7 @@ export function generateChallanPDF({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.4);
   doc.text('50200003880041', leftX + 13.5, bankY);
-  bankY += 3.3;
+  bankY += 3.2;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.0);
@@ -524,14 +530,20 @@ export function generateChallanPDF({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.2);
   doc.text('HDFC0000146', leftX + 17, bankY);
-  bankY += 3.2;
+  bankY += 3.1;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(5.6);
   doc.text('BANK : HDFC BANK LTD, THANE', leftX, bankY);
-  bankY += 3.2;
+
+  // Line separating Banking Information and Prepared By (Separate columns/sections)
+  const prepDividerY = y + 14.8;
+  doc.setDrawColor(215, 215, 215);
+  doc.setLineWidth(0.2);
+  doc.line(leftX, prepDividerY, qrX - 2.5, prepDividerY);
 
   // Staff Prepared By & Mobile
+  bankY = prepDividerY + 2.8;
   const creator = challan.created_by || challan.prepared_by || 'VRUSHANK';
   const staffPhone = employeePhone || lookupStaffPhone(creator);
   const mobileText =
@@ -542,16 +554,15 @@ export function generateChallanPDF({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(5.6);
   doc.text(`PREPARED BY : ${creator.toUpperCase()}`, leftX, bankY);
-  bankY += 3.0;
+  bankY += 2.8;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(5.3);
   doc.text(`MOBILE : ${mobileText}`, leftX, bankY);
-  bankY += 2.8;
+  bankY += 2.6;
   doc.text(`EMAIL : forshowhouse@gmail.com`, leftX, bankY);
 
   // 3. Fixed Terms & Conditions (Clean dedicated zone, NO overlap)
-  const termsDividerY = y + 27.5;
   doc.setDrawColor(215, 215, 215);
   doc.setLineWidth(0.2);
   doc.line(leftX, termsDividerY, margin + leftColWidth - 2, termsDividerY);
