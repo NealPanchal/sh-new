@@ -26,6 +26,7 @@ import {
   Smartphone,
   Download,
   ChevronRight,
+  Truck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logoutAdmin, getCurrentUser } from '@/lib/auth';
@@ -35,6 +36,7 @@ export const allNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/challans/new', label: 'New Challan', icon: FilePlus },
   { href: '/challans', label: 'All Challans', icon: FileText },
+  { href: '/delivery', label: 'Delivery Status', icon: Truck },
   { href: '/bills', label: 'Delivery Bills', icon: Receipt },
   { href: '/customers', label: 'Customers', icon: Users },
   { href: '/products', label: 'Products', icon: Package },

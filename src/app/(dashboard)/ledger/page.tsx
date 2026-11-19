@@ -140,7 +140,7 @@ function MasterPartyLedgerContent() {
   const paramParty = searchParams.get('party') || searchParams.get('customerId') || searchParams.get('customer');
   const paramRebuild = searchParams.get('rebuild') === 'true';
 
-  const { customers: contextCustomers, challans: contextChallans } = useApp();
+  const { customers: contextCustomers, challans: contextChallans, deleteChallan, updateChallan } = useApp();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'ledger' | 'sites' | 'credit' | 'tally'>('ledger');
 
@@ -355,24 +355,52 @@ function MasterPartyLedgerContent() {
     }
   }, [paramParty, customers]);
 
+  // Stable refs to prevent cascading re-render and re-fetch loops
+  const customersRef = React.useRef(customers);
+  const contextCustomersRef = React.useRef(contextCustomers);
+  const contextChallansRef = React.useRef(contextChallans);
+
+  useEffect(() => {
+    customersRef.current = customers;
+  }, [customers]);
+
+  useEffect(() => {
+    contextCustomersRef.current = contextCustomers;
+  }, [contextCustomers]);
+
+  useEffect(() => {
+    contextChallansRef.current = contextChallans;
+  }, [contextChallans]);
+
   // Fetch ledger data whenever selected customer, date filters, or triggers change
-  const fetchLedger = async () => {
+  const fetchLedger = async (silent: boolean = false) => {
     if (!selectedCustomerId) return;
     try {
-      setLoading(true);
+      if (!silent && (!ledgerData.entries || ledgerData.entries.length === 0)) {
+        setLoading(true);
+      }
       const token = getClientAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
+      const currentCustomers = customersRef.current || [];
+      const currentContextCusts = contextCustomersRef.current || [];
+      const currentContextChallans = contextChallansRef.current || [];
+
       const custObj =
-        customers.find((c) => c.id === selectedCustomerId || c.name === selectedCustomerId) ||
-        (contextCustomers || []).find((c: Customer) => c.id === selectedCustomerId || c.name === selectedCustomerId) ||
+        currentCustomers.find((c) => c.id === selectedCustomerId || c.name === selectedCustomerId) ||
+        currentContextCusts.find((c: Customer) => c.id === selectedCustomerId || c.name === selectedCustomerId) ||
         selectedCustomer;
       const custName = custObj?.name || custObj?.business_name || '';
       const targetId = (selectedCustomerId || '').trim().toLowerCase();
       const targetName = (custName || '').trim().toLowerCase();
 
-      // Find all matching challans from local contextChallans
-      const matchingContextChallans = (contextChallans || []).filter((c: any) => {
+      // Find all matching DELIVERED challans from local contextChallans
+      const matchingContextChallans = currentContextChallans.filter((c: any) => {
+        if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
+        // Delivery Gate: Only challans marked as 'delivered' enter the ledger
+        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isDelivered) return false;
+
         const cId = (c.customer_id || '').toLowerCase();
         const cName = (c.customer_name || '').toLowerCase();
         if (targetId && (cId === targetId || cName === targetId)) return true;
@@ -384,15 +412,6 @@ function MasterPartyLedgerContent() {
           return true;
         }
         return false;
-      });
-
-      // Background sync missing challans to server /api/challans
-      matchingContextChallans.forEach((ch: any) => {
-        fetch('/api/challans', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ challan: ch }),
-        }).catch(() => {});
       });
 
       const params = new URLSearchParams({ customerId: selectedCustomerId });
@@ -427,7 +446,7 @@ function MasterPartyLedgerContent() {
         };
       }
 
-      // Merge any client-side challans that are not yet in baseLedger.entries
+      // Merge any client-side delivered challans that are not yet in baseLedger.entries
       const existingRefKeys = new Set(
         (baseLedger.entries || []).map((e: any) => (e.reference || '').trim().toLowerCase())
       );
@@ -436,7 +455,6 @@ function MasterPartyLedgerContent() {
       );
 
       let mergedEntries = [...(baseLedger.entries || [])];
-      let hasNewEntries = false;
 
       matchingContextChallans.forEach((c: any) => {
         const vch = (c.challan_number || c.reference_number || '').trim().toLowerCase();
@@ -445,6 +463,10 @@ function MasterPartyLedgerContent() {
           return;
         }
         if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
+
+        // Delivery Gate check
+        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isDelivered) return;
 
         const amt = Number(c.total_amount) || 0;
         if (amt <= 0) return;
@@ -473,16 +495,19 @@ function MasterPartyLedgerContent() {
           payment_status: c.payment_status || 'unpaid',
           created_at: c.created_at || c.challan_date,
         });
-        hasNewEntries = true;
       });
 
-      // Merge sites from matchingContextChallans
+      // Merge sites strictly from delivered challans
       let mergedSites = [...(baseLedger.sites || [])];
       const existingSiteNames = new Set(
         mergedSites.map((s: any) => (s.site_name || '').trim().toLowerCase())
       );
 
       matchingContextChallans.forEach((c: any) => {
+        if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
+        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isDelivered) return;
+
         let siteName = (c.site_name || '').trim();
         if (!siteName && c.delivery_address && c.delivery_address.trim()) {
           siteName = c.delivery_address.split(',')[0].trim();
@@ -557,9 +582,13 @@ function MasterPartyLedgerContent() {
       const token = getClientAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
+      const currentCustomers = customersRef.current || [];
+      const currentContextCusts = contextCustomersRef.current || [];
+      const currentContextChallans = contextChallansRef.current || [];
+
       const custObj =
-        customers.find((c) => c.id === custId || c.name === custId) ||
-        (contextCustomers || []).find((c: Customer) => c.id === custId || c.name === custId);
+        currentCustomers.find((c) => c.id === custId || c.name === custId) ||
+        currentContextCusts.find((c: Customer) => c.id === custId || c.name === custId);
       const custName = custObj?.name || custObj?.business_name || (custId.length < 30 ? custId : '');
 
       const queryParams = new URLSearchParams({ customerId: custId });
@@ -569,7 +598,11 @@ function MasterPartyLedgerContent() {
       const targetName = custName.toLowerCase();
 
       // Immediate pre-population from in-memory contextChallans so UI is NEVER empty
-      const localMatches = (contextChallans || []).filter((c: any) => {
+      const localMatches = currentContextChallans.filter((c: any) => {
+        if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
+        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isDelivered) return false;
+
         const cId = (c.customer_id || '').toLowerCase();
         const cName = (c.customer_name || '').toLowerCase();
         if (targetId && (cId === targetId || cName === targetId)) return true;
@@ -601,6 +634,10 @@ function MasterPartyLedgerContent() {
         const d = await res.json();
         const serverList = (d.challans || [])
           .filter((c: any) => {
+            if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
+            const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+            if (!isDelivered) return false;
+
             const cId = (c.customer_id || '').toLowerCase();
             const cName = (c.customer_name || '').toLowerCase();
             if (targetId && (cId === targetId || cName === targetId)) return true;
@@ -634,12 +671,13 @@ function MasterPartyLedgerContent() {
     }
   };
 
+  // Only trigger on actual filter / customer changes - NEVER on fluctuating array references
   useEffect(() => {
     fetchLedger();
     if (selectedCustomerId) {
       fetchCustomerChallans(selectedCustomerId);
     }
-  }, [selectedCustomerId, fromDate, toDate, typeFilter, siteFilter, customers, contextCustomers, contextChallans]);
+  }, [selectedCustomerId, fromDate, toDate, typeFilter, siteFilter]);
 
   // Selected customer object
   const selectedCustomer = useMemo<Customer>(() => {
@@ -1443,8 +1481,43 @@ function MasterPartyLedgerContent() {
   // Confirm delete of any transaction entry from Ledger Table
   const handleConfirmDeleteEntry = async () => {
     if (!entryToDelete) return;
+    const toDelete = entryToDelete;
     try {
       setIsDeletingEntry(true);
+
+      // 1. Optimistic removal from local UI immediately
+      setLedgerData((prev) => {
+        const remaining = prev.entries.filter(
+          (e) => e.id !== toDelete.id && (!toDelete.reference || e.reference !== toDelete.reference)
+        );
+        let running = prev.openingBalance || 0;
+        let totDebit = 0;
+        let totCredit = 0;
+        const recomputed = remaining.map((e) => {
+          running = Math.round((running + e.debit - e.credit) * 100) / 100;
+          totDebit += e.debit;
+          totCredit += e.credit;
+          return { ...e, running_balance: running };
+        });
+        return {
+          ...prev,
+          totalDebit: Math.round(totDebit * 100) / 100,
+          totalCredit: Math.round(totCredit * 100) / 100,
+          closingBalance: running,
+          verifiedClosingBalance: running,
+          entries: recomputed,
+        };
+      });
+
+      // 2. Client context deletion if challan
+      const chId = toDelete.challan_id || (toDelete.id.startsWith('entry_ch_') ? toDelete.id.replace(/^entry_ch_/, '') : '');
+      if (chId && deleteChallan) {
+        await deleteChallan(chId);
+      }
+
+      setEntryToDelete(null);
+
+      // 3. API deletion call
       const token = getClientAuthToken();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -1455,22 +1528,22 @@ function MasterPartyLedgerContent() {
         method: 'DELETE',
         headers,
         body: JSON.stringify({
-          id: entryToDelete.id,
-          sourceType: entryToDelete.source_type,
-          challanId: entryToDelete.challan_id,
-          paymentId: entryToDelete.payment_id,
-          returnId: entryToDelete.return_id,
-          manualId: entryToDelete.manual_id,
+          id: toDelete.id,
+          sourceType: toDelete.source_type,
+          challanId: chId || toDelete.challan_id,
+          paymentId: toDelete.payment_id,
+          returnId: toDelete.return_id,
+          manualId: toDelete.manual_id,
         }),
       });
 
       if (res.ok) {
-        showToast(`Voucher ${entryToDelete.reference} removed from ledger`);
-        setEntryToDelete(null);
-        await fetchLedger();
+        showToast(`Voucher ${toDelete.reference || ''} permanently removed from ledger`, 'success');
+        await fetchLedger(true);
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         showToast(err.error || 'Failed to delete ledger entry', 'error');
+        await fetchLedger(true);
       }
     } catch {
       showToast('Error deleting ledger entry', 'error');
@@ -1684,6 +1757,53 @@ function MasterPartyLedgerContent() {
 
     try {
       setIsUpdatingEntry(true);
+
+      // 1. Optimistic local update
+      setLedgerData((prev) => {
+        const updated = prev.entries.map((item) => {
+          if (item.id === editingEntry.id || (editingEntry.challan_id && item.challan_id === editingEntry.challan_id)) {
+            return {
+              ...item,
+              date: toInputDateFormat(editEntryDate),
+              particulars: editEntryParticulars.trim(),
+              payment_type: editEntryType,
+              reference: editEntryVoucherNo.trim(),
+              debit: isDebit ? numAmt : 0,
+              credit: !isDebit ? numAmt : 0,
+              site_name: editEntrySiteName.trim() || undefined,
+            };
+          }
+          return item;
+        });
+        let running = prev.openingBalance || 0;
+        let totDebit = 0;
+        let totCredit = 0;
+        const recomputed = updated.map((e) => {
+          running = Math.round((running + e.debit - e.credit) * 100) / 100;
+          totDebit += e.debit;
+          totCredit += e.credit;
+          return { ...e, running_balance: running };
+        });
+        return {
+          ...prev,
+          totalDebit: Math.round(totDebit * 100) / 100,
+          totalCredit: Math.round(totCredit * 100) / 100,
+          closingBalance: running,
+          verifiedClosingBalance: running,
+          entries: recomputed,
+        };
+      });
+
+      // 2. Client context store update if challan
+      const chId = editingEntry.challan_id || (editingEntry.id.startsWith('entry_ch_') ? editingEntry.id.replace(/^entry_ch_/, '') : '');
+      if (chId && updateChallan) {
+        await updateChallan(chId, {
+          total_amount: isDebit ? numAmt : undefined,
+          site_name: editEntrySiteName.trim() || undefined,
+          reference_number: editEntryVoucherNo.trim() || undefined,
+        });
+      }
+
       const token = getClientAuthToken();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -1719,7 +1839,7 @@ function MasterPartyLedgerContent() {
       showToast('Ledger entry updated successfully!');
       setShowEditEntryModal(false);
       setEditingEntry(null);
-      await fetchLedger();
+      await fetchLedger(true);
     } catch {
       showToast('Network error updating ledger entry', 'error');
     } finally {
@@ -1826,8 +1946,21 @@ function MasterPartyLedgerContent() {
       if (res.ok) {
         showToast(`Entire ledger for ${selectedCustomer?.name || 'Customer'} has been deleted and reset.`, 'success');
         setShowDeleteEntireLedgerModal(false);
-        await fetchLedger();
-        await fetchCustomerChallans(selectedCustomerId);
+        const initialOpening = Number(selectedCustomer?.opening_balance) || 0;
+        setLedgerData({
+          openingBalance: initialOpening,
+          totalDebit: 0,
+          totalCredit: 0,
+          closingBalance: initialOpening,
+          verifiedSiteDebits: 0,
+          verifiedSiteCredits: 0,
+          netVerifiedSiteAdjustment: 0,
+          verifiedClosingBalance: initialOpening,
+          entries: [],
+          sites: [],
+        });
+        setCustomerChallans([]);
+        await fetchLedger(true);
       } else {
         const err = await res.json();
         showToast(err.error || 'Failed to delete ledger', 'error');
@@ -2274,7 +2407,7 @@ function MasterPartyLedgerContent() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={fetchLedger}
+                  onClick={() => fetchLedger()}
                   className="btn-primary py-1.5 px-4 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center justify-center gap-1.5 shadow-xs w-full sm:w-auto"
                 >
                   <Search size={13} />

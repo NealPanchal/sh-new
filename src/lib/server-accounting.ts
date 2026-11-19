@@ -228,7 +228,14 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
       return false;
     };
 
-    const custChallans = challans.filter((c) => isMatchThisCust(c) && !c.is_deleted);
+    const custChallans = challans.filter(
+      (c) =>
+        isMatchThisCust(c) &&
+        !c.is_deleted &&
+        c.status !== 'cancelled' &&
+        c.status !== 'void' &&
+        (c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered))
+    );
 
     const existingSiteNames = new Set(sites.map((s) => s.site_name.trim().toLowerCase()));
     let modified = false;
@@ -943,8 +950,14 @@ export function updateChallanPayment(
 export function deleteChallanRecord(challanId: string, user: string): boolean {
   const challans = getAllChallans();
   const lower = challanId.trim().toLowerCase();
+  const stripped = lower.replace(/^entry_ch_/, '');
   const idx = challans.findIndex(
-    (c) => c.id === challanId || (c.challan_number && c.challan_number.trim().toLowerCase() === lower)
+    (c) =>
+      c.id === challanId ||
+      c.id.toLowerCase() === lower ||
+      c.id.toLowerCase() === stripped ||
+      (c.challan_number && c.challan_number.trim().toLowerCase() === lower) ||
+      (c.challan_number && c.challan_number.trim().toLowerCase() === stripped)
   );
   if (idx < 0) return false;
 
@@ -1143,6 +1156,22 @@ export function clearCustomerLedger(
     saveCustomerSites(remainingSites);
   }
 
+  // 4. Clear/void customer challans so cleared ledger does not resurrect old records
+  const allChallans = getAllChallans();
+  let challanChanged = false;
+  allChallans.forEach((c) => {
+    if (isMatchThisCust(c.customer_id, c.customer_name) && !c.is_deleted) {
+      c.is_deleted = true;
+      c.status = 'void';
+      c.updated_at = new Date().toISOString();
+      challanChanged = true;
+      clearedCount++;
+    }
+  });
+  if (challanChanged) {
+    saveAllChallans(allChallans);
+  }
+
   recordAuditLog({
     entity_type: 'site_adjustment',
     entity_id: customerId,
@@ -1191,7 +1220,12 @@ export function rebuildCustomerLedgerFromChallans(
 
   const allChallans = getAllChallans();
   const matchedChallans = allChallans.filter(
-    (c) => isMatchThisCust(c) && !c.is_deleted && c.status !== 'cancelled' && c.status !== 'void'
+    (c) =>
+      isMatchThisCust(c) &&
+      !c.is_deleted &&
+      c.status !== 'cancelled' &&
+      c.status !== 'void' &&
+      (c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered))
   );
 
   // Auto-detect sites and save
@@ -1392,6 +1426,10 @@ export function computeCustomerLedger(
       return;
     }
     if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
+
+    // Delivery Gate: Only challans explicitly marked as 'delivered' enter the party ledger
+    const isDelivered = c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered);
+    if (!isDelivered) return;
 
     if (options?.siteId && c.site_id && c.site_id !== options.siteId) return;
     if (options?.siteName && c.site_name && c.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;
