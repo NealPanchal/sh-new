@@ -136,35 +136,35 @@ export function generateChallanPDF({
   doc.text(titleText, boxX + boxWidth / 2, boxY + 4.3, { align: 'center' });
 
   // Separate Document Number, Staff PO & Date (Right side below pill)
-  // Note: "PI REF" has been completely removed as requested
+  // Positioned with proper vertical clearance so it NEVER overlaps the pill box
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.2);
   doc.setTextColor(...blackColor);
 
-  let docInfoY = y + 8.0;
+  let docInfoY = boxY + boxHeight + 4.0;
   if (isPI) {
     const piNum = challan.pi_number || challan.challan_number.replace(/^SH\//, 'PI/');
     doc.text(`PI NO : ${piNum}`, boxX, docInfoY);
-    docInfoY += 3.0;
+    docInfoY += 3.2;
     if (challan.reference_number) {
       doc.text(`PO NO : ${challan.reference_number}`, boxX, docInfoY);
-      docInfoY += 3.0;
+      docInfoY += 3.2;
     }
   } else {
     doc.text(`CHALLAN NO : ${challan.challan_number}`, boxX, docInfoY);
-    docInfoY += 3.0;
+    docInfoY += 3.2;
     if (challan.reference_number) {
       doc.text(`PO NO : ${challan.reference_number}`, boxX, docInfoY);
-      docInfoY += 3.0;
+      docInfoY += 3.2;
     }
   }
   doc.text(`DATE : ${formattedDate}`, boxX, docInfoY);
-  docInfoY += 3.5;
+  docInfoY += 3.8;
 
   // ----------------------------------------------------
   // 2. COMPANY DETAILS (RIGHT) & CUSTOMER DETAILS (LEFT)
   // ----------------------------------------------------
-  const detailsY = Math.max(y + 15.5, docInfoY);
+  const detailsY = Math.max(y + 20, docInfoY + 2.0);
 
   // Left: Customer Details (Clean bold header without redundant red text)
   doc.setFont('helvetica', 'bold');
