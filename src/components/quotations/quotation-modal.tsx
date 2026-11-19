@@ -151,7 +151,21 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       return;
     }
 
-    const fetched: FormItem[] = customer.material_rates.map((mr, idx) => {
+    let source = customer.material_rates;
+    if (selectedSiteName && selectedSiteName !== 'All Sites') {
+      const siteFiltered = source.filter(
+        (mr) =>
+          mr.site_name?.toLowerCase() === selectedSiteName.toLowerCase() ||
+          mr.site_id === selectedSiteId ||
+          !mr.site_name ||
+          mr.site_name === 'All Sites'
+      );
+      if (siteFiltered.length > 0) {
+        source = siteFiltered;
+      }
+    }
+
+    const fetched: FormItem[] = source.map((mr, idx) => {
       const roomPrefix = mr.room ? `[ ${mr.room.toUpperCase()} ] ` : '';
       const desc = mr.particulars ? `${roomPrefix}${mr.particulars}` : `${roomPrefix}LAMINATE / FINISH`;
       const r = Number(mr.rate) || 0;
@@ -167,7 +181,10 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
     });
 
     setItems(fetched);
-    showToast(`⚡ Auto-fetched ${fetched.length} agreed materials with locked rates!`, 'success');
+    showToast(
+      `⚡ Auto-fetched ${fetched.length} agreed materials for ${selectedSiteName || 'Customer'} with locked rates!`,
+      'success'
+    );
   };
 
   // Computations
@@ -350,7 +367,9 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
                   title="Auto-fill items with locked customer rates"
                 >
                   <Layers size={13} />
-                  <span>⚡ Auto-Fetch Customer Agreed Rates ({customer.material_rates.length})</span>
+                  <span>
+                    ⚡ Auto-Fetch {selectedSiteName ? `${selectedSiteName} Materials` : 'Agreed Rates'} ({customer.material_rates.length})
+                  </span>
                 </button>
               )}
 

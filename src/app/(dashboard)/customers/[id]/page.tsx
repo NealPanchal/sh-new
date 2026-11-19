@@ -22,10 +22,11 @@ import {
   ArrowRight,
   ExternalLink,
 } from 'lucide-react';
-import { formatPhone, formatDateIndian } from '@/lib/utils';
+import { formatPhone, formatDateIndian, cn } from '@/lib/utils';
 import { CustomerFormModal } from '@/components/customers/customer-form-modal';
 import { QuotationModal } from '@/components/quotations/quotation-modal';
 import { SiteModal } from '@/components/customers/site-modal';
+import { MaterialRateModal } from '@/components/customers/material-rate-modal';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
 import { exportQuotationToPDF } from '@/lib/pdf-quotation';
 import { shareCustomerRatesViaWhatsApp, shareQuotationViaWhatsApp } from '@/lib/whatsapp';
@@ -46,6 +47,8 @@ export default function CustomerDetailPage() {
   } = useApp();
 
   const [showEdit, setShowEdit] = useState(false);
+  const [showRateModal, setShowRateModal] = useState(false);
+  const [activeSiteFilter, setActiveSiteFilter] = useState<string>('all');
   const [showQuotationModal, setShowQuotationModal] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [showSiteModal, setShowSiteModal] = useState(false);
@@ -67,6 +70,13 @@ export default function CustomerDetailPage() {
   const materialRates: CustomerMaterialRate[] = useMemo(() => {
     return Array.isArray(customer?.material_rates) ? customer.material_rates : [];
   }, [customer?.material_rates]);
+
+  const displayedRates: CustomerMaterialRate[] = useMemo(() => {
+    if (activeSiteFilter === 'all') return materialRates;
+    return materialRates.filter(
+      (r) => r.site_name === activeSiteFilter || r.site_id === activeSiteFilter || (!r.site_name && activeSiteFilter === 'all')
+    );
+  }, [materialRates, activeSiteFilter]);
 
   // Multiple Sites derivation
   const customerSites: CustomerSite[] = useMemo(() => {
@@ -108,10 +118,10 @@ export default function CustomerDetailPage() {
   };
 
   const toggleSelectAllRates = () => {
-    if (selectedRateIds.size === materialRates.length) {
+    if (selectedRateIds.size === displayedRates.length && displayedRates.length > 0) {
       setSelectedRateIds(new Set());
     } else {
-      setSelectedRateIds(new Set(materialRates.map((mr) => mr.id)));
+      setSelectedRateIds(new Set(displayedRates.map((mr) => mr.id)));
     }
   };
 
@@ -131,7 +141,7 @@ export default function CustomerDetailPage() {
     if (selectedRateIds.size > 0) {
       return materialRates.filter((mr) => selectedRateIds.has(mr.id));
     }
-    return materialRates;
+    return displayedRates.length > 0 ? displayedRates : materialRates;
   };
 
   const handleDownloadPDF = () => {
@@ -630,7 +640,7 @@ export default function CustomerDetailPage() {
 
                 <button
                   type="button"
-                  onClick={() => setShowEdit(true)}
+                  onClick={() => setShowRateModal(true)}
                   className="py-1 px-2.5 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer"
                 >
                   <Plus size={12} />
@@ -639,9 +649,57 @@ export default function CustomerDetailPage() {
               </div>
             </div>
 
-            {materialRates.length === 0 ? (
+            {/* Site Filter Tabs */}
+            {customerSites.length > 0 && materialRates.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-surface-100">
+                <button
+                  type="button"
+                  onClick={() => setActiveSiteFilter('all')}
+                  className={cn(
+                    'py-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0',
+                    activeSiteFilter === 'all'
+                      ? 'bg-[#ea580c] text-white shadow-xs'
+                      : 'bg-surface-100 hover:bg-surface-200 text-surface-700'
+                  )}
+                >
+                  All Materials ({materialRates.length})
+                </button>
+                {customerSites.map((site) => {
+                  const siteCount = materialRates.filter(
+                    (r) => r.site_name === site.site_name || r.site_id === site.id
+                  ).length;
+                  return (
+                    <button
+                      key={site.id}
+                      type="button"
+                      onClick={() => setActiveSiteFilter(site.site_name)}
+                      className={cn(
+                        'py-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1',
+                        activeSiteFilter === site.site_name
+                          ? 'bg-[#ea580c] text-white shadow-xs'
+                          : 'bg-surface-100 hover:bg-surface-200 text-surface-700'
+                      )}
+                    >
+                      <span>{site.site_name}</span>
+                      <span className={cn(
+                        'text-[10px] px-1 py-0.2 rounded-full font-black',
+                        activeSiteFilter === site.site_name ? 'bg-white/20 text-white' : 'bg-surface-200 text-surface-600'
+                      )}>
+                        {siteCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {displayedRates.length === 0 ? (
               <div className="p-4 bg-surface-50 rounded-xl border border-dashed border-surface-200 text-center text-xs text-surface-500 space-y-1">
-                <p className="font-semibold text-surface-700">No agreed materials configured yet</p>
+                <p className="font-semibold text-surface-700">
+                  {materialRates.length === 0
+                    ? 'No agreed materials configured yet'
+                    : `No materials configured for ${activeSiteFilter}`}
+                </p>
                 <p className="text-[11px] text-surface-400">
                   Click &quot;+ Manage Rates&quot; to configure room-wise particulars, internal codes &amp; agreed rates.
                 </p>
@@ -655,13 +713,14 @@ export default function CustomerDetailPage() {
                         <th className="py-2 px-2 w-8 text-center">
                           <input
                             type="checkbox"
-                            checked={selectedRateIds.size === materialRates.length && materialRates.length > 0}
+                            checked={selectedRateIds.size === displayedRates.length && displayedRates.length > 0}
                             onChange={toggleSelectAllRates}
                             className="rounded border-surface-300 text-[#ea580c] focus:ring-[#ea580c] cursor-pointer"
                             title="Select / Deselect All"
                           />
                         </th>
-                        <th className="py-2 px-2.5 w-28">Room</th>
+                        <th className="py-2 px-2 w-20">Site</th>
+                        <th className="py-2 px-2.5 w-24">Room</th>
                         <th className="py-2 px-2.5">Selected Particulars</th>
                         <th className="py-2 px-2 w-24">
                           <div className="flex items-center gap-1">
@@ -669,7 +728,7 @@ export default function CustomerDetailPage() {
                             <span className="text-[8px] px-1 py-0.2 rounded bg-zinc-200 text-zinc-700 font-normal">Internal</span>
                           </div>
                         </th>
-                        <th className="py-2 px-2 w-28">
+                        <th className="py-2 px-2 w-24">
                           <div className="flex items-center gap-1">
                             <span>Company</span>
                             <span className="text-[8px] px-1 py-0.2 rounded bg-zinc-200 text-zinc-700 font-normal">Internal</span>
@@ -679,7 +738,7 @@ export default function CustomerDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-100">
-                      {materialRates.map((mr, idx) => {
+                      {displayedRates.map((mr, idx) => {
                         const isChecked = selectedRateIds.has(mr.id);
                         return (
                           <tr key={mr.id || idx} className={isChecked ? 'bg-amber-50/60' : 'hover:bg-surface-50/60'}>
@@ -690,6 +749,11 @@ export default function CustomerDetailPage() {
                                 onChange={() => toggleSelectRate(mr.id)}
                                 className="rounded border-surface-300 text-[#ea580c] focus:ring-[#ea580c] cursor-pointer"
                               />
+                            </td>
+                            <td className="p-2">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-surface-100 text-surface-700 border border-surface-200">
+                                {mr.site_name || 'All Sites'}
+                              </span>
                             </td>
                             <td className="p-2 font-bold text-surface-900">{mr.room || 'General'}</td>
                             <td className="p-2 font-medium text-surface-800">
@@ -710,9 +774,9 @@ export default function CustomerDetailPage() {
                 <div className="flex items-center justify-between text-[11px] text-surface-500 px-1">
                   <span>
                     {selectedRateIds.size > 0 ? (
-                      <strong className="text-[#ea580c]">{selectedRateIds.size} of {materialRates.length} item(s) selected</strong>
+                      <strong className="text-[#ea580c]">{selectedRateIds.size} of {displayedRates.length} item(s) selected</strong>
                     ) : (
-                      <span>Showing {materialRates.length} agreed material(s)</span>
+                      <span>Showing {displayedRates.length} agreed material(s)</span>
                     )}
                   </span>
                   <span className="text-emerald-700 font-semibold flex items-center gap-1">
@@ -836,6 +900,13 @@ export default function CustomerDetailPage() {
             setShowSiteModal(false);
             setEditingSite(null);
           }}
+        />
+      )}
+
+      {showRateModal && (
+        <MaterialRateModal
+          customer={customer}
+          onClose={() => setShowRateModal(false)}
         />
       )}
     </div>

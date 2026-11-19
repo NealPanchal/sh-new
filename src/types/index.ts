@@ -162,11 +162,14 @@ export interface CustomerSite {
 
 export interface CustomerMaterialRate {
   id: string;
-  room: string;          // e.g. "Master Bedroom", "Living Room", "Kitchen"
-  particulars?: string;  // e.g. "High Gloss Acrylic Laminate 1.5mm", "Fluted Louver", "Veneer Finish"
-  code: string;          // e.g. "SF-102", "HG-405", "101-GLOSS" (Staff / Internal Only)
-  company_name: string;  // e.g. "Royal Oak", "Merino", "Showhouse Premium" (Staff / Internal Only)
-  rate: number;          // e.g. 850
+  site_id?: string | null;      // Specific site ID (e.g. Site 1, Site 2) or null for General / All Sites
+  site_name?: string | null;    // Specific site name (e.g. "Site 1", "Site 2")
+  material?: string | null;     // Material name/type (e.g. "Laminate 1mm", "Acrylic 1.5mm", "Fluted Louver")
+  room: string;                 // e.g. "Master Bedroom", "Living Room", "Kitchen"
+  particulars?: string;         // e.g. "High Gloss Acrylic Laminate 1.5mm", "Fluted Louver", "Veneer Finish"
+  code: string;                 // e.g. "SF-102", "HG-405", "101-GLOSS" (Staff / Internal Only)
+  company_name: string;         // e.g. "Royal Oak", "Merino", "Showhouse Premium" (Staff / Internal Only)
+  rate: number;                 // e.g. 850
 }
 
 export interface Customer {

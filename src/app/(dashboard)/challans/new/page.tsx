@@ -251,7 +251,22 @@ function CreateChallanContent() {
 
   const handleLoadCustomerAgreedMaterials = () => {
     if (!matchedCustomer?.material_rates || matchedCustomer.material_rates.length === 0) return;
-    const newItems: ChallanItemFormData[] = matchedCustomer.material_rates.map((m) => {
+
+    let targetRates = matchedCustomer.material_rates;
+    if (selectedSiteName && selectedSiteName !== 'All Sites') {
+      const siteFiltered = targetRates.filter(
+        (m) =>
+          m.site_name?.toLowerCase() === selectedSiteName.toLowerCase() ||
+          (m.site_id && m.site_id === selectedSiteId) ||
+          !m.site_name ||
+          m.site_name === 'All Sites'
+      );
+      if (siteFiltered.length > 0) {
+        targetRates = siteFiltered;
+      }
+    }
+
+    const newItems: ChallanItemFormData[] = targetRates.map((m) => {
       const desc = m.particulars?.trim() || [m.code, m.company_name, m.room ? `(${m.room})` : ''].filter(Boolean).join(' ');
       return {
         product_id: '',
@@ -274,7 +289,7 @@ function CreateChallanContent() {
     });
     setItems(newItems);
     showToast(
-      `Loaded ${newItems.length} agreed material(s) for ${matchedCustomer.business_name} with pre-agreed rates. Enter quantities to proceed!`,
+      `Loaded ${newItems.length} agreed material(s) for ${selectedSiteName ? `${matchedCustomer.business_name} (${selectedSiteName})` : matchedCustomer.business_name} with pre-agreed rates. Enter quantities to proceed!`,
       'success'
     );
   };
@@ -1117,11 +1132,15 @@ function CreateChallanContent() {
               <button
                 type="button"
                 onClick={handleLoadCustomerAgreedMaterials}
-                className="btn-primary py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shrink-0 self-start sm:self-auto shadow-sm inline-flex items-center gap-1.5"
+                className="btn-primary py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shrink-0 self-start sm:self-auto shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
                 title="Auto-fill items with locked rates and leave quantity blank"
               >
                 <Layers size={13} />
-                <span>⚡ Auto-Fetch Agreed Materials</span>
+                <span>
+                  {selectedSiteName
+                    ? `⚡ Auto-Fetch ${selectedSiteName} Materials`
+                    : '⚡ Auto-Fetch Agreed Materials'}
+                </span>
               </button>
             </div>
           )}
