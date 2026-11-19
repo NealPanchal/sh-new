@@ -369,14 +369,28 @@ function CreateChallanContent() {
   }, [preselectedCustomerId, getCustomer]);
 
   const filteredCustomers = useMemo(() => {
-    if (!customerSearch.trim()) return customers.slice(0, 6);
+    let list = customers;
+    if (currentUser?.role === 'employee') {
+      const uName = (currentUser.name || '').toLowerCase().trim();
+      const uUser = (currentUser.username || '').toLowerCase().trim();
+      list = list.filter((c) => {
+        const cr = (c.created_by || '').toLowerCase().trim();
+        const crN = (c.creator_name || '').toLowerCase().trim();
+        const uId = (c.user_id || '').toLowerCase().trim();
+        return (
+          (uUser && (cr === uUser || uId === uUser)) ||
+          (uName && (cr.includes(uName) || crN.includes(uName) || uId.includes(uName)))
+        );
+      });
+    }
+    if (!customerSearch.trim()) return list.slice(0, 6);
     const q = customerSearch.toLowerCase();
-    return customers.filter(
+    return list.filter(
       (c) =>
         c.business_name.toLowerCase().includes(q) ||
         (c.phone && c.phone.includes(q))
     ).slice(0, 8);
-  }, [customers, customerSearch]);
+  }, [customers, customerSearch, currentUser]);
 
   const filteredProducts = useMemo(() => {
     if (!productSearch.trim()) return products.slice(0, 6);

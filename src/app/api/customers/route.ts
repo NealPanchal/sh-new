@@ -4,17 +4,53 @@ import { getAllCustomers, saveCustomers, recordAuditLog } from '@/lib/server-acc
 import { Customer } from '@/types';
 
 export async function GET(req: NextRequest) {
+  const session = getAuthenticatedSession(req);
   const { searchParams } = new URL(req.url);
   const search = (searchParams.get('search') || '').toLowerCase().trim();
+  const creator = (searchParams.get('creator') || '').toLowerCase().trim();
+  const type = (searchParams.get('type') || '').toLowerCase().trim();
 
   let list = getAllCustomers();
+
+  // Strict employee data isolation
+  if (session && session.role === 'employee') {
+    const uName = (session.name || '').toLowerCase().trim();
+    const uUser = (session.username || '').toLowerCase().trim();
+    list = list.filter((c) => {
+      const cr = (c.created_by || '').toLowerCase();
+      const crN = (c.creator_name || '').toLowerCase();
+      const uId = (c.user_id || '').toLowerCase();
+      return (
+        (uUser && (cr === uUser || uId === uUser)) ||
+        (uName && (cr.includes(uName) || crN.includes(uName) || uId.includes(uName)))
+      );
+    });
+  } else if (creator && creator !== 'all') {
+    list = list.filter((c) => {
+      const cr = (c.created_by || '').toLowerCase();
+      const crN = (c.creator_name || '').toLowerCase();
+      return cr === creator || crN === creator || crN.includes(creator);
+    });
+  }
+
+  // Filter by customer type (e.g. 'architect' or 'client')
+  if (type && type !== 'all') {
+    if (type === 'architect') {
+      list = list.filter((c) => c.customer_type === 'architect' || c.is_architect === true);
+    } else if (type === 'client') {
+      list = list.filter((c) => c.customer_type !== 'architect' && !c.is_architect);
+    }
+  }
+
   if (search) {
     list = list.filter(
       (c) =>
         (c.name && c.name.toLowerCase().includes(search)) ||
         (c.business_name && c.business_name.toLowerCase().includes(search)) ||
+        (c.contact_person && c.contact_person.toLowerCase().includes(search)) ||
         (c.phone && c.phone.includes(search)) ||
-        (c.billing_address && c.billing_address.toLowerCase().includes(search))
+        (c.billing_address && c.billing_address.toLowerCase().includes(search)) ||
+        (c.architect_firm && c.architect_firm.toLowerCase().includes(search))
     );
   }
 
@@ -35,6 +71,12 @@ export async function POST(req: NextRequest) {
       company_name,
       contact_person,
       phone,
+      email,
+      customer_type,
+      is_architect,
+      architect_firm,
+      created_by,
+      creator_name,
       billing_address,
       delivery_address,
       gstin,
@@ -59,14 +101,26 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString();
 
     const existingIdx = customers.findIndex((c) => c.id === custId);
+    const prevRecord = existingIdx >= 0 ? customers[existingIdx] : null;
+
+    const assignedCreator = (created_by || prevRecord?.created_by || operatorUsername).trim();
+    const assignedCreatorName = (creator_name || prevRecord?.creator_name || operatorName).trim();
+    const isArch = Boolean(is_architect || customer_type === 'architect');
+
     const record: Customer = {
       id: custId,
-      user_id: operatorUsername,
+      user_id: assignedCreator,
+      created_by: assignedCreator,
+      creator_name: assignedCreatorName,
       name: custName,
       business_name: custName,
       company_name: company_name ? company_name.trim() : custName,
       contact_person: contact_person ? contact_person.trim() : custName,
       phone: (phone || '').trim(),
+      email: email ? email.trim() : prevRecord?.email || null,
+      customer_type: isArch ? 'architect' : 'client',
+      is_architect: isArch,
+      architect_firm: isArch ? (architect_firm?.trim() || custName) : null,
       billing_address: (billing_address || '').trim(),
       delivery_address: (delivery_address || billing_address || '').trim(),
       gstin: gstin ? gstin.trim().toUpperCase() : null,

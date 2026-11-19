@@ -5,11 +5,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useApp } from '@/lib/context';
 import { customerSchema, CustomerFormValues } from '@/lib/validations';
-import { X, Plus, Trash2, Layers, Download, Send, CheckSquare, Square, ShieldAlert } from 'lucide-react';
+import { X, Plus, Trash2, Layers, Download, Send, CheckSquare, Square, ShieldAlert, Compass, User, Building } from 'lucide-react';
 import { CustomerMaterialRate } from '@/types';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
 import { shareCustomerRatesViaWhatsApp } from '@/lib/whatsapp';
 import { getCurrentUser } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 
 interface CustomerFormModalProps {
   editId: string | null;
@@ -31,6 +32,10 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       business_name: '',
       contact_person: '',
       phone: '',
+      email: '',
+      customer_type: 'client',
+      is_architect: false,
+      architect_firm: '',
       billing_address: '',
       delivery_address: '',
       gstin: '',
@@ -38,6 +43,7 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
     },
   });
 
+  const [isPartyArchitect, setIsPartyArchitect] = useState(false);
   const [materialRates, setMaterialRates] = useState<CustomerMaterialRate[]>([]);
   const [selectedRateIds, setSelectedRateIds] = useState<Set<string>>(new Set());
 
@@ -45,10 +51,16 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
     if (editId) {
       const customer = getCustomer(editId);
       if (customer) {
+        const isArch = Boolean(customer.is_architect || customer.customer_type === 'architect');
+        setIsPartyArchitect(isArch);
         reset({
           business_name: customer.business_name,
           contact_person: customer.contact_person || '',
           phone: customer.phone,
+          email: customer.email || '',
+          customer_type: isArch ? 'architect' : 'client',
+          is_architect: isArch,
+          architect_firm: customer.architect_firm || '',
           billing_address: customer.billing_address,
           delivery_address: customer.delivery_address || '',
           gstin: customer.gstin || '',
@@ -61,6 +73,7 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
         }
       }
     } else {
+      setIsPartyArchitect(false);
       setMaterialRates([]);
     }
   }, [editId, getCustomer, reset]);
@@ -178,37 +191,38 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       (m) => m.particulars?.trim() || m.code?.trim() || m.company_name?.trim() || m.rate > 0
     );
 
+    const user = getCurrentUser();
     const cleanContact = data.contact_person.trim();
     const cleanBusiness = data.business_name?.trim() || cleanContact;
     const cleanDelivery = data.delivery_address?.trim() || '';
     const cleanBilling = cleanDelivery || 'Showhouse Site';
+    const isArch = isPartyArchitect;
+
+    const payload = {
+      name: cleanBusiness,
+      business_name: cleanBusiness,
+      contact_person: cleanContact,
+      phone: data.phone,
+      email: data.email?.trim() || null,
+      customer_type: isArch ? 'architect' : 'client',
+      is_architect: isArch,
+      architect_firm: isArch ? (data.architect_firm?.trim() || cleanBusiness || cleanContact) : null,
+      billing_address: cleanBilling,
+      delivery_address: cleanDelivery || null,
+      gstin: data.gstin ? data.gstin.toUpperCase() : null,
+      notes: data.notes || null,
+      material_rates: validRates,
+      created_by: user?.username || 'admin',
+      creator_name: user?.name || user?.username || 'Admin SH',
+      user_id: user?.username || 'admin',
+    };
 
     if (editId) {
-      updateCustomer(editId, {
-        name: cleanBusiness,
-        business_name: cleanBusiness,
-        contact_person: cleanContact,
-        phone: data.phone,
-        billing_address: cleanBilling,
-        delivery_address: cleanDelivery || null,
-        gstin: data.gstin ? data.gstin.toUpperCase() : null,
-        notes: data.notes || null,
-        material_rates: validRates,
-      });
-      showToast('Customer updated successfully', 'success');
+      updateCustomer(editId, payload);
+      showToast(isArch ? 'Architect profile updated successfully!' : 'Customer updated successfully!', 'success');
     } else {
-      createCustomer({
-        name: cleanBusiness,
-        business_name: cleanBusiness,
-        contact_person: cleanContact,
-        phone: data.phone,
-        billing_address: cleanBilling,
-        delivery_address: cleanDelivery || null,
-        gstin: data.gstin ? data.gstin.toUpperCase() : null,
-        notes: data.notes || null,
-        material_rates: validRates,
-      });
-      showToast('Customer created successfully', 'success');
+      createCustomer(payload);
+      showToast(isArch ? 'Architect added to Directory successfully!' : 'Customer created successfully!', 'success');
     }
     onClose();
   };
@@ -220,22 +234,80 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-100">
-          <h2 className="text-lg font-semibold text-surface-800">
-            {editId ? 'Edit Customer' : 'Add New Customer'}
-          </h2>
+          <div className="flex items-center gap-2">
+            {isPartyArchitect ? (
+              <div className="p-2 rounded-xl bg-purple-100 text-purple-700">
+                <Compass size={18} />
+              </div>
+            ) : (
+              <div className="p-2 rounded-xl bg-orange-100 text-[#ea580c]">
+                <User size={18} />
+              </div>
+            )}
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-surface-900">
+                {editId
+                  ? (isPartyArchitect ? 'Edit Architect Profile' : 'Edit Customer')
+                  : (isPartyArchitect ? 'Add New Architect' : 'Add New Customer')}
+              </h2>
+              <p className="text-[11px] text-surface-500">
+                {isPartyArchitect
+                  ? 'Architectural firm, rate contract & broadcast records'
+                  : 'Party master & delivery contact details'}
+              </p>
+            </div>
+          </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-100 text-surface-400">
             <X size={18} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-4 sm:p-5 space-y-4">
+          {/* Party Bifurcation Segmented Toggle: Client vs Architect */}
+          <div className="flex items-center gap-2 p-1.5 bg-surface-100 rounded-xl border border-surface-200">
+            <button
+              type="button"
+              onClick={() => setIsPartyArchitect(false)}
+              className={cn(
+                'flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer',
+                !isPartyArchitect
+                  ? 'bg-white text-surface-900 shadow-xs border border-surface-200'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              <User size={15} className={!isPartyArchitect ? 'text-primary-600' : ''} />
+              <span>Regular Client / Party</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPartyArchitect(true)}
+              className={cn(
+                'flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer',
+                isPartyArchitect
+                  ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-sm'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              <Compass size={15} className={isPartyArchitect ? 'text-amber-300' : ''} />
+              <span>Architect / Interior Designer</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.2 rounded-full font-black uppercase tracking-wider",
+                isPartyArchitect ? "bg-amber-400 text-purple-950" : "bg-purple-100 text-purple-800"
+              )}>
+                VIP
+              </span>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">Contact Person *</label>
+              <label className="label">
+                {isPartyArchitect ? 'Principal Architect / Contact Person *' : 'Contact Person *'}
+              </label>
               <input
                 {...register('contact_person')}
                 className={`input ${errors.contact_person ? 'input-error' : ''}`}
-                placeholder="e.g. Rajesh Sharma"
+                placeholder={isPartyArchitect ? 'e.g. Ar. Taniya / Rajesh Sharma' : 'e.g. Rajesh Sharma'}
               />
               {errors.contact_person && <p className="error-text">{errors.contact_person.message}</p>}
             </div>
@@ -257,15 +329,30 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">Business / Customer Name (Optional)</label>
+              <label className="label">
+                {isPartyArchitect ? 'Architectural Studio / Firm Name (Optional)' : 'Business / Customer Name (Optional)'}
+              </label>
               <input
                 {...register('business_name')}
                 className="input"
-                placeholder="e.g. Sharma Interiors (Optional)"
+                placeholder={isPartyArchitect ? 'e.g. Taniya Arch & Associates' : 'e.g. Sharma Interiors (Optional)'}
               />
               {errors.business_name && <p className="error-text">{errors.business_name.message}</p>}
             </div>
 
+            <div>
+              <label className="label">{isPartyArchitect ? 'Architect Email (Optional)' : 'Email Address (Optional)'}</label>
+              <input
+                type="email"
+                {...register('email')}
+                className={`input ${errors.email ? 'input-error' : ''}`}
+                placeholder="studio@architect.com"
+              />
+              {errors.email && <p className="error-text">{errors.email.message}</p>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">GSTIN (Optional)</label>
               <input
@@ -276,16 +363,17 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
               />
               {errors.gstin && <p className="error-text">{errors.gstin.message}</p>}
             </div>
-          </div>
 
-          <div>
-            <label className="label">Delivery / Site Address</label>
-            <textarea
-              {...register('delivery_address')}
-              className="input min-h-[60px]"
-              placeholder="e.g. Kalpataru Paramount, Kapurbawdi, Thane (W)"
-              rows={2}
-            />
+            <div>
+              <label className="label">
+                {isPartyArchitect ? 'Studio / Office / Site Address' : 'Delivery / Site Address'}
+              </label>
+              <input
+                {...register('delivery_address')}
+                className="input"
+                placeholder={isPartyArchitect ? 'e.g. Office 2508, Kopri, Thane (E)' : 'e.g. Kalpataru Paramount, Kapurbawdi, Thane (W)'}
+              />
+            </div>
           </div>
 
           {/* Material & Rate Contract Matrix (Room, Particulars, Code, Company, Rate) */}

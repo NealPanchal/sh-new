@@ -26,6 +26,10 @@ export const customerSchema = z.object({
         return indianPhoneRegex.test(cleaned.slice(2));
       return false;
     }, 'Enter a valid 10-digit Indian mobile number'),
+  email: z.string().email('Enter a valid email').optional().or(z.literal('')),
+  customer_type: z.enum(['client', 'architect']).default('client').optional(),
+  is_architect: z.boolean().optional(),
+  architect_firm: z.string().max(200).optional().or(z.literal('')),
   billing_address: z.string().max(500).optional().or(z.literal('')),
   delivery_address: z.string().max(500).optional().or(z.literal('')),
   gstin: z

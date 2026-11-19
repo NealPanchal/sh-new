@@ -120,11 +120,17 @@ export interface CustomerMaterialRate {
 export interface Customer {
   id: string;
   user_id: string;
+  created_by?: string;
+  creator_name?: string;
   business_name: string;
   name?: string;
   company_name?: string;
   contact_person: string | null;
   phone: string;
+  email?: string | null;
+  customer_type?: 'client' | 'architect' | string;
+  is_architect?: boolean;
+  architect_firm?: string | null;
   billing_address: string;
   delivery_address: string | null;
   gstin: string | null;

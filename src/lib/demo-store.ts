@@ -1259,6 +1259,19 @@ export function seedDemoData(): void {
     gstin: '06AADCG1234H1ZK',
   });
 
+  const c4 = createCustomer({
+    business_name: 'Taniya Arch',
+    contact_person: 'Taniya Arch',
+    phone: '9373728833',
+    customer_type: 'architect',
+    is_architect: true,
+    architect_firm: 'Taniya Arch Studio',
+    billing_address: '2508, Samnvay and Mitradham, Kopri, Thane (E)',
+    delivery_address: '2508, Samnvay and Mitradham, Kopri, Thane (E)',
+    created_by: 'vrushank',
+    creator_name: 'Vrushank',
+  });
+
   // Create demo products
   const p1 = createProduct({
     name: 'Century Laminates - Walnut Matte',

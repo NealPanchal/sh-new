@@ -214,7 +214,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const createCustomerFn = useCallback((data: Partial<Customer>) => {
-    const c = store.createCustomer(data);
+    const user = getCurrentUser();
+    const preparedData: Partial<Customer> = {
+      ...data,
+      created_by: data.created_by || user?.username || 'admin',
+      creator_name: data.creator_name || user?.name || user?.username || 'Admin SH',
+      user_id: data.user_id || user?.username || 'admin',
+    };
+    const c = store.createCustomer(preparedData);
     setCustomers(store.getCustomers());
     if (typeof window !== 'undefined') {
       try {
@@ -236,6 +243,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateCustomerFn = useCallback((id: string, data: Partial<Customer>) => {
     const c = store.updateCustomer(id, data);
     setCustomers(store.getCustomers());
+    if (typeof window !== 'undefined' && c) {
+      try {
+        const { getClientAuthToken } = require('@/lib/auth');
+        const token = getClientAuthToken();
+        fetch('/api/customers', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(c),
+        }).catch(() => {});
+      } catch {}
+    }
     return c;
   }, []);
 
