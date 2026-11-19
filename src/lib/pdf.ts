@@ -244,8 +244,8 @@ export function generateChallanPDF({
     ? ['S/N', 'ITEM DESCRIPTION & BRAND', 'QUANTITY', 'UNIT']
     : ['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR'];
   const colWidths = hideRate
-    ? [9, 85, 20, 20] // Total = 134mm
-    : [9, 63, 18, 21, 23]; // Total = 134mm
+    ? [8, 86, 20, 20] // Total = 134mm
+    : [8, 63, 20, 21, 22]; // Total = 134mm
 
   const allTableRows: (string | number)[][] = items.map((item, idx) => {
     let desc = (item.item_description || '').toUpperCase();
@@ -318,22 +318,22 @@ export function generateChallanPDF({
 
   // Dynamically size rows so Page 1 (up to 8 items) fully utilizes the A5 page gracefully
   const p1Count = page1Rows.length;
-  let p1CellPadding = 1.9;
-  let p1MinHeight = 7.2;
-  let p1FontSize = 7.1;
+  let p1CellPadding = 2.2;
+  let p1MinHeight = 8.8;
+  let p1FontSize = 7.3;
 
   if (p1Count <= 3) {
-    p1CellPadding = 3.2;
-    p1MinHeight = 10.5;
-    p1FontSize = 7.8;
+    p1CellPadding = 2.5;
+    p1MinHeight = 12.0;
+    p1FontSize = 7.6;
   } else if (p1Count <= 5) {
-    p1CellPadding = 2.6;
-    p1MinHeight = 8.8;
+    p1CellPadding = 2.4;
+    p1MinHeight = 10.5;
     p1FontSize = 7.5;
   } else if (p1Count <= 8) {
-    p1CellPadding = 1.9;
-    p1MinHeight = 7.2;
-    p1FontSize = 7.1;
+    p1CellPadding = 2.2;
+    p1MinHeight = 8.8;
+    p1FontSize = 7.3;
   }
 
   // Render Page 1 Table (up to 8 items)
