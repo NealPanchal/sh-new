@@ -115,6 +115,19 @@ function saveState(state: DemoState): void {
 let state: DemoState = getDefaultState();
 
 export function initDemoStore() {
+  if (typeof window !== 'undefined') {
+    const FRESH_START_KEY = 'showhouse_fresh_start_v1';
+    if (!localStorage.getItem(FRESH_START_KEY)) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(DEMO_SEEDED_KEY);
+      localStorage.removeItem(DELETED_CHALLANS_KEY);
+      localStorage.setItem(FRESH_START_KEY, 'true');
+      state = getDefaultState();
+      saveState(state);
+      return;
+    }
+  }
+
   state = loadState();
 
   // Clean up any non-UUID entries (such as human challan numbers) from showhouse_deleted_challans in localStorage

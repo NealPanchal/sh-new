@@ -139,9 +139,10 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
       contactPerson: customer.contact_person || undefined,
       phone: customer.phone || undefined,
       deliveryAddress: customer.delivery_address || customer.billing_address,
+      siteName: activeSiteFilter !== 'all' ? activeSiteFilter : undefined,
       selectedRates: list,
     });
-    showToast('Downloaded Customer Material Rates PDF!', 'success');
+    showToast('Downloaded Customer Material Selection PDF!', 'success');
   };
 
   const handleShareWhatsApp = () => {
@@ -255,10 +256,10 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
                     type="button"
                     onClick={handleDownloadPDF}
                     className="py-1 px-2 text-xs font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 border border-surface-300 rounded-lg flex items-center gap-1 cursor-pointer"
-                    title="Download clean rate sheet PDF"
+                    title="Download Material Selection PDF"
                   >
                     <Download size={12} />
-                    <span>PDF</span>
+                    <span>Selection PDF</span>
                   </button>
                   <button
                     type="button"

@@ -229,7 +229,7 @@ function MasterPartyLedgerContent() {
 
   // Customer & Site lists
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState('cust_rk_sales');
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
 
   // Delete Entire Ledger & Rebuild states
   const [showDeleteEntireLedgerModal, setShowDeleteEntireLedgerModal] = useState(false);
@@ -822,26 +822,28 @@ function MasterPartyLedgerContent() {
 
   // Selected customer object
   const selectedCustomer = useMemo<Customer>(() => {
-    return (
+    const found =
       customers.find((c) => c.id === selectedCustomerId || c.name === selectedCustomerId) ||
-      (contextCustomers || []).find((c: Customer) => c.id === selectedCustomerId || c.name === selectedCustomerId) || {
-        id: 'cust_rk_sales',
-        user_id: 'admin',
-        name: 'R K Sales',
-        business_name: 'R K Sales',
-        company_name: 'R K Sales',
-        contact_person: 'Ramesh Kumar',
-        billing_address:
-          '3rd Floor, Building No. A-4,\nFlat No 307,\nAvadh Complex, Kasheli Village,\nBhiwandi Railway Station,\nKasheli Bhiwandi\nThane-421302',
-        delivery_address: 'Kasheli Bhiwandi, Thane-421302',
-        phone: '02225387687',
-        gstin: '27AABCR1234F1ZP',
-        notes: null,
-        is_active: true,
-        created_at: '2024-02-01T00:00:00.000Z',
-        updated_at: '2024-02-01T00:00:00.000Z',
-      }
-    );
+      (contextCustomers || []).find((c: Customer) => c.id === selectedCustomerId || c.name === selectedCustomerId);
+    if (found) return found;
+    if (customers.length > 0) return customers[0];
+    if (contextCustomers && contextCustomers.length > 0) return contextCustomers[0];
+    return {
+      id: '',
+      user_id: '',
+      name: '',
+      business_name: '',
+      company_name: '',
+      contact_person: '',
+      billing_address: '',
+      delivery_address: '',
+      phone: '',
+      gstin: '',
+      notes: null,
+      is_active: false,
+      created_at: '',
+      updated_at: '',
+    };
   }, [customers, contextCustomers, selectedCustomerId]);
 
   // Filtered entries by search input
@@ -2318,17 +2320,21 @@ function MasterPartyLedgerContent() {
             }}
             className="input text-xs py-1.5 px-2.5 font-bold text-surface-900 bg-surface-50 border-surface-300 rounded-lg min-w-[210px]"
           >
-            {customers.map((c) => {
-              const custTitle = c.name || c.business_name || 'Customer';
-              const showComp =
-                c.company_name &&
-                c.company_name.trim().toLowerCase() !== custTitle.trim().toLowerCase();
-              return (
-                <option key={c.id} value={c.id}>
-                  {custTitle} {showComp ? `(${c.company_name})` : ''}
-                </option>
-              );
-            })}
+            {customers.length === 0 ? (
+              <option value="">No parties yet</option>
+            ) : (
+              customers.map((c) => {
+                const custTitle = c.name || c.business_name || 'Customer';
+                const showComp =
+                  c.company_name &&
+                  c.company_name.trim().toLowerCase() !== custTitle.trim().toLowerCase();
+                return (
+                  <option key={c.id} value={c.id}>
+                    {custTitle} {showComp ? `(${c.company_name})` : ''}
+                  </option>
+                );
+              })
+            )}
           </select>
         </div>
       </div>

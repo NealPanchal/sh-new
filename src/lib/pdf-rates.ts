@@ -2,17 +2,19 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { CustomerMaterialRate } from '@/types';
 import { formatDateIndian } from '@/lib/utils';
+import { SHOWHOUSE_EMBLEM_BASE64, SHOWHOUSE_LOGO_BASE64 } from '@/lib/logo-data';
 
 export interface ExportRatesPDFOptions {
   customerName: string;
   contactPerson?: string | null;
   phone?: string | null;
   deliveryAddress?: string | null;
+  siteName?: string | null;
   selectedRates: CustomerMaterialRate[];
 }
 
 export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
-  const { customerName, contactPerson, phone, deliveryAddress, selectedRates } = options;
+  const { customerName, contactPerson, phone, deliveryAddress, siteName, selectedRates } = options;
 
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -22,38 +24,51 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
 
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  // 1. Company Header
+  // 1. Company Header (Logo + Brand Text on Left, Studio Address on Right)
+  const logoSize = 16;
+  const logoX = 14;
+  const logoY = 10.5;
+  const textX = logoX + logoSize + 3.5;
+
+  try {
+    const logoImg = SHOWHOUSE_EMBLEM_BASE64 || SHOWHOUSE_LOGO_BASE64;
+    const format = logoImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+    doc.addImage(logoImg, format, logoX, logoY, logoSize, logoSize);
+  } catch (err) {
+    console.warn('Logo render note:', err);
+  }
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(234, 88, 12); // #ea580c orange
-  doc.text('SHOWHOUSE', 14, 18);
+  doc.text('SHOWHOUSE', textX, 18);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(113, 113, 122);
-  doc.text('DECOR STUDIO', 14, 23);
+  doc.text('DECOR STUDIO', textX, 23);
 
   // Studio Address & Contacts (Right-aligned)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(60, 60, 60);
-  doc.text('Vishram Baug, Near Makhmali Talao,', pageWidth - 14, 14, { align: 'right' });
-  doc.text('LBS Marg, Thane (W) - 400602', pageWidth - 14, 18, { align: 'right' });
-  doc.text('Phone: +91 93248 69306 / 022 - 2538 7683', pageWidth - 14, 22, { align: 'right' });
-  doc.text('Email: foxshowhouse@gmail.com', pageWidth - 14, 26, { align: 'right' });
+  doc.text('Vishram Baug, Near Makhmali Talao,', pageWidth - 14, 13, { align: 'right' });
+  doc.text('LBS Marg, Thane (W) - 400602', pageWidth - 14, 17, { align: 'right' });
+  doc.text('Phone: +91 93248 69306 / 022 - 2538 7683', pageWidth - 14, 21, { align: 'right' });
+  doc.text('Email: foxshowhouse@gmail.com', pageWidth - 14, 25, { align: 'right' });
 
   // Divider Line
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.4);
-  doc.line(14, 30, pageWidth - 14, 30);
+  doc.line(14, 29.5, pageWidth - 14, 29.5);
 
   // 2. Title Banner
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(14, 33, pageWidth - 28, 9, 1.5, 1.5, 'F');
+  doc.roundedRect(14, 32.5, pageWidth - 28, 9, 1.5, 1.5, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(24, 24, 27);
-  doc.text('AGREED MATERIAL RATE QUOTATION / RATE CARD', pageWidth / 2, 39, { align: 'center' });
+  doc.text('MATERIAL SELECTION & AGREED RATE CARD', pageWidth / 2, 38.5, { align: 'center' });
 
   // 3. Customer Info Box
   let curY = 48;
@@ -77,8 +92,15 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
   custDetails += `Date: ${formatDateIndian(new Date().toISOString())}`;
   doc.text(custDetails, 14, curY + 10);
 
-  if (deliveryAddress) {
-    doc.text(`Site: ${deliveryAddress.split('\n')[0]}`, 14, curY + 14);
+  let siteText = '';
+  if (siteName) {
+    siteText = `Site: ${siteName}`;
+  } else if (deliveryAddress) {
+    siteText = `Site / Delivery: ${deliveryAddress.split('\n')[0]}`;
+  }
+
+  if (siteText) {
+    doc.text(siteText, 14, curY + 14);
     curY += 4;
   }
   curY += 14;
@@ -146,6 +168,6 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
 
   // Save the PDF
   const safeName = (customerName || 'Customer').replace(/[^a-z0-9]/gi, '_');
-  doc.save(`${safeName}_Material_Rates.pdf`);
+  doc.save(`${safeName}_Material_Selection.pdf`);
 }
 

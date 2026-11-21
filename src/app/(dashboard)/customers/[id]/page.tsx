@@ -156,9 +156,10 @@ export default function CustomerDetailPage() {
       contactPerson: customer.contact_person,
       phone: customer.phone,
       deliveryAddress: customer.delivery_address || customer.billing_address,
+      siteName: activeSiteFilter !== 'all' ? activeSiteFilter : undefined,
       selectedRates: list,
     });
-    showToast('Downloaded Customer Material Rates PDF!', 'success');
+    showToast('Downloaded Customer Material Selection PDF!', 'success');
   };
 
   const handleShareWhatsApp = () => {
@@ -620,10 +621,10 @@ export default function CustomerDetailPage() {
                       type="button"
                       onClick={handleDownloadPDF}
                       className="py-1 px-2.5 text-xs font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 border border-surface-300 rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                      title="Download clean customer PDF"
+                      title="Download Material Selection PDF"
                     >
                       <Download size={12} />
-                      <span>{selectedRateIds.size > 0 ? `PDF (${selectedRateIds.size})` : 'Download PDF'}</span>
+                      <span>{selectedRateIds.size > 0 ? `Selection PDF (${selectedRateIds.size})` : 'Selection PDF'}</span>
                     </button>
 
                     <button

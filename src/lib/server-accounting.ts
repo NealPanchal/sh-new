@@ -122,34 +122,7 @@ export function getAllCustomers(): Customer[] {
 
   let modified = false;
 
-  // 1. Ensure R K Sales is always anchored as primary master account
-  const hasRKSales = custs.some(
-    (c) => c.id === 'cust_rk_sales' || (c.name && c.name.toLowerCase().includes('r k sales'))
-  );
-  if (!hasRKSales) {
-    custs.unshift({
-      id: 'cust_rk_sales',
-      user_id: 'admin',
-      name: 'R K Sales',
-      business_name: 'R K Sales',
-      company_name: 'R K Sales',
-      contact_person: 'Ramesh Kumar',
-      phone: '02225387687',
-      billing_address: '3rd Floor, Building No. A-4,\nFlat No 307,\nAvadh Complex, Kasheli Village,\nBhiwandi Railway Station,\nKasheli Bhiwandi\nThane-421302',
-      delivery_address: 'Kasheli Bhiwandi, Thane-421302',
-      gstin: '27AABCR1234F1ZP',
-      notes: 'Premium commercial & residential project customer',
-      is_active: true,
-      opening_balance: 0,
-      credit_days: 45,
-      credit_limit: 500000,
-      created_at: '2024-02-01T00:00:00.000Z',
-      updated_at: '2024-02-01T00:00:00.000Z',
-    });
-    modified = true;
-  }
-
-  // 2. Dynamic Scan: Auto-detect any missing party from all delivery challans
+  // Dynamic Scan: Auto-detect any missing party from all delivery challans
   try {
     const challans = getAllChallans();
     const existingKeys = new Set<string>();
@@ -651,99 +624,7 @@ export interface ManualLedgerEntry {
 }
 
 export function getManualLedgerEntries(): ManualLedgerEntry[] {
-  let entries = readJsonFile<ManualLedgerEntry[]>('manual_ledger_entries.json', []);
-  if (!entries || entries.length === 0) {
-    entries = [
-      {
-        id: 'mle_rk_1',
-        customer_id: 'cust_rk_sales',
-        date: '2024-02-09',
-        particulars: 'By HDFC BANK-50200003880041',
-        payment_type: 'Receipt',
-        voucher_no: '2225',
-        debit: 0,
-        credit: 10000,
-        site_name: 'Kalpataru',
-        created_at: '2024-02-09T10:00:00.000Z',
-      },
-      {
-        id: 'mle_rk_2',
-        customer_id: 'cust_rk_sales',
-        date: '2024-02-15',
-        particulars: 'To SALE GST 18%',
-        payment_type: 'Sales GST',
-        voucher_no: '4652/23-24',
-        debit: 42100,
-        credit: 0,
-        site_name: 'Kalpataru',
-        challan_id: 'challan_rk_4652',
-        created_at: '2024-02-15T11:00:00.000Z',
-      },
-      {
-        id: 'mle_rk_3',
-        customer_id: 'cust_rk_sales',
-        date: '2024-02-15',
-        particulars: 'By HDFC BANK-50200003880041',
-        payment_type: 'Receipt',
-        voucher_no: '2278',
-        debit: 0,
-        credit: 31000,
-        site_name: 'Lodha',
-        created_at: '2024-02-15T16:00:00.000Z',
-      },
-      {
-        id: 'mle_rk_4',
-        customer_id: 'cust_rk_sales',
-        date: '2024-02-19',
-        particulars: 'To SALE GST 18%',
-        payment_type: 'Sales GST',
-        voucher_no: '4765/23-24',
-        debit: 26400,
-        credit: 0,
-        site_name: 'Regency',
-        challan_id: 'challan_rk_4765',
-        created_at: '2024-02-19T14:00:00.000Z',
-      },
-      {
-        id: 'mle_rk_5',
-        customer_id: 'cust_rk_sales',
-        date: '2024-12-17',
-        particulars: 'By HDFC BANK-50200003880041',
-        payment_type: 'Receipt',
-        voucher_no: '1899',
-        debit: 0,
-        credit: 13000,
-        site_name: 'Kalpataru',
-        created_at: '2024-12-17T11:00:00.000Z',
-      },
-      {
-        id: 'mle_rk_6',
-        customer_id: 'cust_rk_sales',
-        date: '2024-12-30',
-        particulars: 'By HDFC BANK-50200003880041',
-        payment_type: 'Receipt',
-        voucher_no: '2020',
-        debit: 0,
-        credit: 13000,
-        site_name: 'Lodha',
-        created_at: '2024-12-30T15:00:00.000Z',
-      },
-      {
-        id: 'mle_rk_7',
-        customer_id: 'cust_rk_sales',
-        date: '2025-01-01',
-        particulars: 'To HDFC BANK-50200003880041',
-        payment_type: 'Payment',
-        voucher_no: '1938',
-        debit: 13000,
-        credit: 0,
-        site_name: 'Regency',
-        created_at: '2025-01-01T12:00:00.000Z',
-      },
-    ];
-    saveManualLedgerEntries(entries);
-  }
-  return entries;
+  return readJsonFile<ManualLedgerEntry[]>('manual_ledger_entries.json', []);
 }
 
 export function saveManualLedgerEntries(entries: ManualLedgerEntry[]): void {
