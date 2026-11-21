@@ -844,6 +844,17 @@ export default function DeliveryManagementPage() {
                                   <span>Out</span>
                                 </button>
                               )}
+
+                              {c.status === 'goods_returned' && (
+                                <Link
+                                  href={`/returns`}
+                                  className="py-1 px-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-xs flex items-center gap-1 shadow-2xs transition-colors"
+                                  title="View Return Note & Issue Replacement Challan"
+                                >
+                                  <RotateCcw size={12} />
+                                  <span>Return / New Challan</span>
+                                </Link>
+                              )}
                             </>
                           ) : (
                             <>

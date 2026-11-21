@@ -1195,6 +1195,53 @@ export default function EditChallanPage() {
           </div>
         </div>
 
+        {/* Overall Challan Level Discount */}
+        <div className="pt-2 border-t border-surface-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50/40 p-2.5 rounded-lg border border-amber-200/80">
+          <div className="flex items-center gap-2">
+            <Tag size={16} className="text-amber-600" />
+            <div>
+              <span className="text-xs font-bold text-zinc-900 block">Overall Challan Discount</span>
+              <span className="text-[10px] text-zinc-500">Apply cash (₹) or percentage (%) discount on entire challan</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-lg border border-surface-300 bg-white overflow-hidden text-xs">
+              <button
+                type="button"
+                onClick={() => setOverallDiscountType('percent')}
+                className={cn(
+                  'px-2.5 py-1.5 font-bold transition-colors cursor-pointer',
+                  overallDiscountType === 'percent'
+                    ? 'bg-[#ea580c] text-white'
+                    : 'text-surface-600 hover:bg-surface-100'
+                )}
+              >
+                % Percent
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverallDiscountType('amount')}
+                className={cn(
+                  'px-2.5 py-1.5 font-bold transition-colors cursor-pointer',
+                  overallDiscountType === 'amount'
+                    ? 'bg-[#ea580c] text-white'
+                    : 'text-surface-600 hover:bg-surface-100'
+                )}
+              >
+                ₹ Cash (Flat)
+              </button>
+            </div>
+            <input
+              type="number"
+              min="0"
+              value={overallDiscountValue}
+              onChange={(e) => setOverallDiscountValue(e.target.value)}
+              placeholder={overallDiscountType === 'percent' ? 'e.g. 5%' : 'e.g. 1000'}
+              className="input text-xs py-1.5 w-28 font-mono bg-white"
+            />
+          </div>
+        </div>
+
         {/* GST Toggle Option */}
         <div className="pt-2 border-t border-surface-200">
           <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg bg-white hover:bg-surface-100/60 transition-colors border border-surface-200">

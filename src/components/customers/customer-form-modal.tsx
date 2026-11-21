@@ -202,12 +202,6 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
             >
               <Compass size={15} className={isPartyArchitect ? 'text-amber-300' : ''} />
               <span>Architect / Interior Designer</span>
-              <span className={cn(
-                "text-[10px] px-1.5 py-0.2 rounded-full font-black uppercase tracking-wider",
-                isPartyArchitect ? "bg-amber-400 text-purple-950" : "bg-purple-100 text-purple-800"
-              )}>
-                VIP
-              </span>
             </button>
           </div>
 

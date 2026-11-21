@@ -25,6 +25,7 @@ import {
   Tag,
   Percent,
   FileSpreadsheet,
+  RotateCcw,
 } from 'lucide-react';
 import { getTodayISO, cn, formatCurrency, formatDate } from '@/lib/utils';
 import { UNIT_OPTIONS } from '@/lib/validations';
@@ -58,6 +59,7 @@ function CreateChallanContent() {
   const searchParams = useSearchParams();
   const preselectedCustomerId = searchParams.get('customerId');
   const preselectedQuotationId = searchParams.get('quotationId');
+  const preselectedReturnId = searchParams.get('returnId');
   const {
     customers,
     products,
@@ -91,6 +93,7 @@ function CreateChallanContent() {
   const [createdBy, setCreatedBy] = useState('');
   const [showExtraDetails, setShowExtraDetails] = useState(false);
   const [sourceQuotation, setSourceQuotation] = useState<Quotation | null>(null);
+  const [sourceReturn, setSourceReturn] = useState<any | null>(null);
   const [showSiteModal, setShowSiteModal] = useState(false);
 
   // Site Management State
@@ -473,6 +476,59 @@ function CreateChallanContent() {
     }
   }, [preselectedQuotationId, getQuotation, getCustomer]);
 
+  // Pre-load from goods return if returnId is passed in URL
+  useEffect(() => {
+    if (preselectedReturnId) {
+      fetch('/api/goods-returns')
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.returns)) {
+            const ret = data.returns.find((r: any) => r.id === preselectedReturnId);
+            if (ret) {
+              setSourceReturn(ret);
+              if (ret.customer_id) {
+                const c = getCustomer(ret.customer_id);
+                if (c) {
+                  selectCustomer(c);
+                } else {
+                  setSelectedCustomerId(ret.customer_id);
+                  setCustomerName(ret.customer_name);
+                }
+              }
+              if (ret.site_id) setSelectedSiteId(ret.site_id);
+              if (ret.site_name) setSelectedSiteName(ret.site_name);
+              setReferenceNumber(`REPL/${ret.challan_number}`);
+
+              if (Array.isArray(ret.items) && ret.items.length > 0) {
+                setItems(
+                  ret.items.map((it: any) => ({
+                    product_id: '',
+                    item_description: it.description || it.item_description || '',
+                    brand: '',
+                    colour_finish: '',
+                    size: '',
+                    unit: (it.unit as UnitType) || 'sheets',
+                    quantity: String(it.return_quantity || 1),
+                    rate: it.rate != null ? String(it.rate) : '',
+                    discount_type: 'percent',
+                    discount_value: '',
+                    discount_amount: '',
+                    amount: it.rate != null && it.return_quantity ? String(Math.round(it.rate * it.return_quantity * 100) / 100) : '',
+                    length: '',
+                    width: '',
+                    dimension_unit: 'ft',
+                    calculated_sqft: '',
+                  }))
+                );
+              }
+              showToast(`⚡ Loaded replacement items from Goods Return ${ret.return_number}`, 'success');
+            }
+          }
+        })
+        .catch((e) => console.error('Failed to load return for replacement challan:', e));
+    }
+  }, [preselectedReturnId, getCustomer]);
+
   const filteredCustomers = useMemo(() => {
     let list = customers;
     if (currentUser?.role === 'employee') {
@@ -599,18 +655,9 @@ function CreateChallanContent() {
       baseAmount = rate > 0 && qty > 0 ? Math.round(qty * rate * 100) / 100 : 0;
     }
 
-    // Apply item level discount
-    const discVal = Number(it.discount_value) || 0;
-    let discAmt = 0;
-    if (discVal > 0 && baseAmount > 0) {
-      if (it.discount_type === 'percent') {
-        discAmt = Math.round(((baseAmount * discVal) / 100) * 100) / 100;
-      } else {
-        discAmt = Math.min(baseAmount, discVal);
-      }
-    }
-    it.discount_amount = discAmt > 0 ? String(discAmt) : '';
-    it.amount = baseAmount > 0 ? String(Math.max(0, Math.round((baseAmount - discAmt) * 100) / 100)) : '';
+    it.discount_value = '';
+    it.discount_amount = '';
+    it.amount = baseAmount > 0 ? String(baseAmount) : '';
 
     newItems[index] = it;
     setItems(newItems);
@@ -965,6 +1012,28 @@ function CreateChallanContent() {
             )}
             {errors.customer && <p className="error-text text-xs mt-1">{errors.customer}</p>}
           </div>
+
+          {/* Pre-filled Goods Return Linked Banner */}
+          {sourceReturn && (
+            <div className="sm:col-span-12 p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-amber-600 text-white shrink-0">
+                  <RotateCcw size={16} />
+                </div>
+                <div>
+                  <span className="font-bold text-amber-950">
+                    🔄 Replacement Challan for Goods Return #{sourceReturn.return_number}
+                  </span>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    Pre-filled {sourceReturn.items?.length || 0} returned item(s) from original Challan #{sourceReturn.challan_number}. Saving will generate a brand new Challan Number.
+                  </p>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 font-black text-[10px] uppercase shrink-0">
+                Goods Return
+              </span>
+            </div>
+          )}
 
           {/* Pre-filled Quotation Linked Banner */}
           {sourceQuotation && (
@@ -1375,8 +1444,8 @@ function CreateChallanContent() {
                 )}
               </div>
 
-              {/* Quantity, Unit, Rate, Discount, and Amount */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pl-7">
+              {/* Quantity, Unit, Rate, and Amount */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pl-7">
                 <div>
                   <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-1">
                     Qty *
@@ -1423,39 +1492,8 @@ function CreateChallanContent() {
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[10px] font-semibold text-surface-500 uppercase">
-                      Discount
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextType = item.discount_type === 'percent' ? 'amount' : 'percent';
-                        updateItem(idx, 'discount_type', nextType);
-                      }}
-                      className="text-[9px] font-bold text-primary-600 hover:text-primary-800"
-                    >
-                      {item.discount_type === 'percent' ? '%' : '₹'}
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.discount_value || ''}
-                      onChange={(e) => updateItem(idx, 'discount_value', e.target.value)}
-                      placeholder={item.discount_type === 'percent' ? '0%' : '₹0'}
-                      className="input text-xs py-1.5 font-mono pr-5"
-                    />
-                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-surface-400">
-                      {item.discount_type === 'percent' ? '%' : '₹'}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
                   <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-1">
-                    Net Amount (₹)
+                    Amount (₹)
                   </label>
                   <div className="text-xs font-mono font-bold text-surface-800 bg-surface-100/70 border border-surface-200 rounded px-2.5 py-1.5 h-[34px] flex items-center">
                     {item.amount ? `₹${Number(item.amount).toLocaleString('en-IN')}` : '—'}

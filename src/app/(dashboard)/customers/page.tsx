@@ -396,12 +396,6 @@ export default function CustomersPage() {
             >
               <Compass size={14} className={activeTab === 'architects' ? 'text-amber-300' : 'text-purple-600'} />
               <span>Architects Directory ({allArchitects.length})</span>
-              <span className={cn(
-                "text-[9px] px-1.5 py-0.2 rounded-full font-black uppercase tracking-wider",
-                activeTab === 'architects' ? "bg-amber-400 text-purple-950" : "bg-purple-100 text-purple-800"
-              )}>
-                VIP
-              </span>
             </button>
 
             <button

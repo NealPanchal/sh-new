@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   RotateCcw,
   Plus,
@@ -53,6 +54,7 @@ export default function GoodsReturnsPage() {
   // Selected Return Detail Modal for Printing / Viewing
   const [viewReturn, setViewReturn] = useState<GoodsReturn | null>(null);
 
+  const router = useRouter();
   const currentUser = getCurrentUser();
 
   const fetchInitialData = async () => {
@@ -162,7 +164,7 @@ export default function GoodsReturnsPage() {
     return sum;
   }, [selectedItems]);
 
-  const handleCreateReturn = async (e: React.FormEvent) => {
+  const handleCreateReturn = async (e: React.FormEvent, createChallanAfter = false) => {
     e.preventDefault();
     if (!selectedChallan) {
       setSubmitError('Please select a challan');
@@ -230,6 +232,10 @@ export default function GoodsReturnsPage() {
       setSelectedChallanId('');
       setReturnRemarks('');
       await fetchInitialData();
+
+      if (createChallanAfter && data.returnRecord?.id) {
+        router.push(`/challans/new?returnId=${data.returnRecord.id}`);
+      }
     } catch (err: any) {
       setSubmitError(err.message || 'Network error recording goods return');
     } finally {
@@ -457,13 +463,23 @@ export default function GoodsReturnsPage() {
                     <td className="px-4 py-3 max-w-[160px] truncate text-surface-500 font-medium">
                       {ret.reason}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => setViewReturn(ret)}
-                        className="px-2.5 py-1 text-xs font-semibold text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors"
-                      >
-                        View Note
-                      </button>
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => setViewReturn(ret)}
+                          className="px-2.5 py-1 text-xs font-semibold text-surface-700 hover:text-surface-900 bg-surface-100 hover:bg-surface-200 rounded-md transition-colors"
+                        >
+                          View Note
+                        </button>
+                        <Link
+                          href={`/challans/new?returnId=${ret.id}`}
+                          className="px-2.5 py-1 text-xs font-bold text-white bg-[#ea580c] hover:bg-[#c2410c] rounded-md transition-colors inline-flex items-center gap-1 shadow-2xs"
+                          title="Generate new replacement challan with new challan number"
+                        >
+                          <Plus size={12} />
+                          <span>New Challan</span>
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -764,20 +780,29 @@ export default function GoodsReturnsPage() {
                 </>
               )}
 
-              <div className="pt-2 border-t border-surface-100 flex justify-end gap-2">
+              <div className="pt-2 border-t border-surface-100 flex flex-col sm:flex-row justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-surface-600 hover:bg-surface-100 rounded-lg transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-surface-600 hover:bg-surface-100 rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting || modalReturnTotalQty === 0}
-                  className="btn-primary py-2 px-5 text-xs font-bold shadow-xs disabled:opacity-50"
+                  className="btn-secondary py-2 px-4 text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer"
                 >
-                  {submitting ? 'Recording...' : 'Confirm Goods Return & Update Ledger'}
+                  {submitting ? 'Recording...' : 'Confirm Return & Update Ledger'}
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting || modalReturnTotalQty === 0}
+                  onClick={(e) => handleCreateReturn(e, true)}
+                  className="btn-primary py-2 px-5 text-xs font-bold shadow-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>Confirm &amp; Create New Challan ➔</span>
                 </button>
               </div>
             </form>
@@ -844,19 +869,26 @@ export default function GoodsReturnsPage() {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-surface-100 flex justify-end gap-2">
+            <div className="pt-3 border-t border-surface-100 flex flex-col sm:flex-row justify-end gap-2">
               <button
                 onClick={() => window.print()}
-                className="px-4 py-2 text-xs font-semibold text-zinc-700 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center gap-1.5 transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-zinc-700 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Printer size={14} />
                 <span>Print Voucher</span>
               </button>
+              <Link
+                href={`/challans/new?returnId=${viewReturn.id}`}
+                className="btn-primary py-2 px-4 text-xs font-bold inline-flex items-center justify-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white cursor-pointer shadow-2xs"
+              >
+                <Plus size={14} />
+                <span>Create Replacement Challan (New No.)</span>
+              </Link>
               <button
                 onClick={() => setViewReturn(null)}
-                className="btn-primary py-2 px-4 text-xs font-bold"
+                className="btn-secondary py-2 px-4 text-xs font-bold cursor-pointer"
               >
-                Done
+                Close
               </button>
             </div>
           </div>

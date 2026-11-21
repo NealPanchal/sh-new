@@ -225,8 +225,8 @@ export default function CustomerDetailPage() {
             <h1 className="text-lg sm:text-xl font-bold text-surface-900 tracking-tight flex items-center gap-2">
               <span>{customer.business_name}</span>
               {customer.is_architect && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 uppercase tracking-wide border border-purple-200">
-                  Architect VIP
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 uppercase tracking-wide border border-purple-200">
+                  Architect
                 </span>
               )}
             </h1>
