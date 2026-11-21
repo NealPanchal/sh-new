@@ -192,6 +192,7 @@ export interface Customer {
   notes: string | null;
   material_rates?: CustomerMaterialRate[]; // 4-column matrix: Room, Code, Company, Rate
   is_active: boolean;
+  credit_status?: 'credit' | 'no_credit'; // 'credit' = Udhar allowed, 'no_credit' = Strict cash/advance
   opening_balance?: number;
   credit_days?: number; // Default 45 days
   credit_limit?: number; // e.g. ₹2,00,000
@@ -290,6 +291,9 @@ export interface Challan {
   additional_9_amount?: number | null;
   is_deleted?: boolean;
   deleted_at?: string | null;
+  cleared_at?: string | null;
+  retention_expires_at?: string | null;
+  is_cleared?: boolean;
   created_at: string;
   updated_at: string;
   // Joined data
@@ -343,6 +347,9 @@ export interface GoodsReturn {
   total_amount?: number;
   created_by: string;
   created_at: string;
+  cleared_at?: string | null;
+  retention_expires_at?: string | null;
+  is_cleared?: boolean;
   items: GoodsReturnItem[];
 }
 
@@ -382,6 +389,9 @@ export interface PaymentRecord {
   notes?: string | null;
   created_by: string;
   created_at: string;
+  cleared_at?: string | null;
+  retention_expires_at?: string | null;
+  is_cleared?: boolean;
 }
 
 // ----------------------------------------------------
@@ -452,6 +462,10 @@ export interface CustomerLedgerEntry {
   is_paid?: boolean;
   payment_status?: 'paid' | 'partial' | 'unpaid';
   paid_amount?: number;
+  created_at?: string;
+  cleared_at?: string;
+  retention_expires_at?: string;
+  is_cleared?: boolean;
   last_updated?: string;
   updated_by?: string;
   reason?: string;
@@ -615,6 +629,7 @@ export interface CustomerFormData {
   delivery_address: string;
   gstin: string;
   notes: string;
+  credit_status?: 'credit' | 'no_credit';
   opening_balance?: number | string;
   credit_days?: number | string;
   credit_limit?: number | string;

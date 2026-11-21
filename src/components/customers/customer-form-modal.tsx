@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useApp } from '@/lib/context';
 import { customerSchema, CustomerFormValues } from '@/lib/validations';
-import { X, Plus, Trash2, User, Building2, Compass } from 'lucide-react';
+import { X, Plus, Trash2, User, Building2, Compass, CreditCard } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +40,7 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
   });
 
   const [isPartyArchitect, setIsPartyArchitect] = useState(false);
+  const [creditStatus, setCreditStatus] = useState<'credit' | 'no_credit'>('credit');
   const [customerSites, setCustomerSites] = useState<Array<{ id: string; site_name: string; site_address: string }>>([
     { id: 'site_1', site_name: 'Site 1', site_address: '' },
   ]);
@@ -50,6 +51,7 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       if (customer) {
         const isArch = Boolean(customer.is_architect || customer.customer_type === 'architect');
         setIsPartyArchitect(isArch);
+        setCreditStatus(customer.credit_status === 'no_credit' || customer.is_credit_blocked ? 'no_credit' : 'credit');
         reset({
           business_name: customer.business_name,
           contact_person: customer.contact_person || '',
@@ -122,6 +124,8 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
       sites: validSites,
       gstin: data.gstin ? data.gstin.toUpperCase() : null,
       notes: data.notes || null,
+      credit_status: creditStatus,
+      is_credit_blocked: creditStatus === 'no_credit',
       // Retain existing material rates if editing so they are never lost
       material_rates: existingCust?.material_rates || [],
       created_by: user?.username || 'admin',
@@ -203,6 +207,61 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
               <Compass size={15} className={isPartyArchitect ? 'text-amber-300' : ''} />
               <span>Architect / Interior Designer</span>
             </button>
+          </div>
+
+          {/* Credit / No Credit Option */}
+          <div className="p-3 bg-surface-50 rounded-xl border border-surface-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
+                <CreditCard size={14} className={creditStatus === 'credit' ? 'text-emerald-600' : 'text-rose-600'} />
+                <span>Credit / Payment Terms</span>
+              </label>
+              <span
+                className={cn(
+                  'text-[10px] font-bold px-2 py-0.5 rounded-full border',
+                  creditStatus === 'credit'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                    : 'bg-rose-50 text-rose-700 border-rose-300'
+                )}
+              >
+                {creditStatus === 'credit' ? '✓ Credit Allowed' : '⛔ Strict No Credit'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setCreditStatus('credit')}
+                className={cn(
+                  'py-2 px-3 text-xs font-bold rounded-lg border transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  creditStatus === 'credit'
+                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-surface-700 border-surface-200 hover:bg-surface-100'
+                )}
+              >
+                <span>Credit (Udhar Allowed)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreditStatus('no_credit')}
+                className={cn(
+                  'py-2 px-3 text-xs font-bold rounded-lg border transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  creditStatus === 'no_credit'
+                    ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                    : 'bg-white text-surface-700 border-surface-200 hover:bg-surface-100'
+                )}
+              >
+                <span>No Credit (Cash / Advance)</span>
+              </button>
+            </div>
+            {creditStatus === 'no_credit' ? (
+              <p className="text-[11px] text-rose-600 font-medium">
+                ⚠️ Material dispatch requires 100% advance or payment on delivery. Ledger credit is restricted.
+              </p>
+            ) : (
+              <p className="text-[11px] text-emerald-700 font-medium">
+                ✓ Party is eligible for regular credit challans &amp; billing.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

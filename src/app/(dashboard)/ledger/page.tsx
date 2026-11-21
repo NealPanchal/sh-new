@@ -221,7 +221,6 @@ function MasterPartyLedgerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const paramParty = searchParams.get('party') || searchParams.get('customerId') || searchParams.get('customer');
-  const paramRebuild = searchParams.get('rebuild') === 'true';
 
   const { customers: contextCustomers, challans: contextChallans, deleteChallan, updateChallan } = useApp();
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -231,10 +230,9 @@ function MasterPartyLedgerContent() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
 
-  // Delete Entire Ledger & Rebuild states
+  // Clear Ledger state
   const [showDeleteEntireLedgerModal, setShowDeleteEntireLedgerModal] = useState(false);
   const [isDeletingEntireLedger, setIsDeletingEntireLedger] = useState(false);
-  const [isRebuilding, setIsRebuilding] = useState(false);
 
   // Filter toolbar
   const [fromDate, setFromDate] = useState('2024-02-01');
@@ -605,9 +603,12 @@ function MasterPartyLedgerContent() {
         }
         if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
 
-        // Delivery / Approval Gate check
-        const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-        if (!isApprovedOrDelivered) return;
+        // Delivery & Admin Approval Gate:
+        // Only challans approved by Admin (confirming delivered) enter the party ledger.
+        const isApproved = Boolean(c.is_approved) || c.status === 'approved' || c.delivery_status === 'approved';
+        const isDelivered = Boolean(c.is_delivered) || c.status === 'delivered' || c.delivery_status === 'delivered';
+        const isApprovedAndDelivered = isApproved && (isDelivered || Boolean((c as any).approved_at));
+        if (!isApprovedAndDelivered) return;
 
         const amt = Number(c.total_amount) || 0;
         if (amt <= 0) return;
@@ -687,8 +688,17 @@ function MasterPartyLedgerContent() {
         }
       });
 
-      // Recalculate entries and running balance
-      mergedEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      // Recalculate entries and running balance chronologically downwards (oldest top, newest bottom)
+      // On same date: Debit first, then Credit below it
+      mergedEntries.sort((a, b) => {
+        const da = new Date(a.date).getTime() || 0;
+        const db = new Date(b.date).getTime() || 0;
+        if (da !== db) return da - db;
+        const aWeight = (a.debit || 0) > 0 ? 0 : 1;
+        const bWeight = (b.debit || 0) > 0 ? 0 : 1;
+        if (aWeight !== bWeight) return aWeight - bWeight;
+        return new Date(a.created_at || a.date).getTime() - new Date(b.created_at || b.date).getTime();
+      });
       let running = baseLedger.openingBalance || 0;
       let totDebit = 0;
       let totCredit = 0;
@@ -741,8 +751,10 @@ function MasterPartyLedgerContent() {
       // Immediate pre-population from in-memory contextChallans so UI is NEVER empty
       const localMatches = currentContextChallans.filter((c: any) => {
         if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
-        const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-        if (!isApprovedOrDelivered) return false;
+        const isApproved = Boolean(c.is_approved) || c.status === 'approved' || c.delivery_status === 'approved';
+        const isDelivered = Boolean(c.is_delivered) || c.status === 'delivered' || c.delivery_status === 'delivered';
+        const isApprovedAndDelivered = isApproved && (isDelivered || Boolean(c.approved_at));
+        if (!isApprovedAndDelivered) return false;
 
         const cId = (c.customer_id || '').toLowerCase();
         const cName = (c.customer_name || '').toLowerCase();
@@ -776,8 +788,10 @@ function MasterPartyLedgerContent() {
         const serverList = (d.challans || [])
           .filter((c: any) => {
             if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
-            const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-            if (!isApprovedOrDelivered) return false;
+            const isApproved = Boolean(c.is_approved) || c.status === 'approved' || c.delivery_status === 'approved';
+            const isDelivered = Boolean(c.is_delivered) || c.status === 'delivered' || c.delivery_status === 'delivered';
+            const isApprovedAndDelivered = isApproved && (isDelivered || Boolean(c.approved_at));
+            if (!isApprovedAndDelivered) return false;
 
             const cId = (c.customer_id || '').toLowerCase();
             const cName = (c.customer_name || '').toLowerCase();
@@ -1785,6 +1799,7 @@ function MasterPartyLedgerContent() {
       running_balance: 0,
       challan_id: selectedChallanForEntry || undefined,
       is_paid: !isDebit,
+      created_at: new Date().toISOString(),
     };
 
     // Close modal & reset fields
@@ -1798,9 +1813,15 @@ function MasterPartyLedgerContent() {
 
     // Update local state right away so user sees it instantly
     setLedgerData((prev) => {
-      const updatedEntries = [...prev.entries, newEntry].sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-      );
+      const updatedEntries = [...prev.entries, newEntry].sort((a, b) => {
+        const da = new Date(a.date).getTime() || 0;
+        const db = new Date(b.date).getTime() || 0;
+        if (da !== db) return da - db;
+        const aWeight = (a.debit || 0) > 0 ? 0 : 1;
+        const bWeight = (b.debit || 0) > 0 ? 0 : 1;
+        if (aWeight !== bWeight) return aWeight - bWeight;
+        return new Date(a.created_at || a.date).getTime() - new Date(b.created_at || b.date).getTime();
+      });
       let running = prev.openingBalance || 0;
       let totDebit = 0;
       let totCredit = 0;
@@ -2120,7 +2141,7 @@ function MasterPartyLedgerContent() {
     showToast(`PDF exported for ${selectedCustomer.name}!`);
   };
 
-  // Delete Entire Ledger Handler
+  // Clear Ledger Handler (45-Day Retention Policy)
   const handleDeleteEntireLedger = async () => {
     if (!selectedCustomerId) return;
     try {
@@ -2138,7 +2159,7 @@ function MasterPartyLedgerContent() {
 
       if (res.ok) {
         clearLocalManualEntriesForCustomer(selectedCustomerId, selectedCustomer?.name);
-        showToast(`Entire ledger for ${selectedCustomer?.name || 'Customer'} has been deleted and reset.`, 'success');
+        showToast(`Ledger cleared for ${selectedCustomer?.name || 'Customer'}. Records retained for 45 days before permanent auto-deletion.`, 'success');
         setShowDeleteEntireLedgerModal(false);
         const initialOpening = Number(selectedCustomer?.opening_balance) || 0;
         setLedgerData({
@@ -2157,57 +2178,14 @@ function MasterPartyLedgerContent() {
         await fetchLedger(true);
       } else {
         const err = await res.json();
-        showToast(err.error || 'Failed to delete ledger', 'error');
+        showToast(err.error || 'Failed to clear ledger', 'error');
       }
     } catch {
-      showToast('Error deleting customer ledger', 'error');
+      showToast('Error clearing customer ledger', 'error');
     } finally {
       setIsDeletingEntireLedger(false);
     }
   };
-
-  // Rebuild Ledger from all Customer Challans (1-Click)
-  const handleRebuildLedgerFromChallans = async () => {
-    if (!selectedCustomerId) return;
-    try {
-      setIsRebuilding(true);
-      const token = getClientAuthToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch('/api/ledger', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          action: 'rebuild',
-          customer_id: selectedCustomerId,
-        }),
-      });
-
-      if (res.ok) {
-        const d = await res.json();
-        showToast(`Ledger synchronized with ${d.challansAttached || 0} challans and ${d.sitesCreated || 0} sites!`, 'success');
-        await fetchLedger();
-        await fetchCustomerChallans(selectedCustomerId);
-      } else {
-        const err = await res.json();
-        showToast(err.error || 'Failed to rebuild ledger', 'error');
-      }
-    } catch {
-      showToast('Error rebuilding customer ledger', 'error');
-    } finally {
-      setIsRebuilding(false);
-    }
-  };
-
-  // Auto rebuild if URL has ?rebuild=true
-  useEffect(() => {
-    if (paramRebuild && selectedCustomerId) {
-      handleRebuildLedgerFromChallans();
-    }
-  }, [paramRebuild, selectedCustomerId]);
 
   // If user is employee, show restricted access
   if (currentUser?.role === 'employee') {
@@ -2403,28 +2381,15 @@ function MasterPartyLedgerContent() {
                 </Link>
 
                 {isAdminUser && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleRebuildLedgerFromChallans}
-                      disabled={isRebuilding}
-                      className="px-2.5 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50"
-                      title="Auto-fetch and attach all Delivery Challans for this Customer"
-                    >
-                      <RefreshCw size={13} className={isRebuilding ? "animate-spin" : ""} />
-                      <span>Rebuild Ledger</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowDeleteEntireLedgerModal(true)}
-                      className="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer"
-                      title="Delete & Reset Entire Ledger for this Customer"
-                    >
-                      <Trash2 size={13} />
-                      <span>Delete Ledger</span>
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteEntireLedgerModal(true)}
+                    className="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+                    title="Clear Outstanding & Settle Ledger (45-Day Retention)"
+                  >
+                    <Trash2 size={13} />
+                    <span>Clear Ledger</span>
+                  </button>
                 )}
 
                 <button
@@ -4761,28 +4726,28 @@ function MasterPartyLedgerContent() {
       )}
 
       {/* ============================================================ */}
-      {/* MODAL: DELETE ENTIRE CUSTOMER LEDGER                         */}
+      {/* MODAL: CLEAR CUSTOMER LEDGER (45-DAY RETENTION)              */}
       {/* ============================================================ */}
       {showDeleteEntireLedgerModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-rose-200 p-5 space-y-4 animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-amber-200 p-5 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+              <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-300">
                 <Trash2 size={20} />
               </div>
               <div className="space-y-1">
                 <h3 className="font-bold text-sm text-surface-950">
-                  Delete &amp; Reset Entire Customer Ledger?
+                  Clear Outstanding &amp; Settle Ledger?
                 </h3>
                 <p className="text-xs text-surface-600 leading-relaxed">
-                  Are you sure you want to completely delete the ledger records for <b className="text-surface-900">{selectedCustomer?.name || 'this customer'}</b>?
+                  Are you sure you want to clear the ledger and settle outstanding for <b className="text-surface-900">{selectedCustomer?.name || 'this customer'}</b>?
                 </p>
-                <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-[11px] text-rose-800 space-y-1 mt-2">
-                  <p className="font-bold">⚠️ What will happen:</p>
-                  <ul className="list-disc pl-4 space-y-0.5 text-rose-700">
-                    <li>All manual ledger adjustments &amp; payment receipts will be deleted.</li>
-                    <li>Customer site adjustments will be reset.</li>
-                    <li>Original delivery challans remain safe and can be re-attached at any time via <b>&quot;Rebuild Ledger&quot;</b>.</li>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-900 space-y-1 mt-2">
+                  <p className="font-bold">🛡️ 45-Day Retention Policy:</p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-amber-800">
+                    <li>Ledger outstanding will be settled and reconciled to ₹0.</li>
+                    <li>Records are <b>NOT deleted immediately</b> — they are preserved in ledger history for <b>45 days</b>.</li>
+                    <li>After 45 days, settled transactions will be automatically purged by the system.</li>
                   </ul>
                 </div>
               </div>
@@ -4801,10 +4766,10 @@ function MasterPartyLedgerContent() {
                 type="button"
                 onClick={handleDeleteEntireLedger}
                 disabled={isDeletingEntireLedger}
-                className="px-3.5 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 <Trash2 size={13} />
-                <span>{isDeletingEntireLedger ? 'Deleting...' : 'Yes, Delete Entire Ledger'}</span>
+                <span>{isDeletingEntireLedger ? 'Clearing...' : 'Clear Ledger (Retain 45 Days)'}</span>
               </button>
             </div>
           </div>

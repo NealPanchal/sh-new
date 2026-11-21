@@ -233,6 +233,15 @@ export default function CustomerDetailPage() {
                   Architect
                 </span>
               )}
+              {customer.credit_status === 'no_credit' || customer.is_credit_blocked ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 uppercase tracking-wide border border-rose-200">
+                  ⛔ No Credit (Cash/Advance Only)
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase tracking-wide border border-emerald-200">
+                  ✓ Credit Allowed
+                </span>
+              )}
             </h1>
             {customer.contact_person && (
               <p className="text-xs text-surface-500">{customer.contact_person}</p>

@@ -585,6 +585,15 @@ export default function CustomersPage() {
                           <span>ARCHITECT</span>
                         </span>
                       )}
+                      {c.credit_status === 'no_credit' || c.is_credit_blocked ? (
+                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                          No Credit
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Credit
+                        </span>
+                      )}
                     </div>
                     {c.contact_person && (
                       <p className="text-[11px] text-surface-500 mt-0.5">
@@ -605,7 +614,7 @@ export default function CustomersPage() {
                       </button>
                     )}
                     <Link
-                      href={`/ledger?customerId=${encodeURIComponent(c.id)}&rebuild=true`}
+                      href={`/ledger?customerId=${encodeURIComponent(c.id)}`}
                       className="p-1.5 bg-amber-50 text-amber-800 hover:bg-amber-100 rounded-md border border-amber-200 flex items-center gap-1 text-[11px] font-bold"
                       title="View Customer Ledger"
                     >
@@ -722,18 +731,29 @@ export default function CustomersPage() {
                         )}
                       </td>
 
-                      {/* Type Badge */}
+                      {/* Type Badge & Credit Status */}
                       <td>
-                        {isArch ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-900 border border-purple-200 shadow-2xs">
-                            <Compass size={11} className="text-purple-700" />
-                            <span>ARCHITECT</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-100 text-surface-700">
-                            <span>CLIENT</span>
-                          </span>
-                        )}
+                        <div className="flex flex-col gap-1 items-start">
+                          {isArch ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-900 border border-purple-200 shadow-2xs">
+                              <Compass size={11} className="text-purple-700" />
+                              <span>ARCHITECT</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-100 text-surface-700">
+                              <span>CLIENT</span>
+                            </span>
+                          )}
+                          {c.credit_status === 'no_credit' || c.is_credit_blocked ? (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              No Credit
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Credit
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Contact */}
@@ -791,9 +811,9 @@ export default function CustomersPage() {
                         <div className="flex items-center justify-end gap-1">
                           {/* 1-Click Ledger */}
                           <Link
-                            href={`/ledger?customerId=${encodeURIComponent(c.id)}&rebuild=true`}
+                            href={`/ledger?customerId=${encodeURIComponent(c.id)}`}
                             className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md transition-colors shadow-2xs mr-1"
-                            title="1-Click: Generate / View Party Ledger with All Delivery Challans"
+                            title="1-Click: View Party Ledger with All Delivery Challans"
                           >
                             <BookOpen size={12} className="text-amber-700" />
                             <span>Ledger ({totalChallans})</span>

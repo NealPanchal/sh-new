@@ -182,6 +182,8 @@ export default function DeliveryManagementPage() {
         status: 'approved',
         delivery_status: 'approved',
         is_approved: true,
+        is_delivered: true,
+        delivered_at: challan.delivered_at || approvedAt,
         approved_at: approvedAt,
         approved_by: approvedBy,
       });

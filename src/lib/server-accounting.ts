@@ -61,6 +61,12 @@ function ensureDataDir(): void {
   }
 }
 
+interface FileCacheEntry<T> {
+  mtimeMs: number;
+  data: T;
+}
+const memoryFileCache = new Map<string, FileCacheEntry<any>>();
+
 function readJsonFile<T>(filename: string, fallback: T): T {
   try {
     ensureDataDir();
@@ -73,7 +79,12 @@ function readJsonFile<T>(filename: string, fallback: T): T {
           try {
             fs.writeFileSync(filePath, seedRaw, 'utf-8');
           } catch {}
-          return JSON.parse(seedRaw);
+          const parsed = JSON.parse(seedRaw);
+          try {
+            const stat = fs.statSync(filePath);
+            memoryFileCache.set(filename, { mtimeMs: stat.mtimeMs, data: parsed });
+          } catch {}
+          return parsed;
         }
       }
       try {
@@ -81,9 +92,18 @@ function readJsonFile<T>(filename: string, fallback: T): T {
       } catch {}
       return fallback;
     }
+
+    const stat = fs.statSync(filePath);
+    const cached = memoryFileCache.get(filename);
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return cached.data;
+    }
+
     const raw = fs.readFileSync(filePath, 'utf-8');
     if (!raw.trim()) return fallback;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    memoryFileCache.set(filename, { mtimeMs: stat.mtimeMs, data: parsed });
+    return parsed;
   } catch (err) {
     console.error(`Error reading ${filename}:`, err);
     return fallback;
@@ -108,6 +128,11 @@ function writeJsonFile<T>(filename: string, data: T, backup = false): void {
     const tempPath = `${filePath}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     fs.writeFileSync(tempPath, content, 'utf-8');
     fs.renameSync(tempPath, filePath);
+
+    try {
+      const stat = fs.statSync(filePath);
+      memoryFileCache.set(filename, { mtimeMs: stat.mtimeMs, data });
+    } catch {}
   } catch (err) {
     console.error(`Error writing ${filename}:`, err);
   }
@@ -612,6 +637,9 @@ export interface ManualLedgerEntry {
   challan_id?: string;
   created_at: string;
   created_by?: string;
+  cleared_at?: string;
+  retention_expires_at?: string;
+  is_cleared?: boolean;
   last_updated?: string;
   updated_by?: string;
   reason?: string;
@@ -994,13 +1022,80 @@ export function deleteLedgerEntry(
   return { success: false };
 }
 
+const RETENTION_MS = 45 * 24 * 60 * 60 * 1000; // 45 days
+
 /**
- * Completely clear / delete a customer's ledger transactions and custom sites
+ * Auto-delete records that were marked cleared/settled and have passed the 45-day retention window
+ */
+export function purgeExpiredClearedRecords(): { purgedChallans: number; purgedManual: number; purgedPayments: number } {
+  const now = Date.now();
+  let purgedChallans = 0;
+  let purgedManual = 0;
+  let purgedPayments = 0;
+
+  // 1. Challans: delete only when cleared_at is older than 45 days
+  const allChallans = getAllChallans();
+  const survivingChallans = allChallans.filter((c) => {
+    if (c.cleared_at) {
+      const clearedTime = new Date(c.cleared_at).getTime();
+      if (now - clearedTime >= RETENTION_MS) {
+        purgedChallans++;
+        return false;
+      }
+    }
+    return true;
+  });
+  if (purgedChallans > 0) {
+    saveAllChallans(survivingChallans);
+  }
+
+  // 2. Manual entries
+  const allManual = getManualLedgerEntries();
+  const survivingManual = allManual.filter((m) => {
+    if (m.cleared_at) {
+      const clearedTime = new Date(m.cleared_at).getTime();
+      if (now - clearedTime >= RETENTION_MS) {
+        purgedManual++;
+        return false;
+      }
+    }
+    return true;
+  });
+  if (purgedManual > 0) {
+    saveManualLedgerEntries(survivingManual);
+  }
+
+  // 3. Payments
+  const allPayments = getPayments();
+  const survivingPayments = allPayments.filter((p) => {
+    if (p.cleared_at) {
+      const clearedTime = new Date(p.cleared_at).getTime();
+      if (now - clearedTime >= RETENTION_MS) {
+        purgedPayments++;
+        return false;
+      }
+    }
+    return true;
+  });
+  if (purgedPayments > 0) {
+    savePayments(survivingPayments);
+  }
+
+  return { purgedChallans, purgedManual, purgedPayments };
+}
+
+/**
+ * Clear customer ledger with 45-day retention period.
+ * Does NOT immediately delete records — keeps them intact in ledger history for 45 days,
+ * after which purgeExpiredClearedRecords() will automatically delete them.
  */
 export function clearCustomerLedger(
   customerId: string,
   user: string
-): { success: boolean; clearedCount: number } {
+): { success: boolean; clearedCount: number; retentionExpiresAt: string } {
+  // First, purge any previously expired records (>45 days)
+  purgeExpiredClearedRecords();
+
   const allCusts = getAllCustomers();
   const cust = allCusts.find(
     (c) =>
@@ -1031,55 +1126,51 @@ export function clearCustomerLedger(
     return false;
   };
 
+  const nowIso = new Date().toISOString();
+  const retentionExpiresAt = new Date(Date.now() + RETENTION_MS).toISOString();
   let clearedCount = 0;
 
-  // 1. Clear manual ledger entries
+  // 1. Mark manual ledger entries as cleared with 45-day retention (DO NOT delete immediately)
   const allManual = getManualLedgerEntries();
-  const remainingManual = allManual.filter((m) => {
-    if (isMatchThisCust(m.customer_id)) {
+  let manualChanged = false;
+  allManual.forEach((m) => {
+    if (isMatchThisCust(m.customer_id) && !m.cleared_at) {
+      m.cleared_at = nowIso;
+      m.retention_expires_at = retentionExpiresAt;
+      m.is_cleared = true;
+      manualChanged = true;
       clearedCount++;
-      return false;
     }
-    return true;
   });
-  if (allManual.length !== remainingManual.length) {
-    saveManualLedgerEntries(remainingManual);
+  if (manualChanged) {
+    saveManualLedgerEntries(allManual);
   }
 
-  // 2. Clear payments for this customer
+  // 2. Mark payments as cleared with 45-day retention (DO NOT delete immediately)
   const allPayments = getPayments();
-  const remainingPayments = allPayments.filter((p: PaymentRecord) => {
-    if (isMatchThisCust(p.customer_id, p.customer_name)) {
+  let paymentsChanged = false;
+  allPayments.forEach((p: PaymentRecord) => {
+    if (isMatchThisCust(p.customer_id, p.customer_name) && !p.cleared_at) {
+      p.cleared_at = nowIso;
+      p.retention_expires_at = retentionExpiresAt;
+      p.is_cleared = true;
+      paymentsChanged = true;
       clearedCount++;
-      return false;
     }
-    return true;
   });
-  if (allPayments.length !== remainingPayments.length) {
-    savePayments(remainingPayments);
+  if (paymentsChanged) {
+    savePayments(allPayments);
   }
 
-  // 3. Clear customer sites
-  const allSites = getCustomerSites();
-  const remainingSites = allSites.filter((s) => {
-    if (isMatchThisCust(s.customer_id)) {
-      clearedCount++;
-      return false;
-    }
-    return true;
-  });
-  if (allSites.length !== remainingSites.length) {
-    saveCustomerSites(remainingSites);
-  }
-
-  // 4. Clear/void customer challans so cleared ledger does not resurrect old records
+  // 3. Mark customer challans as cleared with 45-day retention (DO NOT delete immediately)
   const allChallans = getAllChallans();
   let challanChanged = false;
   allChallans.forEach((c) => {
-    if (isMatchThisCust(c.customer_id, c.customer_name) && !c.is_deleted) {
-      c.is_deleted = true;
-      c.status = 'void';
-      c.updated_at = new Date().toISOString();
+    if (isMatchThisCust(c.customer_id, c.customer_name) && !c.cleared_at && !c.is_deleted) {
+      c.cleared_at = nowIso;
+      c.retention_expires_at = retentionExpiresAt;
+      c.is_cleared = true;
+      c.updated_at = nowIso;
       challanChanged = true;
       clearedCount++;
     }
@@ -1093,11 +1184,11 @@ export function clearCustomerLedger(
     entity_id: customerId,
     user_id: user,
     user_name: user,
-    action: 'CLEAR_ENTIRE_CUSTOMER_LEDGER',
-    reason: `Completely deleted and cleared ledger for customer: ${customerId}`,
+    action: 'CLEAR_CUSTOMER_LEDGER_45_DAY_RETENTION',
+    reason: `Cleared ledger for customer: ${customerId}. Retained for 45 days until ${retentionExpiresAt}`,
   });
 
-  return { success: true, clearedCount };
+  return { success: true, clearedCount, retentionExpiresAt };
 }
 
 /**
@@ -1242,6 +1333,9 @@ export function computeCustomerLedger(
     return false;
   };
 
+  // Run auto-purge for any cleared ledger records that exceeded the 45-day retention window
+  purgeExpiredClearedRecords();
+
   const rawEntries: Array<{
     date: string;
     particulars: string;
@@ -1347,9 +1441,13 @@ export function computeCustomerLedger(
     }
     if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
 
-    // Delivery / Approval Gate: Only challans approved by Admin (or marked delivered) enter the party ledger
-    const isApprovedOrDelivered = c.status === 'approved' || Boolean((c as any).is_approved) || c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered);
-    if (!isApprovedOrDelivered) return;
+    // Delivery & Admin Approval Gate:
+    // Only challans approved by Admin (confirming delivered) enter the party ledger.
+    // Unapproved challans must be approved in Delivery Status by Admin before entering ledger.
+    const isApproved = Boolean((c as any).is_approved) || c.status === 'approved' || (c as any).delivery_status === 'approved';
+    const isDelivered = Boolean((c as any).is_delivered) || c.status === 'delivered' || (c as any).delivery_status === 'delivered';
+    const isApprovedAndDelivered = isApproved && (isDelivered || Boolean((c as any).approved_at));
+    if (!isApprovedAndDelivered) return;
 
     if (options?.siteId && c.site_id && c.site_id !== options.siteId) return;
     if (options?.siteName && c.site_name && c.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;
@@ -1527,11 +1625,16 @@ export function computeCustomerLedger(
     }
   });
 
-  // Sort raw entries chronologically
+  // Sort raw entries chronologically downwards (oldest at top, newest at bottom)
+  // On the same date/day: Debit entries first, then Credit entries below it
   rawEntries.sort((a, b) => {
     const da = new Date(a.date).getTime() || 0;
     const db = new Date(b.date).getTime() || 0;
     if (da !== db) return da - db;
+    // Sequence: Debit first (weight 0), then Credit (weight 1)
+    const aWeight = (a.debit || 0) > 0 ? 0 : 1;
+    const bWeight = (b.debit || 0) > 0 ? 0 : 1;
+    if (aWeight !== bWeight) return aWeight - bWeight;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
 

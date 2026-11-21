@@ -39,6 +39,7 @@ export const customerSchema = z.object({
   architect_firm: z.string().max(200).optional().or(z.literal('')),
   billing_address: z.string().max(500).optional().or(z.literal('')),
   delivery_address: z.string().max(500).optional().or(z.literal('')),
+  credit_status: z.enum(['credit', 'no_credit']).default('credit').optional(),
   sites: z.array(customerSiteSchema).optional(),
   gstin: z
     .string()
