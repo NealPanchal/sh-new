@@ -888,19 +888,12 @@ export default function ChallanDetailPage() {
               <span className="text-surface-500">Date:</span>
               <span className="font-medium text-surface-800">{formatDateIndian(challan.challan_date)}</span>
             </div>
-
-            {viewMode !== 'pi' && (
-              <div className="flex justify-between pt-1 border-t border-surface-200/60">
-                <span className="text-surface-500 font-bold">Goods From:</span>
-                <span className="font-semibold text-surface-900 text-right">{profile?.legal_name || 'Showhouse Concept & Design LLP'}</span>
-              </div>
-            )}
           </div>
 
           {/* Consignee Info */}
           <div className="bg-surface-50 p-3 rounded-lg border border-surface-100 space-y-1">
             <span className="text-[10px] text-surface-400 font-semibold uppercase tracking-wider block">
-              {viewMode !== 'pi' ? 'Goods To / Consignee:' : 'Consignee / Deliver To:'}
+              Consignee / Deliver To:
             </span>
             <div className="font-bold text-surface-900 text-sm">
               {challan.customer_name}

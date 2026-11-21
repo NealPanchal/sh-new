@@ -167,13 +167,10 @@ export function generateChallanPDF({
   const detailsY = Math.max(y + 20, docInfoY + 2.0);
 
   // Left: Customer Details (Clean bold header without redundant red text)
-  const clientTitle = (!isPI || hideRate)
-    ? `GOODS TO : ${(challan.customer_name || 'CLIENT').toUpperCase()}`
-    : `CLIENT NAME : ${(challan.customer_name || 'CLIENT').toUpperCase()}`;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.6);
   doc.setTextColor(...blackColor);
-  doc.text(clientTitle, margin, detailsY);
+  doc.text(`CLIENT NAME : ${(challan.customer_name || 'CLIENT').toUpperCase()}`, margin, detailsY);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.0);
@@ -200,10 +197,7 @@ export function generateChallanPDF({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.6);
   doc.setTextColor(...blackColor);
-  const companyTitle = (!isPI || hideRate)
-    ? `GOODS FROM : ${profile.legal_name || 'Showhouse Concept & Design LLP'}`
-    : (profile.legal_name || 'Showhouse Concept & Design LLP');
-  doc.text(companyTitle, boxX, detailsY);
+  doc.text(profile.legal_name || 'Showhouse Concept & Design LLP', boxX, detailsY);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.0);
