@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { findEmployeeByUsername } from '@/lib/employee-accounts';
 import { AuthUser, UserRole } from '@/types';
 
