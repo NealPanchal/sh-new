@@ -27,7 +27,7 @@ interface MaterialRateModalProps {
 }
 
 export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateModalProps) {
-  const { updateCustomer, showToast } = useApp();
+  const { updateCustomer, profile, showToast } = useApp();
   const currentUser = getCurrentUser();
 
   // Extract customer sites
@@ -140,6 +140,8 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
       phone: customer.phone || undefined,
       deliveryAddress: customer.delivery_address || customer.billing_address,
       siteName: activeSiteFilter !== 'all' ? activeSiteFilter : undefined,
+      profile,
+      preparedBy: currentUser?.name || 'VRUSHANK',
       selectedRates: list,
     });
     showToast('Downloaded Customer Material Selection PDF!', 'success');

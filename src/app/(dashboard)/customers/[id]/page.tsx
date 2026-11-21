@@ -151,12 +151,15 @@ export default function CustomerDetailPage() {
       showToast('No material rates to download', 'error');
       return;
     }
+    const currentUser = getCurrentUser();
     exportCustomerRatesToPDF({
       customerName: customer.business_name,
       contactPerson: customer.contact_person,
       phone: customer.phone,
       deliveryAddress: customer.delivery_address || customer.billing_address,
       siteName: activeSiteFilter !== 'all' ? activeSiteFilter : undefined,
+      profile,
+      preparedBy: currentUser?.name || 'VRUSHANK',
       selectedRates: list,
     });
     showToast('Downloaded Customer Material Selection PDF!', 'success');

@@ -1,12 +1,23 @@
+/**
+ * Production-Grade Quotation / Estimate PDF Generation for Showhouse
+ * Matches the official Showhouse Delivery Challan & Selection PDF styling (A5, Typography, Dual-Branding & Signatures)
+ * Specifically: No banking/payment details, no terms & conditions. Only material items and grand total (plus GST if applied).
+ */
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Quotation, BusinessProfile } from '@/types';
-import { formatDateIndian } from '@/lib/utils';
+import { formatDateIndian, formatPhone } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
-import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
+
+function formatAmountNum(amount: number | null | undefined): string {
+  if (amount == null || isNaN(Number(amount)) || Number(amount) === 0) return '0';
+  return Number(amount).toLocaleString('en-IN', {
+    maximumFractionDigits: 0,
+  });
+}
 
 export function exportQuotationToPDF(quotation: Quotation, profile?: BusinessProfile | null) {
-  // A5 Portrait (148mm × 210mm)
+  // A5 Portrait Dimensions: 148mm × 210mm (Standard Showhouse Document Format)
   const doc = new jsPDF('p', 'mm', 'a5');
   const pageWidth = doc.internal.pageSize.getWidth(); // 148mm
   const pageHeight = doc.internal.pageSize.getHeight(); // 210mm
@@ -14,213 +25,421 @@ export function exportQuotationToPDF(quotation: Quotation, profile?: BusinessPro
   const contentWidth = pageWidth - margin * 2; // 134mm
   let y = margin;
 
+  // Exact Brand Colors matching Challan PDF
+  const blackColor: [number, number, number] = [20, 20, 20];
   const goldColor: [number, number, number] = [190, 142, 42]; // #BE8E2A Gold
   const blueColor: [number, number, number] = [43, 94, 167]; // #2B5EA7 Navy Blue
-  const blackColor: [number, number, number] = [20, 20, 20];
 
-  // 1. Header (Left: Logo + Showhouse, Right: Document badge + QTN details)
+  // ----------------------------------------------------
+  // 1. TOP HEADER SECTION
+  // ----------------------------------------------------
+
+  // Left Brand: Gold Logo + SHOWHOUSE Decor Studio
   try {
-    doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', margin, y - 1, 12, 12);
+    doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', margin, y - 1, 13, 13);
   } catch {
     doc.setDrawColor(...goldColor);
+    doc.setLineWidth(1.0);
     doc.ellipse(margin + 6, y + 5, 5, 3.5);
   }
 
+  // Logo text
   doc.setFont('times', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(14.5);
   doc.setTextColor(...goldColor);
-  doc.text('SHOWHOUSE', margin + 14, y + 4.5);
+  doc.text('SHOWHOUSE', margin + 15, y + 5);
 
   doc.setFont('times', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...goldColor);
-  doc.text('Decor Studio', margin + 14, y + 8);
-
-  // Document Badge (Right)
-  const badgeWidth = 42;
-  const badgeHeight = 6.5;
-  const badgeX = pageWidth - margin - badgeWidth;
-  doc.setDrawColor(...blueColor);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(badgeX, y, badgeWidth, badgeHeight, 1.5, 1.5, 'S');
-  doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
+  doc.setTextColor(...goldColor);
+  doc.text('Decor Studio', margin + 15, y + 8.8);
+
+  // Right Header: Rounded Pill Box ("QUOTATION / ESTIMATE")
+  const titleText = 'QUOTATION / ESTIMATE';
+  const boxWidth = 46;
+  const boxHeight = 6.2;
+  const boxX = pageWidth - margin - boxWidth;
+  const boxY = y;
+
+  doc.setDrawColor(...blueColor);
+  doc.setLineWidth(0.5);
+  doc.setFillColor(252, 254, 255);
+  doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 1.2, 1.2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.4);
   doc.setTextColor(...blueColor);
-  doc.text('QUOTATION / ESTIMATE', badgeX + badgeWidth / 2, y + 4.3, { align: 'center' });
+  doc.text(titleText, boxX + boxWidth / 2, boxY + 4.3, { align: 'center' });
 
-  // Metadata block
-  const metaY = y + badgeHeight + 2.5;
+  // Separate Document Metadata (Right side below pill)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
+  doc.setFontSize(7.2);
   doc.setTextColor(...blackColor);
-  doc.text(`QUOTATION NO : ${quotation.quotation_number}`, pageWidth - margin, metaY, { align: 'right' });
-  doc.text(`DATE : ${formatDateIndian(quotation.quotation_date).toUpperCase()}`, pageWidth - margin, metaY + 3.2, { align: 'right' });
-  if (quotation.prepared_by) {
-    doc.text(`PREPARED BY : ${quotation.prepared_by.toUpperCase()}`, pageWidth - margin, metaY + 6.4, { align: 'right' });
+
+  let docInfoY = boxY + boxHeight + 4.0;
+  doc.text(`QUOTATION NO : ${quotation.quotation_number}`, boxX, docInfoY);
+  docInfoY += 3.2;
+
+  const targetSiteText = (quotation.site_name || '').trim();
+  if (targetSiteText) {
+    doc.text(`TARGET SITE : ${targetSiteText.toUpperCase()}`, boxX, docInfoY);
+    docInfoY += 3.2;
   }
 
-  // Company Address block (Right below metadata)
-  const compY = metaY + 9.5;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
-  doc.text('Showhouse Concept & Design LLP', pageWidth - margin, compY, { align: 'right' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.2);
-  doc.setTextColor(50, 50, 50);
-  doc.text('LBS marg Nr. Makhmali Talao Thane', pageWidth - margin, compY + 2.8, { align: 'right' });
-  doc.text('Phone : 022 2538 7683 / Mobile : +91 93248 69306', pageWidth - margin, compY + 5.6, { align: 'right' });
-  doc.text('GST : 27ACMF53838C1ZY', pageWidth - margin, compY + 8.4, { align: 'right' });
+  const quoteDateStr = formatDateIndian(quotation.quotation_date).toUpperCase();
+  doc.text(`DATE : ${quoteDateStr}`, boxX, docInfoY);
+  docInfoY += 3.2;
 
-  // Client Details (Left)
-  const clientY = y + 14;
+  const creator = quotation.prepared_by || 'VRUSHANK';
+  doc.text(`PREPARED BY : ${creator.toUpperCase()}`, boxX, docInfoY);
+  docInfoY += 3.8;
+
+  // ----------------------------------------------------
+  // 2. COMPANY DETAILS (RIGHT) & CUSTOMER DETAILS (LEFT)
+  // ----------------------------------------------------
+  const detailsY = Math.max(y + 20, docInfoY + 2.0);
+
+  // Left: Customer Details
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.6);
   doc.setTextColor(...blackColor);
-  doc.text(`CLIENT NAME : ${quotation.customer_name.toUpperCase()}`, margin, clientY);
+  doc.text(`CLIENT NAME : ${(quotation.customer_name || 'CLIENT').toUpperCase()}`, margin, detailsY);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.8);
+  doc.setFontSize(7.0);
+  doc.setTextColor(...blackColor);
+
+  let leftDetailY = detailsY + 3.2;
   if (quotation.customer_phone) {
-    doc.text(`Phone No: ${quotation.customer_phone}`, margin, clientY + 3.5);
+    doc.text(`Phone No: ${formatPhone(quotation.customer_phone)}`, margin, leftDetailY);
+    leftDetailY += 2.9;
   }
-  if (quotation.site_name || quotation.delivery_address) {
-    const siteTitle = quotation.site_name ? `Target Site: ${quotation.site_name}` : 'Site:';
-    doc.setFont('helvetica', 'bold');
-    doc.text(siteTitle, margin, clientY + 7);
-    doc.setFont('helvetica', 'normal');
-    const addr = quotation.delivery_address || quotation.customer_address;
-    if (addr) {
-      const splitAddr = doc.splitTextToSize(addr, 65);
-      doc.text(splitAddr, margin, clientY + 10);
+
+  const rawAddr = quotation.site_name
+    ? `Site: ${quotation.site_name}${quotation.delivery_address ? ` (${quotation.delivery_address})` : ''}`
+    : (quotation.delivery_address || quotation.customer_address || 'THANE, MAHARASHTRA');
+  const addrLines = doc.splitTextToSize(rawAddr.toUpperCase(), 64);
+  doc.text(addrLines, margin, leftDetailY);
+  leftDetailY += addrLines.length * 2.9;
+
+  // Right: Showhouse Decor Studio Company Info
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.6);
+  doc.setTextColor(...blackColor);
+  doc.text(profile?.legal_name || 'Showhouse Concept & Design LLP', boxX, detailsY);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.0);
+  doc.setTextColor(...blackColor);
+
+  const rightLines = [
+    'LBS marg Nr. Makhmali Talao Thane',
+    'Phone : 022 2538 7683',
+    'Mobile : +91 93248 69306',
+    'Email : forshowhouse@gmail.com',
+    `GST : ${profile?.gstin || '27ACMF53838C1ZY'}`,
+  ];
+
+  let rightDetailY = detailsY + 3.2;
+  rightLines.forEach((line) => {
+    doc.text(line, boxX, rightDetailY);
+    rightDetailY += 2.8;
+  });
+
+  y = Math.max(leftDetailY, rightDetailY) + 2.5;
+
+  // ----------------------------------------------------
+  // 3. TABLE ITEMS PREPARATION
+  // ----------------------------------------------------
+  const headers = ['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR'];
+  const colWidths = [8, 63, 20, 21, 22]; // Total = 134mm
+
+  const items = quotation.items || [];
+  const allTableRows: (string | number)[][] = items.map((it, idx) => {
+    let desc = (it.item_description || '').toUpperCase();
+    if (it.brand) desc += ` [ ${it.brand.toUpperCase()} ]`;
+    if (it.colour_finish) desc += ` - ${it.colour_finish.toUpperCase()}`;
+    if (it.size) desc += ` ( ${it.size} )`;
+
+    const unitStr = it.unit === 'running ft' ? 'RFT' : (it.unit || 'Sheets').toUpperCase();
+    const qtyStr = `${it.quantity} ${unitStr}`;
+
+    const rateNum = Number(it.rate || 0);
+    const amountNum = Number(it.amount || rateNum * Number(it.quantity || 0));
+
+    return [
+      idx + 1,
+      desc,
+      qtyStr,
+      rateNum > 0 ? `₹ ${formatAmountNum(rateNum)}` : '—',
+      `₹ ${formatAmountNum(amountNum)}`,
+    ];
+  });
+
+  // Pagination: 8 items max on Page 1 (same as Challan PDF)
+  const MAX_ITEMS_PAGE1 = 8;
+  const isMultiPage = allTableRows.length > MAX_ITEMS_PAGE1;
+  const page1Rows = isMultiPage ? allTableRows.slice(0, MAX_ITEMS_PAGE1) : allTableRows;
+  const page2Rows = isMultiPage ? allTableRows.slice(MAX_ITEMS_PAGE1) : [];
+
+  // Faint Watermark Helper (identical to Challan & Selection PDF)
+  const drawWatermark = (watermarkY: number) => {
+    try {
+      (doc as any).saveGraphicsState();
+      (doc as any).setGState(new (doc as any).GState({ opacity: 0.05 }));
+      doc.addImage(SHOWHOUSE_EMBLEM_BASE64, 'PNG', pageWidth / 2 - 20, watermarkY, 40, 40);
+      (doc as any).restoreGraphicsState();
+    } catch {
+      doc.setFont('times', 'bold');
+      doc.setFontSize(26);
+      doc.setTextColor(245, 238, 215);
+      doc.text('SHOWHOUSE', pageWidth / 2, watermarkY + 25, { align: 'center' });
     }
+  };
+
+  drawWatermark(y + 10);
+
+  // Dynamic row sizing matching Challan PDF
+  const p1Count = page1Rows.length;
+  let p1CellPadding = 2.2;
+  let p1MinHeight = 8.8;
+  let p1FontSize = 7.3;
+
+  if (p1Count <= 3) {
+    p1CellPadding = 2.5;
+    p1MinHeight = 12.0;
+    p1FontSize = 7.6;
+  } else if (p1Count <= 5) {
+    p1CellPadding = 2.4;
+    p1MinHeight = 10.5;
+    p1FontSize = 7.5;
+  } else if (p1Count <= 8) {
+    p1CellPadding = 2.2;
+    p1MinHeight = 8.8;
+    p1FontSize = 7.3;
   }
 
-  // Table starts
-  y = Math.max(clientY + 18, compY + 12);
-
-  const tableBody = quotation.items.map((it, idx) => [
-    String(idx + 1),
-    it.item_description.toUpperCase(),
-    `${it.quantity} ${it.unit || 'SHEETS'}`.toUpperCase(),
-    Number(it.rate || 0).toLocaleString('en-IN'),
-    Number(it.amount || 0).toLocaleString('en-IN'),
-  ]);
-
+  // Render Page 1 Table
   autoTable(doc, {
     startY: y,
-    margin: { left: margin, right: margin },
-    head: [['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR']],
-    body: tableBody,
-    theme: 'plain',
+    head: [headers],
+    body: page1Rows,
+    theme: 'grid',
+    tableWidth: contentWidth,
     headStyles: {
-      fillColor: [255, 255, 255],
-      textColor: [0, 0, 0],
-      font: 'helvetica',
+      fillColor: [248, 249, 250],
+      textColor: blackColor,
       fontStyle: 'bold',
-      fontSize: 6.8,
-      halign: 'center',
+      fontSize: 7.0,
+      cellPadding: 1.8,
       valign: 'middle',
+      halign: 'center',
+      lineColor: [40, 40, 40],
       lineWidth: 0.25,
-      lineColor: [0, 0, 0],
-      cellPadding: 1.5,
     },
     bodyStyles: {
-      font: 'helvetica',
-      fontSize: 6.8,
-      textColor: [0, 0, 0],
-      lineWidth: 0.2,
+      fontSize: p1FontSize,
+      textColor: blackColor,
+      cellPadding: p1CellPadding,
+      minCellHeight: p1MinHeight,
       lineColor: [180, 180, 180],
-      cellPadding: 1.6,
-    },
-    columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 64, halign: 'left', fontStyle: 'bold' },
-      2: { cellWidth: 20, halign: 'center' },
-      3: { cellWidth: 21, halign: 'right' },
-      4: { cellWidth: 21, halign: 'right', fontStyle: 'bold' },
-    },
-  });
-
-  const finalY = (doc as any).lastAutoTable.finalY || y + 40;
-
-  // Bottom Summary Table
-  const summaryX = pageWidth - margin - 48;
-  const summaryW = 48;
-  let curSumY = finalY;
-
-  autoTable(doc, {
-    startY: curSumY,
-    margin: { left: summaryX, right: margin },
-    tableWidth: summaryW,
-    theme: 'plain',
-    body: [
-      ['SUB TOTAL', Number(quotation.subtotal_amount || 0).toLocaleString('en-IN')],
-      ...(quotation.apply_gst
-        ? [
-            ['CGST 9%', Number(quotation.cgst_amount || 0).toLocaleString('en-IN')],
-            ['SGST 9%', Number(quotation.sgst_amount || 0).toLocaleString('en-IN')],
-          ]
-        : []),
-      ['GRAND TOTAL', Number(quotation.total_amount || 0).toLocaleString('en-IN')],
-    ],
-    bodyStyles: {
-      font: 'helvetica',
-      fontSize: 6.8,
       lineWidth: 0.2,
-      lineColor: [150, 150, 150],
-      cellPadding: 1.4,
+      valign: 'middle',
     },
     columnStyles: {
-      0: { cellWidth: 24, fontStyle: 'bold' },
-      1: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+      0: { halign: 'center', cellWidth: colWidths[0] },
+      1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+      2: { halign: 'center', cellWidth: colWidths[2] },
+      3: { halign: 'right', cellWidth: colWidths[3] },
+      4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
     },
+    margin: { left: margin, right: margin },
   });
 
-  // Banking & Terms (Left)
-  const bankW = summaryX - margin - 2;
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+
+  // If there are more than 8 items, create Page 2 and continue items
+  if (isMultiPage) {
+    // Add continuation note at bottom of page 1
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.2);
+    doc.setTextColor(110, 110, 110);
+    doc.text('(Continued on Page 2...)', pageWidth - margin, y + 4.5, { align: 'right' });
+
+    // Page 2
+    doc.addPage('a5', 'p');
+    let page2Y = margin + 2;
+
+    // Page 2 Mini Header
+    doc.setFont('times', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...goldColor);
+    doc.text('SHOWHOUSE DECOR STUDIO', margin, page2Y + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...blackColor);
+    doc.text(`QUOTATION / ESTIMATE (Page 2 of 2 - Continued)`, pageWidth - margin, page2Y + 4, { align: 'right' });
+
+    page2Y += 7.5;
+    drawWatermark(page2Y + 15);
+
+    // Page 2 Table (remaining items)
+    autoTable(doc, {
+      startY: page2Y,
+      head: [headers],
+      body: page2Rows,
+      theme: 'grid',
+      tableWidth: contentWidth,
+      headStyles: {
+        fillColor: [248, 249, 250],
+        textColor: blackColor,
+        fontStyle: 'bold',
+        fontSize: 7.0,
+        cellPadding: 1.8,
+        valign: 'middle',
+        halign: 'center',
+        lineColor: [40, 40, 40],
+        lineWidth: 0.25,
+      },
+      bodyStyles: {
+        fontSize: 7.0,
+        textColor: blackColor,
+        cellPadding: 1.8,
+        minCellHeight: 7.5,
+        lineColor: [180, 180, 180],
+        lineWidth: 0.2,
+        valign: 'middle',
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: colWidths[0] },
+        1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+        2: { halign: 'center', cellWidth: colWidths[2] },
+        3: { halign: 'right', cellWidth: colWidths[3] },
+        4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
+      },
+      margin: { left: margin, right: margin },
+    });
+
+    y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+  }
+
+  // ----------------------------------------------------
+  // 4. TOTALS & SIGNATURES SECTION (ON FINAL PAGE)
+  // Strictly: No banking details, no payment info, no QR code, no terms.
+  // ONLY material summary and Grand Total (plus GST breakdown if applied).
+  // ----------------------------------------------------
+  const applyGst = Boolean(quotation.apply_gst);
+  const subtotalAmount = Number(quotation.subtotal_amount || 0);
+  const cgstAmount = quotation.cgst_amount ?? (applyGst ? Math.round(subtotalAmount * 0.09) : 0);
+  const sgstAmount = quotation.sgst_amount ?? (applyGst ? Math.round(subtotalAmount * 0.09) : 0);
+  const applyAdditional9 = Boolean(quotation.apply_additional_9);
+  const additional9Amount = quotation.additional_9_amount ?? (applyAdditional9 ? Math.round(subtotalAmount * 0.09) : 0);
+  const grandTotal = Number(quotation.total_amount || (subtotalAmount + cgstAmount + sgstAmount + additional9Amount));
+
+  // Determine height needed for bottom section
+  // Height: Totals rows (around 16-24mm) + Signatures block (around 22mm)
+  const bottomSectionHeight = applyGst ? 46 : 38;
+  const targetBottomY = pageHeight - bottomSectionHeight - margin - 2;
+
+  if (y > targetBottomY) {
+    doc.addPage('a5', 'p');
+    y = margin + 4;
+  } else {
+    // Leave some breathing space after the table or anchor neatly
+    y = Math.max(y + 4, targetBottomY - 5);
+  }
+
+  // Summary Table (Aligned cleanly on right)
+  const totalsBoxWidth = 56;
+  const totalsBoxX = pageWidth - margin - totalsBoxWidth;
+  let totalsY = y;
+
+  const renderTotalRow = (label: string, value: string, isGrandTotal = false) => {
+    const rowH = isGrandTotal ? 5.5 : 4.0;
+    if (isGrandTotal) {
+      doc.setFillColor(235, 238, 242);
+      doc.rect(totalsBoxX, totalsY, totalsBoxWidth, rowH, 'F');
+    }
+    doc.setDrawColor(40, 40, 40);
+    doc.setLineWidth(0.2);
+    doc.rect(totalsBoxX, totalsY, totalsBoxWidth, rowH, 'S');
+
+    // Vertical line separating label and value
+    const splitX = totalsBoxX + totalsBoxWidth - 25;
+    doc.line(splitX, totalsY, splitX, totalsY + rowH);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(isGrandTotal ? 7.4 : 6.4);
+    doc.setTextColor(...blackColor);
+    doc.text(label, totalsBoxX + 2, totalsY + (isGrandTotal ? 3.8 : 2.8));
+    doc.text(value, totalsBoxX + totalsBoxWidth - 2, totalsY + (isGrandTotal ? 3.8 : 2.8), {
+      align: 'right',
+    });
+
+    totalsY += rowH;
+  };
+
+  // Left side note opposite the totals table
+  const leftNoteX = margin;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.8);
-  doc.text('BANKING & PAYMENT DETAILS:', margin, curSumY + 4);
+  doc.setTextColor(...blackColor);
+  doc.text(`TOTAL ITEMS : ${items.length}`, leftNoteX, y + 4.0);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.2);
-  doc.text('A/C NO : 50200003880041', margin, curSumY + 7.5);
-  doc.text('RTGS / IFSC : HDFC0000146', margin, curSumY + 10.5);
-  doc.text('BANK : HDFC BANK LTD, THANE', margin, curSumY + 13.5);
-  doc.text('PREPARED BY : ' + (quotation.prepared_by || 'VRUSHANK').toUpperCase(), margin, curSumY + 16.5);
+  doc.setTextColor(80, 80, 80);
+  doc.text(`Total Qty: ${quotation.total_quantity} items`, leftNoteX, y + 7.5);
+  if (quotation.prepared_by) {
+    doc.text(`Prepared By: ${quotation.prepared_by.toUpperCase()}`, leftNoteX, y + 11.0);
+  }
 
-  // Small QR Code if available
-  try {
-    doc.addImage(SHOWHOUSE_PAYMENT_QR_BASE64, 'PNG', margin + bankW - 20, curSumY + 2, 18, 18);
-  } catch {}
+  // Render totals: If GST is applied, show Sub Total, CGST, SGST, Grand Total.
+  // If NO GST, show ONLY Grand Total as requested.
+  if (applyGst) {
+    renderTotalRow('SUB TOTAL', `₹ ${formatAmountNum(subtotalAmount)}`);
+    renderTotalRow('CGST 9%', `₹ ${formatAmountNum(cgstAmount)}`);
+    renderTotalRow('SGST 9%', `₹ ${formatAmountNum(sgstAmount)}`);
+    if (applyAdditional9 && additional9Amount > 0) {
+      renderTotalRow('ADDITIONAL 9%', `₹ ${formatAmountNum(additional9Amount)}`);
+    }
+    renderTotalRow('GRAND TOTAL', `₹ ${formatAmountNum(grandTotal)}`, true);
+  } else {
+    renderTotalRow('GRAND TOTAL', `₹ ${formatAmountNum(grandTotal)}`, true);
+  }
 
-  // Terms & Validity
-  const termsY = curSumY + 21;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
-  doc.text('TERMS & CONDITIONS :', margin, termsY);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6);
-  doc.text('• Validity: 1 Week | Material rates inclusive of standard supply', margin, termsY + 3);
-  doc.text('• Delivery: Within 2 days of confirmation | 50% advance, 50% on delivery', margin, termsY + 6);
+  // ----------------------------------------------------
+  // 5. FOOTER & SIGNATURES
+  // ----------------------------------------------------
+  const signY = pageHeight - margin - 12;
 
-  // Footer: Signatures
-  const signY = pageHeight - margin - 10;
+  // Thin separator line
   doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.2);
   doc.line(margin, signY - 2, pageWidth - margin, signY - 2);
 
+  // Center brand motto
   doc.setFont('times', 'italic');
   doc.setFontSize(8);
   doc.setTextColor(...blueColor);
-  doc.text('" YOUR CONCEPTS, OUR DESIGNS "', pageWidth / 2, signY + 2, { align: 'center' });
+  doc.text('" YOUR CONCEPTS, OUR DESIGNS "', pageWidth / 2, signY + 2.5, { align: 'center' });
+
+  // Signature titles
+  const sigLineY = signY + 7.5;
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.2);
+  doc.line(margin + 5, sigLineY, margin + 45, sigLineY);
+  doc.line(pageWidth - margin - 45, sigLineY, pageWidth - margin - 5, sigLineY);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
-  doc.setTextColor(80, 80, 80);
-  doc.text('CLIENT ACCEPTANCE SIGN', margin + 15, signY + 7, { align: 'center' });
-  doc.text('FOR SHOWHOUSE CONCEPTS & DESIGNS LLP', pageWidth - margin - 25, signY + 7, { align: 'center' });
+  doc.setFontSize(6.4);
+  doc.setTextColor(50, 50, 50);
+  doc.text('CLIENT ACCEPTANCE SIGN', margin + 25, sigLineY + 3.8, { align: 'center' });
+  doc.text('FOR SHOWHOUSE CONCEPTS & DESIGN LLP', pageWidth - margin - 25, sigLineY + 3.8, { align: 'center' });
 
-  // Save / Download
+  // Save the PDF
   const cleanNum = quotation.quotation_number.replace(/[^a-zA-Z0-9_-]/g, '_');
-  doc.save(`Quotation_${cleanNum}_${quotation.customer_name.replace(/\s+/g, '_')}.pdf`);
+  const safeCustomerName = (quotation.customer_name || 'Customer').replace(/\s+/g, '_');
+  doc.save(`Quotation_${cleanNum}_${safeCustomerName}.pdf`);
 }
