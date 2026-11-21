@@ -75,6 +75,17 @@ export default function SettingsPage() {
   // Monthly Sales Backup State
   const [selectedBackupMonth, setSelectedBackupMonth] = useState<string>('');
 
+  // Admin Password Management State
+  const [adminUsername, setAdminUsername] = useState('adminsh');
+  const [adminCurrentPassword, setAdminCurrentPassword] = useState('');
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [savingAdminPassword, setSavingAdminPassword] = useState(false);
+  const [adminPasswordSuccess, setAdminPasswordSuccess] = useState(false);
+
   // Bank & Terms
   const [bankName, setBankName] = useState('');
   const [bankAccount, setBankAccount] = useState('');
@@ -87,8 +98,85 @@ export default function SettingsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    if (mounted && !isEmployee) {
+      const token = getClientAuthToken();
+      fetch('/api/auth/change-password', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.username) {
+            setAdminUsername(data.username);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [mounted, isEmployee]);
+
+  const handleChangeAdminPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminCurrentPassword) {
+      showToast('Please enter your current admin password', 'error');
+      return;
+    }
+    if (!adminNewPassword || adminNewPassword.length < 6) {
+      showToast('New password must be at least 6 characters long', 'error');
+      return;
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      showToast('New password and confirm password do not match', 'error');
+      return;
+    }
+
+    try {
+      setSavingAdminPassword(true);
+      const token = getClientAuthToken();
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          currentPassword: adminCurrentPassword,
+          newPassword: adminNewPassword,
+          confirmPassword: adminConfirmPassword,
+          newUsername: adminUsername,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Failed to update admin password', 'error');
+        return;
+      }
+
+      // Update client session token so user stays seamlessly authenticated
+      if (data.token && typeof window !== 'undefined') {
+        localStorage.setItem('showhouse_admin_token', data.token);
+        const stored = localStorage.getItem('showhouse_admin_authenticated');
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            parsed.username = data.username || adminUsername;
+            localStorage.setItem('showhouse_admin_authenticated', JSON.stringify(parsed));
+          } catch {}
+        }
+      }
+
+      setAdminCurrentPassword('');
+      setAdminNewPassword('');
+      setAdminConfirmPassword('');
+      setAdminPasswordSuccess(true);
+      setTimeout(() => setAdminPasswordSuccess(false), 5000);
+      showToast('Master Admin password updated successfully! Please note your new credentials.', 'success');
+    } catch {
+      showToast('Error updating admin password', 'error');
+    } finally {
+      setSavingAdminPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (profile) {
@@ -656,6 +744,142 @@ export default function SettingsPage() {
               </span>
             </div>
           </div>
+        </div>
+
+        {/* Master Admin Security & Password Change */}
+        <div className="card p-6 space-y-4 border-2 border-orange-500/25 bg-gradient-to-br from-white via-white to-orange-50/20 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-surface-100">
+            <div className="flex items-center gap-2.5 text-surface-900 font-bold text-base">
+              <div className="p-2 rounded-xl bg-orange-100 text-[#ea580c]">
+                <Key size={18} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-surface-900">Admin Security &amp; Password Change</h3>
+                <p className="text-[11px] text-surface-500 font-normal">
+                  Update Admin username and master password for full ERP system access
+                </p>
+              </div>
+            </div>
+            <span className="text-[11px] font-bold text-[#ea580c] bg-orange-50 border border-orange-200 px-2.5 py-0.5 rounded-full self-start sm:self-auto flex items-center gap-1">
+              <ShieldCheck size={12} />
+              <span>Master Administrator</span>
+            </span>
+          </div>
+
+          <form onSubmit={handleChangeAdminPassword} className="space-y-4 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Admin Username */}
+              <div>
+                <label className="label text-xs font-bold text-surface-700">Admin Username</label>
+                <input
+                  type="text"
+                  value={adminUsername}
+                  onChange={(e) => setAdminUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ''))}
+                  placeholder="adminsh"
+                  required
+                  className="input font-mono text-xs font-bold text-surface-900 bg-surface-50 w-full"
+                />
+                <span className="text-[10px] text-surface-400 mt-1 block">Default: adminsh</span>
+              </div>
+
+              {/* Current Password */}
+              <div>
+                <label className="label text-xs font-bold text-surface-700">Current Password *</label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    value={adminCurrentPassword}
+                    onChange={(e) => setAdminCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    required
+                    className="input text-xs pr-8 w-full font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-700"
+                    title={showCurrentPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showCurrentPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <span className="text-[10px] text-surface-400 mt-1 block">Verify security ownership</span>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="label text-xs font-bold text-surface-700">New Password *</label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={adminNewPassword}
+                    onChange={(e) => setAdminNewPassword(e.target.value)}
+                    placeholder="Min. 6 characters"
+                    required
+                    minLength={6}
+                    className="input text-xs pr-8 w-full font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-700"
+                    title={showNewPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showNewPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <span className="text-[10px] text-surface-400 mt-1 block">At least 6 characters</span>
+              </div>
+
+              {/* Confirm New Password */}
+              <div>
+                <label className="label text-xs font-bold text-surface-700">Confirm New Password *</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={adminConfirmPassword}
+                    onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                    placeholder="Repeat new password"
+                    required
+                    minLength={6}
+                    className="input text-xs pr-8 w-full font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-700"
+                    title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <span className="text-[10px] text-surface-400 mt-1 block">Must match new password</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-surface-500">
+                  Changing admin password immediately updates your persistent master credentials.
+                </span>
+                {adminPasswordSuccess && (
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                    <Check size={13} />
+                    <span>Password Updated!</span>
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingAdminPassword || !adminCurrentPassword || !adminNewPassword || !adminConfirmPassword}
+                className="btn-primary text-xs py-2 px-4 flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer self-start sm:self-auto"
+              >
+                <Lock size={14} />
+                <span>{savingAdminPassword ? 'Updating...' : 'Change Admin Password'}</span>
+              </button>
+            </div>
+          </form>
         </div>
 
         {/* Employee / Billing Staff Management */}

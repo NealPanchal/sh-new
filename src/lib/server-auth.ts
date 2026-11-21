@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { NextRequest } from 'next/server';
 import { findEmployeeByUsername } from '@/lib/employee-accounts';
 import { AuthUser, UserRole } from '@/types';
@@ -6,8 +8,71 @@ import { AuthUser, UserRole } from '@/types';
 export const AUTH_COOKIE_NAME = 'sh_admin_session';
 
 const AUTH_SECRET = process.env.AUTH_SECRET || 'sh_secret_e8c4a179d63f25b901a884fc5710294e7b8c_showhouse_2026';
-const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'adminsh').trim().toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'showhouse@2026!';
+const DEFAULT_ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'adminsh').trim().toLowerCase();
+const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'showhouse@2026!';
+
+const DATA_DIR = path.join(process.cwd(), 'data');
+const ADMIN_CONFIG_FILE = path.join(DATA_DIR, 'admin_credentials.json');
+
+export interface AdminCredentials {
+  username: string;
+  password: string;
+  updated_at?: string;
+}
+
+let cachedAdminCreds: AdminCredentials | null = null;
+let cachedMtime = 0;
+
+export function getAdminCredentials(): AdminCredentials {
+  try {
+    if (fs.existsSync(ADMIN_CONFIG_FILE)) {
+      const stat = fs.statSync(ADMIN_CONFIG_FILE);
+      if (cachedAdminCreds && cachedMtime === stat.mtimeMs) {
+        return cachedAdminCreds;
+      }
+      const raw = fs.readFileSync(ADMIN_CONFIG_FILE, 'utf-8');
+      if (raw.trim()) {
+        const parsed = JSON.parse(raw);
+        cachedAdminCreds = {
+          username: (parsed.username || DEFAULT_ADMIN_USERNAME).trim().toLowerCase(),
+          password: parsed.password || DEFAULT_ADMIN_PASSWORD,
+          updated_at: parsed.updated_at,
+        };
+        cachedMtime = stat.mtimeMs;
+        return cachedAdminCreds;
+      }
+    }
+  } catch (err) {
+    console.error('Error reading admin_credentials.json:', err);
+  }
+
+  return {
+    username: DEFAULT_ADMIN_USERNAME,
+    password: DEFAULT_ADMIN_PASSWORD,
+  };
+}
+
+export function setAdminCredentials(username: string, password: string): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const cleanUsername = username.trim().toLowerCase();
+    const payload: AdminCredentials = {
+      username: cleanUsername,
+      password: password,
+      updated_at: new Date().toISOString(),
+    };
+    fs.writeFileSync(ADMIN_CONFIG_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+    cachedAdminCreds = payload;
+    try {
+      cachedMtime = fs.statSync(ADMIN_CONFIG_FILE).mtimeMs;
+    } catch {}
+  } catch (err) {
+    console.error('Error saving admin credentials:', err);
+    throw err;
+  }
+}
 
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days for mobile PWA usability
 
@@ -67,14 +132,15 @@ export function verifyServerCredentials(
   const cleanUser = username.trim().toLowerCase();
 
   // 1. Check Admin Credentials
-  if (cleanUser === ADMIN_USERNAME) {
+  const adminCreds = getAdminCredentials();
+  if (cleanUser === adminCreds.username) {
     const passBuf = Buffer.from(pass);
-    const adminBuf = Buffer.from(ADMIN_PASSWORD);
+    const adminBuf = Buffer.from(adminCreds.password);
     if (passBuf.length === adminBuf.length && crypto.timingSafeEqual(passBuf, adminBuf)) {
       return {
         valid: true,
         user: {
-          username: ADMIN_USERNAME,
+          username: adminCreds.username,
           name: 'Admin SH',
           role: 'admin',
         },
