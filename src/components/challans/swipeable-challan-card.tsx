@@ -257,18 +257,6 @@ export function SwipeableChallanCard({
             className="flex items-center gap-1"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* View Slip */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(`/challans/${challan.id}/bill`);
-              }}
-              className="p-1.5 bg-[#b8860b]/10 text-[#b8860b] rounded-lg hover:bg-[#b8860b]/20 active:scale-95 transition-all"
-              title="View Paper Memo Slip"
-            >
-              <Receipt size={14} />
-            </button>
-
             {/* Print / PDF */}
             <button
               onClick={(e) => onPrint(challan, e)}

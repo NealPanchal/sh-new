@@ -241,7 +241,7 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
         !c.is_deleted &&
         c.status !== 'cancelled' &&
         c.status !== 'void' &&
-        (c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered))
+        (c.status === 'approved' || Boolean((c as any).is_approved) || c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered))
     );
 
     const existingSiteNames = new Set(sites.map((s) => s.site_name.trim().toLowerCase()));
@@ -1141,7 +1141,7 @@ export function rebuildCustomerLedgerFromChallans(
       !c.is_deleted &&
       c.status !== 'cancelled' &&
       c.status !== 'void' &&
-      (c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered))
+      (c.status === 'approved' || Boolean((c as any).is_approved) || c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered))
   );
 
   // Auto-detect sites and save
@@ -1347,9 +1347,9 @@ export function computeCustomerLedger(
     }
     if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
 
-    // Delivery Gate: Only challans explicitly marked as 'delivered' enter the party ledger
-    const isDelivered = c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered);
-    if (!isDelivered) return;
+    // Delivery / Approval Gate: Only challans approved by Admin (or marked delivered) enter the party ledger
+    const isApprovedOrDelivered = c.status === 'approved' || Boolean((c as any).is_approved) || c.status === 'delivered' || (c as any).delivery_status === 'delivered' || Boolean((c as any).is_delivered);
+    if (!isApprovedOrDelivered) return;
 
     if (options?.siteId && c.site_id && c.site_id !== options.siteId) return;
     if (options?.siteName && c.site_name && c.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;

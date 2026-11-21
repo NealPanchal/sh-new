@@ -33,6 +33,8 @@ import {
   Square,
   CheckSquare,
   Building2,
+  Play,
+  Pause,
 } from 'lucide-react';
 import { formatPhone, cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -95,6 +97,9 @@ export default function CustomersPage() {
   const [selectedArchitectIds, setSelectedArchitectIds] = useState<Set<string>>(new Set());
   const [sentArchitectIds, setSentArchitectIds] = useState<Set<string>>(new Set());
   const [broadcastQueueIndex, setBroadcastQueueIndex] = useState<number>(0);
+  const [broadcastAudience, setBroadcastAudience] = useState<'all' | 'architects' | 'clients'>('all');
+  const [isAutoBroadcasting, setIsAutoBroadcasting] = useState(false);
+  const [isBroadcastPaused, setIsBroadcastPaused] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -224,6 +229,29 @@ export default function CustomersPage() {
     }
   };
 
+  const broadcastRecipients = useMemo(() => {
+    return accessibleCustomers.filter((c) => {
+      if (!c.phone || c.phone.replace(/[^0-9]/g, '').length < 10) return false;
+      if (broadcastAudience === 'architects') return isCustomerArchitect(c);
+      if (broadcastAudience === 'clients') return !isCustomerArchitect(c);
+      return true;
+    });
+  }, [accessibleCustomers, broadcastAudience, isCustomerArchitect]);
+
+  const selectedRecipientsList = useMemo(() => {
+    return broadcastRecipients.filter((a) => selectedArchitectIds.has(a.id));
+  }, [broadcastRecipients, selectedArchitectIds]);
+
+  // Sync selection when audience changes or modal opens
+  useEffect(() => {
+    if (showBroadcastModal) {
+      setSelectedArchitectIds(new Set(broadcastRecipients.map((c) => c.id)));
+      setBroadcastQueueIndex(0);
+      setIsAutoBroadcasting(false);
+      setIsBroadcastPaused(false);
+    }
+  }, [showBroadcastModal, broadcastAudience, broadcastRecipients.length]);
+
   const toggleSelectArchitect = (id: string) => {
     setSelectedArchitectIds((prev) => {
       const next = new Set(prev);
@@ -234,47 +262,47 @@ export default function CustomersPage() {
   };
 
   const toggleSelectAllArchitects = () => {
-    if (selectedArchitectIds.size === allArchitects.length) {
+    if (selectedArchitectIds.size === broadcastRecipients.length) {
       setSelectedArchitectIds(new Set());
     } else {
-      setSelectedArchitectIds(new Set(allArchitects.map((a) => a.id)));
+      setSelectedArchitectIds(new Set(broadcastRecipients.map((a) => a.id)));
     }
   };
 
-  // 1-Click Send to Single Architect
-  const handleSendToArchitect = (architect: Customer) => {
-    if (!architect.phone) {
-      showToast('Architect does not have a valid mobile number', 'error');
+  // 1-Click Send to Single Recipient
+  const handleSendToArchitect = (recipient: Customer) => {
+    if (!recipient.phone) {
+      showToast('Contact does not have a valid mobile number', 'error');
       return;
     }
-    const cleanPhone = architect.phone.replace(/[^0-9]/g, '');
-    const archName = architect.contact_person || architect.business_name || 'Architect';
-    const finalMsg = broadcastMessage.replace(/\{architect_name\}/g, archName);
+    const cleanPhone = recipient.phone.replace(/[^0-9]/g, '');
+    const contactName = recipient.contact_person || recipient.business_name || 'Valued Client';
+    const compName = recipient.business_name || contactName;
+    const finalMsg = broadcastMessage
+      .replace(/\{architect_name\}/g, contactName)
+      .replace(/\{customer_name\}/g, contactName)
+      .replace(/\{company_name\}/g, compName);
 
     openWhatsApp(cleanPhone, finalMsg);
-    setSentArchitectIds((prev) => new Set(prev).add(architect.id));
-    showToast(`WhatsApp opened for ${archName}!`, 'success');
+    setSentArchitectIds((prev) => new Set(prev).add(recipient.id));
+    showToast(`WhatsApp opened for ${contactName}!`, 'success');
   };
 
   // Sequential Queue Dispatcher: Sends to current in queue and advances
-  const selectedArchitectsList = useMemo(() => {
-    return allArchitects.filter((a) => selectedArchitectIds.has(a.id));
-  }, [allArchitects, selectedArchitectIds]);
-
   const handleDispatchNextInQueue = () => {
-    if (selectedArchitectsList.length === 0) {
-      showToast('Please select at least one architect', 'error');
+    if (selectedRecipientsList.length === 0) {
+      showToast('Please select at least one recipient', 'error');
       return;
     }
-    const current = selectedArchitectsList[broadcastQueueIndex] || selectedArchitectsList[0];
+    const current = selectedRecipientsList[broadcastQueueIndex] || selectedRecipientsList[0];
     if (!current) {
-      showToast('All selected architects have been sent!', 'success');
+      showToast('All selected contacts have been sent!', 'success');
       return;
     }
 
     handleSendToArchitect(current);
 
-    if (broadcastQueueIndex < selectedArchitectsList.length - 1) {
+    if (broadcastQueueIndex < selectedRecipientsList.length - 1) {
       setBroadcastQueueIndex((prev) => prev + 1);
     } else {
       setBroadcastQueueIndex(0);
@@ -282,9 +310,36 @@ export default function CustomersPage() {
     }
   };
 
+  // Auto-Broadcast Timer Engine: Loops through unlimited contacts smoothly
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isAutoBroadcasting && !isBroadcastPaused) {
+      if (broadcastQueueIndex < selectedRecipientsList.length) {
+        const current = selectedRecipientsList[broadcastQueueIndex];
+        if (current) {
+          handleSendToArchitect(current);
+        }
+        timer = setTimeout(() => {
+          setBroadcastQueueIndex((prev) => {
+            const next = prev + 1;
+            if (next >= selectedRecipientsList.length) {
+              setIsAutoBroadcasting(false);
+              showToast('Bulk Broadcast completed for all recipients! 🎉', 'success');
+              return 0;
+            }
+            return next;
+          });
+        }, 2200);
+      } else {
+        setIsAutoBroadcasting(false);
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [isAutoBroadcasting, isBroadcastPaused, broadcastQueueIndex, selectedRecipientsList]);
+
   // Copy All Numbers for WhatsApp Web / Broadcast Group
   const handleCopyAllPhoneNumbers = () => {
-    const phones = selectedArchitectsList
+    const phones = selectedRecipientsList
       .map((a) => a.phone?.replace(/[^0-9]/g, ''))
       .filter((p) => p && p.length >= 10);
     if (phones.length === 0) {
@@ -811,9 +866,9 @@ export default function CustomersPage() {
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm sm:text-base text-surface-900 flex items-center gap-2">
-                    <span>WhatsApp Broadcast to Architects</span>
+                    <span>WhatsApp Bulk Broadcast</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800">
-                      {selectedArchitectsList.length} Selected
+                      {selectedRecipientsList.length} Selected
                     </span>
                   </h3>
                   <p className="text-[11px] text-surface-500">
@@ -863,6 +918,47 @@ export default function CustomersPage() {
               </div>
             </div>
 
+            {/* Audience Filter Tabs */}
+            <div className="flex items-center gap-1.5 pt-1 border-t border-surface-100 flex-wrap">
+              <span className="text-xs font-bold text-surface-600 mr-1">Target Audience:</span>
+              <button
+                type="button"
+                onClick={() => setBroadcastAudience('all')}
+                className={cn(
+                  'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer',
+                  broadcastAudience === 'all'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                )}
+              >
+                All Contacts ({accessibleCustomers.filter((c) => c.phone).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setBroadcastAudience('architects')}
+                className={cn(
+                  'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer',
+                  broadcastAudience === 'architects'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                )}
+              >
+                Architects Only ({allArchitects.filter((c) => c.phone).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setBroadcastAudience('clients')}
+                className={cn(
+                  'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer',
+                  broadcastAudience === 'clients'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                )}
+              >
+                Clients Only
+              </button>
+            </div>
+
             {/* Broadcast Message Composer */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
@@ -870,11 +966,11 @@ export default function CustomersPage() {
                   Broadcast Message Content
                 </label>
                 <span className="text-[10px] text-purple-700 font-semibold bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                  Tag <code>{`{architect_name}`}</code> is auto-personalized
+                  Tags <code>{`{customer_name}`}</code> &amp; <code>{`{company_name}`}</code> are personalized
                 </span>
               </div>
               <textarea
-                rows={6}
+                rows={5}
                 value={broadcastMessage}
                 onChange={(e) => setBroadcastMessage(e.target.value)}
                 className="input w-full text-xs font-mono p-3 leading-relaxed"
@@ -882,7 +978,7 @@ export default function CustomersPage() {
               />
             </div>
 
-            {/* Architect Recipients Selection */}
+            {/* Recipients Selection */}
             <div className="space-y-2 pt-2 border-t border-surface-100">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -891,12 +987,12 @@ export default function CustomersPage() {
                     onClick={toggleSelectAllArchitects}
                     className="flex items-center gap-1.5 text-xs font-bold text-surface-800 cursor-pointer"
                   >
-                    {selectedArchitectIds.size === allArchitects.length ? (
+                    {selectedArchitectIds.size === broadcastRecipients.length && broadcastRecipients.length > 0 ? (
                       <CheckSquare size={16} className="text-emerald-600" />
                     ) : (
                       <Square size={16} className="text-surface-400" />
                     )}
-                    <span>Select All Architects ({allArchitects.length})</span>
+                    <span>Select All ({broadcastRecipients.length})</span>
                   </button>
                 </div>
 
@@ -913,18 +1009,64 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              {/* Architect List Scroll */}
+              {/* Live Auto-Broadcast Progress Box */}
+              {isAutoBroadcasting && (
+                <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold text-emerald-950">
+                    <span>
+                      {isBroadcastPaused ? '⏸️ Auto-Broadcast Paused' : '🚀 Auto-Broadcasting:'}{' '}
+                      Contact {broadcastQueueIndex + 1} of {selectedRecipientsList.length}
+                    </span>
+                    <span>
+                      {Math.round(((broadcastQueueIndex + 1) / (selectedRecipientsList.length || 1)) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-emerald-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-emerald-600 h-full transition-all duration-300"
+                      style={{
+                        width: `${Math.min(100, ((broadcastQueueIndex + 1) / (selectedRecipientsList.length || 1)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-emerald-800">
+                    <span>Dispatching message every 2.2s smoothly to avoid browser blocks.</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsBroadcastPaused((prev) => !prev)}
+                        className="font-bold underline cursor-pointer"
+                      >
+                        {isBroadcastPaused ? 'Resume' : 'Pause'}
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAutoBroadcasting(false);
+                          setIsBroadcastPaused(false);
+                        }}
+                        className="font-bold text-rose-700 underline cursor-pointer"
+                      >
+                        Stop
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Recipients List Scroll */}
               <div className="border border-surface-200 rounded-xl divide-y divide-surface-100 max-h-48 overflow-y-auto">
-                {allArchitects.length === 0 ? (
+                {broadcastRecipients.length === 0 ? (
                   <div className="p-4 text-center text-xs text-surface-400">
-                    No architects found. Add an architect to send broadcasts.
+                    No contacts with valid mobile numbers found for this audience.
                   </div>
                 ) : (
-                  allArchitects.map((arch, idx) => {
+                  broadcastRecipients.map((arch) => {
                     const isSelected = selectedArchitectIds.has(arch.id);
                     const isSent = sentArchitectIds.has(arch.id);
                     const cleanPhone = arch.phone?.replace(/[^0-9]/g, '');
-                    const isCurrentInQueue = selectedArchitectsList[broadcastQueueIndex]?.id === arch.id;
+                    const isCurrentInQueue = selectedRecipientsList[broadcastQueueIndex]?.id === arch.id;
 
                     return (
                       <div
@@ -989,34 +1131,65 @@ export default function CustomersPage() {
               <div className="text-[11px] text-surface-500">
                 {sentArchitectIds.size > 0 ? (
                   <span>
-                    Sent to <strong>{sentArchitectIds.size}</strong> of {selectedArchitectsList.length} architects.
+                    Sent to <strong>{sentArchitectIds.size}</strong> of {selectedRecipientsList.length} contacts.
                   </span>
                 ) : (
-                  <span>Ready to broadcast to {selectedArchitectsList.length} selected architects.</span>
+                  <span>Ready to broadcast to {selectedRecipientsList.length} selected contacts.</span>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap justify-end">
                 <button
                   type="button"
                   onClick={() => setShowBroadcastModal(false)}
-                  className="btn-secondary py-2 px-3 text-xs flex-1 sm:flex-initial"
+                  className="btn-secondary py-2 px-3 text-xs"
                 >
                   Close
                 </button>
 
-                {/* 1-Click Sequential Broadcast Dispatcher */}
+                {/* 1-Click Send Next in Queue */}
                 <button
                   type="button"
                   onClick={handleDispatchNextInQueue}
-                  disabled={selectedArchitectsList.length === 0}
-                  className="btn-primary py-2 px-4 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial"
+                  disabled={selectedRecipientsList.length === 0 || isAutoBroadcasting}
+                  className="btn-secondary py-2 px-3 text-xs font-bold text-emerald-800 border-emerald-300 hover:bg-emerald-50 flex items-center gap-1.5 disabled:opacity-50"
+                  title="Send to the next contact in list"
                 >
-                  <Send size={14} />
-                  <span>
-                    Send Next in Queue ({broadcastQueueIndex + 1}/{selectedArchitectsList.length})
-                  </span>
-                  <ArrowRight size={13} />
+                  <Send size={13} />
+                  <span>Send Next ({broadcastQueueIndex + 1}/{selectedRecipientsList.length})</span>
+                </button>
+
+                {/* Unlimited Auto-Broadcast: Sends to all automatically */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isAutoBroadcasting) {
+                      setIsAutoBroadcasting(false);
+                      setIsBroadcastPaused(false);
+                    } else {
+                      setIsAutoBroadcasting(true);
+                      setIsBroadcastPaused(false);
+                    }
+                  }}
+                  disabled={selectedRecipientsList.length === 0}
+                  className={cn(
+                    'btn-primary py-2 px-4 text-xs font-bold flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50',
+                    isAutoBroadcasting
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white'
+                  )}
+                >
+                  {isAutoBroadcasting ? (
+                    <>
+                      <Pause size={14} />
+                      <span>Stop Auto-Broadcast</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play size={14} />
+                      <span>Send All Automatically ({selectedRecipientsList.length})</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

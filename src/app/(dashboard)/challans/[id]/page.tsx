@@ -73,7 +73,7 @@ export default function ChallanDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
-  const [viewMode, setViewMode] = useState<'challan' | 'pi' | 'bill'>('challan');
+  const [viewMode, setViewMode] = useState<'challan' | 'pi'>('challan');
   const [activeDocType, setActiveDocType] = useState<'DELIVERY CHALLAN' | 'PROFORMA INVOICE'>('DELIVERY CHALLAN');
 
   // Payment Received Modal State
@@ -593,33 +593,7 @@ export default function ChallanDetailPage() {
               <span>Goods Return</span>
             </Link>
 
-            {/* Mark as Delivered / Re-notify Button */}
-            <button
-              onClick={handleMarkDelivered}
-              className={cn(
-                'btn-primary py-1.5 px-3 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap',
-                challan.status === 'delivered'
-                  ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-emerald-600 hover:bg-emerald-700'
-              )}
-              title={
-                challan.status === 'delivered'
-                  ? 'Re-send Delivery Confirmation via WhatsApp'
-                  : 'Mark as delivered and send WhatsApp notification'
-              }
-            >
-              <Truck size={14} />
-              <span>{challan.status === 'delivered' ? 'Delivery Sent' : 'Mark Delivered'}</span>
-            </button>
 
-            <Link
-              href={`/challans/${challan.id}/bill`}
-              className="btn-primary py-1.5 px-3 bg-[#b8860b] hover:bg-[#a07408] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs whitespace-nowrap"
-              title="After-Delivery Bill / Memo slip"
-            >
-              <Receipt size={14} />
-              <span>Bill / Memo</span>
-            </Link>
 
             {(() => {
               const targetPhone = challan ? resolveCustomerPhone(challan, customers, liveChallans) : '';
@@ -747,69 +721,6 @@ export default function ChallanDetailPage() {
           <span>Proforma Invoice PI (A5)</span>
         </button>
 
-        <button
-          onClick={() => setViewMode('bill')}
-          className={cn(
-            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer',
-            viewMode === 'bill'
-              ? 'bg-[#b8860b] text-white shadow-xs'
-              : 'bg-[#b8860b]/10 text-[#b8860b] hover:bg-[#b8860b]/20 border border-[#b8860b]/30'
-          )}
-        >
-          <Receipt size={14} />
-          <span>After-Delivery Bill (Showhouse Slip)</span>
-          <span className="text-[9px] bg-white text-[#b8860b] px-1.5 py-0.2 rounded-full font-extrabold uppercase">
-            Shop Format
-          </span>
-        </button>
-      </div>
-
-      {/* Delivery Tracking & Confirmation Action Box */}
-      <div className="card p-3.5 bg-gradient-to-r from-surface-50 to-emerald-50/30 border border-surface-200 text-xs space-y-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="flex items-center gap-2 cursor-pointer font-bold text-zinc-900 select-none">
-              <input
-                type="checkbox"
-                checked={challan.status === 'delivered' || challan.is_delivered}
-                onChange={(e) => {
-                  const isChecked = e.target.checked;
-                  handleUpdateDeliveryStatus(isChecked ? 'delivered' : 'pending', isChecked);
-                }}
-                className="w-4 h-4 rounded text-primary-600 focus:ring-primary-400 cursor-pointer"
-              />
-              <span className="text-xs">Mark as Delivered</span>
-            </label>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-zinc-500 font-semibold">Status:</span>
-              <select
-                value={challan.status}
-                onChange={(e) => handleUpdateDeliveryStatus(e.target.value as ChallanStatus)}
-                className="px-2.5 py-1 rounded-md bg-white border border-surface-300 text-xs font-bold text-zinc-800 shadow-2xs cursor-pointer"
-              >
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="out_for_delivery">Out for Delivery</option>
-                <option value="delivered">Delivered</option>
-                <option value="partially_delivered">Partially Delivered</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="goods_returned">Goods Returned</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Delivery Confirmation Audit Record */}
-          {challan.delivered_at && (
-            <div className="text-[11px] text-zinc-700 bg-white px-2.5 py-1 rounded-lg border border-surface-200 flex items-center gap-1.5 shadow-2xs">
-              <CheckCircle2 size={13} className="text-emerald-600" />
-              <span>
-                Delivered: <strong>{formatDateIndian(challan.delivered_at)}</strong>
-                {challan.delivery_confirmed_by && ` • Verified by ${challan.delivery_confirmed_by}`}
-              </span>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Challan Revision & Modification Audit Trail (Shown on Challan, NOT in Ledger) */}
@@ -858,13 +769,7 @@ export default function ChallanDetailPage() {
         </div>
       )}
 
-      {/* Conditionally render the selected view */}
-      {viewMode === 'bill' ? (
-        <div className="printable-delivery-bill">
-          <DeliveryMemoBill challan={challan} profile={profile} />
-        </div>
-      ) : (
-        <div className="card p-4 sm:p-8 bg-white shadow-xs border border-surface-200 printable-challan relative">
+      <div className="card p-4 sm:p-8 bg-white shadow-xs border border-surface-200 printable-challan relative">
           {/* Compact Transparent Rubber Stamp: PAID */}
           {isChallanPaid && (
             <div className="absolute top-4 right-6 sm:top-5 sm:right-10 pointer-events-none select-none z-10 print:top-3 print:right-6">
@@ -983,12 +888,19 @@ export default function ChallanDetailPage() {
               <span className="text-surface-500">Date:</span>
               <span className="font-medium text-surface-800">{formatDateIndian(challan.challan_date)}</span>
             </div>
+
+            {viewMode !== 'pi' && (
+              <div className="flex justify-between pt-1 border-t border-surface-200/60">
+                <span className="text-surface-500 font-bold">Goods From:</span>
+                <span className="font-semibold text-surface-900 text-right">{profile?.legal_name || 'Showhouse Concept & Design LLP'}</span>
+              </div>
+            )}
           </div>
 
           {/* Consignee Info */}
           <div className="bg-surface-50 p-3 rounded-lg border border-surface-100 space-y-1">
             <span className="text-[10px] text-surface-400 font-semibold uppercase tracking-wider block">
-              Consignee / Deliver To:
+              {viewMode !== 'pi' ? 'Goods To / Consignee:' : 'Consignee / Deliver To:'}
             </span>
             <div className="font-bold text-surface-900 text-sm">
               {challan.customer_name}
@@ -1269,7 +1181,6 @@ export default function ChallanDetailPage() {
           </div>
         </div>
       </div>
-      )}
 
       {/* Cancel Confirmation Dialog */}
       <ConfirmDialog

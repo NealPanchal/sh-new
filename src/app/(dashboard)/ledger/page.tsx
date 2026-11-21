@@ -480,9 +480,9 @@ function MasterPartyLedgerContent() {
       // Find all matching DELIVERED challans from local contextChallans
       const matchingContextChallans = currentContextChallans.filter((c: any) => {
         if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
-        // Delivery Gate: Only challans marked as 'delivered' enter the ledger
-        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-        if (!isDelivered) return false;
+        // Delivery / Approval Gate: Only challans marked as approved or delivered enter the ledger
+        const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isApprovedOrDelivered) return false;
 
         const cId = (c.customer_id || '').toLowerCase();
         const cName = (c.customer_name || '').toLowerCase();
@@ -605,9 +605,9 @@ function MasterPartyLedgerContent() {
         }
         if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
 
-        // Delivery Gate check
-        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-        if (!isDelivered) return;
+        // Delivery / Approval Gate check
+        const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isApprovedOrDelivered) return;
 
         const amt = Number(c.total_amount) || 0;
         if (amt <= 0) return;
@@ -646,8 +646,8 @@ function MasterPartyLedgerContent() {
 
       matchingContextChallans.forEach((c: any) => {
         if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return;
-        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-        if (!isDelivered) return;
+        const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isApprovedOrDelivered) return;
 
         let siteName = (c.site_name || '').trim();
         if (!siteName && c.delivery_address && c.delivery_address.trim()) {
@@ -741,8 +741,8 @@ function MasterPartyLedgerContent() {
       // Immediate pre-population from in-memory contextChallans so UI is NEVER empty
       const localMatches = currentContextChallans.filter((c: any) => {
         if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
-        const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-        if (!isDelivered) return false;
+        const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+        if (!isApprovedOrDelivered) return false;
 
         const cId = (c.customer_id || '').toLowerCase();
         const cName = (c.customer_name || '').toLowerCase();
@@ -776,8 +776,8 @@ function MasterPartyLedgerContent() {
         const serverList = (d.challans || [])
           .filter((c: any) => {
             if (c.is_deleted || c.status === 'cancelled' || c.status === 'void') return false;
-            const isDelivered = c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
-            if (!isDelivered) return false;
+            const isApprovedOrDelivered = c.status === 'approved' || Boolean(c.is_approved) || c.status === 'delivered' || c.delivery_status === 'delivered' || Boolean(c.is_delivered);
+            if (!isApprovedOrDelivered) return false;
 
             const cId = (c.customer_id || '').toLowerCase();
             const cName = (c.customer_name || '').toLowerCase();

@@ -561,7 +561,6 @@ export default function ChallansPage() {
             {[
               { id: 'all', label: 'All', count: counts.all },
               { id: 'final', label: 'Final', count: counts.final },
-              { id: 'delivered', label: 'Delivered 🚚', count: counts.delivered },
               { id: 'draft', label: 'Drafts', count: counts.draft },
               { id: 'cancelled', label: 'Cancelled', count: counts.cancelled },
             ].map((tab) => (
@@ -929,40 +928,12 @@ export default function ChallansPage() {
                       </td>
                       <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
-                          {/* Mark as Delivered / WhatsApp Notification Button */}
-                          <button
-                            title={
-                              challan.status === 'delivered'
-                                ? 'Delivered • Re-send Delivery WhatsApp'
-                                : 'Mark as Delivered & Send WhatsApp Notification'
-                            }
-                            onClick={(e) => handleMarkDeliveredFromList(challan, e)}
-                            className={cn(
-                              'p-1.5 rounded-md transition-colors',
-                              challan.status === 'delivered'
-                                ? 'text-blue-600 hover:bg-blue-50 bg-blue-50/50'
-                                : 'text-surface-500 hover:text-blue-600 hover:bg-surface-100'
-                            )}
-                          >
-                            <Truck size={15} />
-                          </button>
-
                           <button
                             title="View Challan"
                             onClick={() => router.push(`/challans/${challan.id}`)}
                             className="p-1.5 text-surface-500 hover:text-primary-600 hover:bg-surface-100 rounded-md transition-colors"
                           >
                             <Eye size={15} />
-                          </button>
-                          <button
-                            title="View After-Delivery Bill Slip"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/challans/${challan.id}/bill`);
-                            }}
-                            className="p-1.5 text-[#b8860b] hover:bg-[#b8860b]/10 rounded-md transition-colors"
-                          >
-                            <Receipt size={15} />
                           </button>
                           <button
                             title="Print Challan"

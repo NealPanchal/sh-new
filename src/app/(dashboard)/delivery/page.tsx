@@ -169,6 +169,32 @@ export default function DeliveryManagementPage() {
     });
   }, [activeChallans, statusTab, selectedCustomerId, searchQuery]);
 
+  // Handler: 1-Click Mark as Approved (Admin Approval Gate)
+  const handleMarkAsApproved = async (challan: Challan) => {
+    try {
+      setUpdatingId(challan.id);
+      const approvedAt = new Date().toISOString();
+      const approvedBy = currentUser?.name || currentUser?.username || 'Admin';
+
+      await updateChallanStatus(challan.id, 'approved');
+
+      await updateChallan(challan.id, {
+        status: 'approved',
+        delivery_status: 'approved',
+        is_approved: true,
+        approved_at: approvedAt,
+        approved_by: approvedBy,
+      });
+
+      showToast(`Challan ${challan.challan_number} APPROVED by Admin! Added to Party Ledger & Challans. ✓`, 'success');
+    } catch (err: any) {
+      console.error('Failed to approve challan:', err);
+      showToast(err.message || 'Error approving challan', 'error');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   // Handler: 1-Click Mark as Delivered
   const handleMarkAsDelivered = async (challan: Challan) => {
     try {
@@ -254,9 +280,11 @@ export default function DeliveryManagementPage() {
   ) => {
     try {
       setUpdatingId(challan.id);
-      const isDelivering = newStatus === 'delivered' || confirmed === true;
-
-      if (isDelivering) {
+      if (newStatus === 'approved' || confirmed === true) {
+        await handleMarkAsApproved(challan);
+        return;
+      }
+      if (newStatus === 'delivered') {
         await handleMarkAsDelivered(challan);
         return;
       }
@@ -660,6 +688,7 @@ export default function DeliveryManagementPage() {
               </thead>
               <tbody className="divide-y divide-surface-100">
                 {filteredChallans.map((c) => {
+                  const isApproved = c.status === 'approved' || Boolean(c.is_approved);
                   const isDelivered =
                     c.status === 'delivered' ||
                     (c as any).delivery_status === 'delivered' ||
@@ -741,19 +770,19 @@ export default function DeliveryManagementPage() {
                       {/* Delivery Status & Dropdown (Checkbox + 7 Status Options) */}
                       <td className="py-3 px-3 align-top min-w-[210px]">
                         <div className="space-y-1.5 bg-surface-50/80 p-2 rounded-lg border border-surface-200">
-                          {/* [ ] Mark as Delivered Checkbox */}
+                          {/* [ ] Mark as Approved Checkbox */}
                           <label className="flex items-center gap-2 cursor-pointer font-bold text-zinc-900 select-none text-xs">
                             <input
                               type="checkbox"
-                              checked={isDelivered}
+                              checked={isApproved}
                               disabled={isUpdating}
                               onChange={(e) => {
                                 const isChecked = e.target.checked;
-                                handleUpdateDeliveryStatus(c, isChecked ? 'delivered' : 'pending', isChecked);
+                                handleUpdateDeliveryStatus(c, isChecked ? 'approved' : 'pending', isChecked);
                               }}
                               className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-400 cursor-pointer disabled:opacity-50"
                             />
-                            <span className="text-xs">Mark as Delivered</span>
+                            <span className="text-xs">Mark as Approved</span>
                           </label>
 
                           {/* Status Dropdown with 7 exact options */}
@@ -764,16 +793,16 @@ export default function DeliveryManagementPage() {
                               disabled={isUpdating}
                               onChange={(e) => {
                                 const newStatus = e.target.value as ChallanStatus;
-                                handleUpdateDeliveryStatus(c, newStatus, newStatus === 'delivered');
+                                handleUpdateDeliveryStatus(c, newStatus, newStatus === 'approved');
                               }}
                               className={cn(
                                 "px-2 py-0.5 rounded-md border text-xs font-bold shadow-2xs cursor-pointer flex-1",
-                                isDelivered
+                                isApproved
+                                  ? "bg-indigo-50 text-indigo-800 border-indigo-300"
+                                  : isDelivered
                                   ? "bg-emerald-50 text-emerald-800 border-emerald-300"
                                   : isOut
                                   ? "bg-blue-50 text-blue-800 border-blue-300"
-                                  : c.status === 'approved'
-                                  ? "bg-indigo-50 text-indigo-800 border-indigo-300"
                                   : c.status === 'partially_delivered'
                                   ? "bg-teal-50 text-teal-800 border-teal-300"
                                   : c.status === 'cancelled'
@@ -794,13 +823,13 @@ export default function DeliveryManagementPage() {
                           </div>
 
                           {/* Ledger Status Note */}
-                          {isDelivered && (
+                          {(isApproved || isDelivered) && (
                             <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 pt-0.5">
                               <CheckCircle2 size={11} className="text-emerald-600" />
                               <span>In Party Ledger ✓</span>
-                              {c.delivered_at && (
+                              {(c.approved_at || c.delivered_at) && (
                                 <span className="text-surface-400 font-normal">
-                                  ({formatDateIndian(c.delivered_at)})
+                                  ({formatDateIndian((c.approved_at || c.delivered_at)!)})
                                 </span>
                               )}
                             </div>
@@ -811,22 +840,22 @@ export default function DeliveryManagementPage() {
                       {/* Actions */}
                       <td className="py-3 px-3 align-top text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {!isDelivered ? (
+                          {!isApproved ? (
                             <>
-                              {/* 1-Click "Mark as Delivered" Button */}
+                              {/* 1-Click "Mark as Approved" Button */}
                               <button
                                 type="button"
                                 disabled={isUpdating}
-                                onClick={() => handleMarkAsDelivered(c)}
+                                onClick={() => handleMarkAsApproved(c)}
                                 className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                                title="Mark as Delivered, send customer WhatsApp notification, and auto-add to Ledger"
+                                title="Admin: Mark as Approved and add to Party Ledger & Challans"
                               >
                                 {isUpdating ? (
                                   <span>Saving...</span>
                                 ) : (
                                   <>
                                     <CheckCircle2 size={13} />
-                                    <span>Mark Delivered</span>
+                                    <span>Approve</span>
                                   </>
                                 )}
                               </button>
@@ -858,6 +887,20 @@ export default function DeliveryManagementPage() {
                             </>
                           ) : (
                             <>
+                              {/* 1-Click "Mark as Delivered" if not yet delivered */}
+                              {!isDelivered && (
+                                <button
+                                  type="button"
+                                  disabled={isUpdating}
+                                  onClick={() => handleMarkAsDelivered(c)}
+                                  className="py-1 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-xs flex items-center gap-1 border border-blue-200 transition-colors cursor-pointer"
+                                  title="Mark Delivered & send customer WhatsApp notification"
+                                >
+                                  <Truck size={12} />
+                                  <span>Delivered</span>
+                                </button>
+                              )}
+
                               {/* Re-send WhatsApp Confirmation */}
                               <button
                                 type="button"
@@ -879,13 +922,13 @@ export default function DeliveryManagementPage() {
                                 <span>Ledger</span>
                               </Link>
 
-                              {/* Revert / Undo Delivery (Admin Only) */}
+                              {/* Revert / Undo Approval (Admin Only) */}
                               {isAdmin() && (
                                 <button
                                   type="button"
                                   onClick={() => handleUndoDelivery(c)}
                                   className="p-1 text-surface-400 hover:text-rose-600 rounded-md transition-colors"
-                                  title="Admin: Revert delivery status to Pending"
+                                  title="Admin: Revert approval status to Pending"
                                 >
                                   <RotateCcw size={13} />
                                 </button>
