@@ -10,15 +10,17 @@ const AUTH_TOKEN_KEY = 'showhouse_admin_token';
 
 export interface LoginResult {
   success: boolean;
-  requires_otp?: boolean;
+  requires_totp?: boolean;
+  requires_totp_setup?: boolean;
   challenge_id?: string;
-  target_masked?: string;
-  phone?: string;
-  otp_preview?: string;
-  expires_at?: number;
+  qr_code_url?: string;
+  manual_key?: string;
+  provisioning_uri?: string;
+  plain_backup_codes?: string[];
   expires_in_seconds?: number;
   token?: string;
   error?: string;
+  is_backup_code?: boolean;
   user?: {
     username: string;
     name: string;
@@ -46,36 +48,30 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
       };
     }
 
-    // If 2FA OTP verification is required
-    if (data.requires_otp) {
+    // Step 2: First-Time Setup Required
+    if (data.requires_totp_setup) {
       return {
         success: true,
-        requires_otp: true,
+        requires_totp_setup: true,
         challenge_id: data.challenge_id,
-        target_masked: data.target_masked,
-        phone: data.phone,
-        otp_preview: data.otp_preview,
-        expires_at: data.expires_at,
-        expires_in_seconds: data.expires_in_seconds,
+        qr_code_url: data.qr_code_url,
+        manual_key: data.manual_key,
+        provisioning_uri: data.provisioning_uri,
+        plain_backup_codes: data.plain_backup_codes || [],
+        expires_in_seconds: data.expires_in_seconds || 300,
         user: data.user,
       };
     }
 
-    // Direct Login (when OTP disabled in settings)
-    if (typeof window !== 'undefined') {
-      if (data.token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-      }
-      localStorage.setItem(
-        AUTH_STORAGE_KEY,
-        JSON.stringify({
-          authenticated: true,
-          username: data.user?.username || username,
-          name: data.user?.name || username,
-          role: data.user?.role || 'admin',
-          loggedInAt: new Date().toISOString(),
-        })
-      );
+    // Step 3: Normal 2FA Verification Required
+    if (data.requires_totp) {
+      return {
+        success: true,
+        requires_totp: true,
+        challenge_id: data.challenge_id,
+        expires_in_seconds: data.expires_in_seconds || 300,
+        user: data.user,
+      };
     }
 
     return {
@@ -83,7 +79,7 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
       user: data.user,
       token: data.token,
     };
-  } catch (err: any) {
+  } catch {
     return {
       success: false,
       error: 'Network connection failed. Please check your internet or server.',
@@ -92,14 +88,18 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
 }
 
 /**
- * Verify 2FA OTP Challenge
+ * Verify Google Authenticator 6-digit Code during Initial Setup
  */
-export async function verifyLoginOtp(challenge_id: string, otp_code: string): Promise<LoginResult> {
+export async function verifyTotpSetup(
+  challenge_id: string,
+  totp_code: string,
+  username?: string
+): Promise<LoginResult & { plain_backup_codes?: string[] }> {
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ challenge_id, otp_code }),
+      body: JSON.stringify({ action: 'verify_totp_setup', challenge_id, totp_code, username }),
     });
 
     const data = await res.json().catch(() => ({}));
@@ -107,7 +107,7 @@ export async function verifyLoginOtp(challenge_id: string, otp_code: string): Pr
     if (!res.ok || !data.success) {
       return {
         success: false,
-        error: data.error || 'Invalid verification code. Please try again.',
+        error: data.error || 'Invalid code from Google Authenticator. Please try again.',
       };
     }
 
@@ -131,33 +131,28 @@ export async function verifyLoginOtp(challenge_id: string, otp_code: string): Pr
       success: true,
       user: data.user,
       token: data.token,
+      plain_backup_codes: data.plain_backup_codes || [],
     };
-  } catch (err: any) {
+  } catch {
     return {
       success: false,
-      error: 'Network connection failed. Please check your internet or server.',
+      error: 'Network connection failed while verifying setup.',
     };
   }
 }
 
 /**
- * Resend 2FA OTP Code
+ * Verify Google Authenticator 6-digit Code (or single-use backup code) during Login
  */
-export async function resendLoginOtp(challenge_id: string): Promise<{
-  success: boolean;
-  challenge_id?: string;
-  otp_preview?: string;
-  target_masked?: string;
-  phone?: string;
-  expires_at?: number;
-  expires_in_seconds?: number;
-  error?: string;
-}> {
+export async function verifyLoginTotp(
+  challenge_id: string,
+  totp_code: string
+): Promise<LoginResult> {
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'resend_otp', challenge_id }),
+      body: JSON.stringify({ action: 'verify_totp', challenge_id, totp_code }),
     });
 
     const data = await res.json().catch(() => ({}));
@@ -165,26 +160,42 @@ export async function resendLoginOtp(challenge_id: string): Promise<{
     if (!res.ok || !data.success) {
       return {
         success: false,
-        error: data.error || 'Failed to resend verification code',
+        error: data.error || 'Invalid 6-digit code. Please check your Authenticator app.',
       };
+    }
+
+    if (typeof window !== 'undefined') {
+      if (data.token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+      }
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          authenticated: true,
+          username: data.user?.username,
+          name: data.user?.name || data.user?.username,
+          role: data.user?.role || 'admin',
+          loggedInAt: new Date().toISOString(),
+        })
+      );
     }
 
     return {
       success: true,
-      challenge_id: data.challenge_id,
-      otp_preview: data.otp_preview,
-      target_masked: data.target_masked,
-      phone: data.phone,
-      expires_at: data.expires_at,
-      expires_in_seconds: data.expires_in_seconds,
+      user: data.user,
+      token: data.token,
+      is_backup_code: data.is_backup_code,
     };
   } catch {
     return {
       success: false,
-      error: 'Network error while requesting new verification code',
+      error: 'Network connection failed. Please check your internet or server.',
     };
   }
 }
+
+// Backward-compatibility alias
+export const verifyLoginOtp = verifyLoginTotp;
 
 /**
  * Logout and clear session

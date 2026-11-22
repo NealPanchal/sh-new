@@ -82,17 +82,51 @@ export interface SecurityAuditEntry {
   role: UserRole;
   ip: string;
   user_agent?: string;
-  status: 'success' | 'failed' | 'otp_challenge_issued' | 'otp_failed' | 'rate_limited' | 'banned_attempt';
+  status:
+    | 'success'
+    | 'failed'
+    | 'totp_challenge_issued'
+    | 'totp_enrolled'
+    | 'totp_failed'
+    | 'totp_reset'
+    | 'backup_code_used'
+    | 'rate_limited'
+    | 'banned_attempt';
   note?: string;
 }
 
 export interface SecurityConfig {
-  require_otp: boolean;
-  otp_expiry_minutes: number;
-  max_otp_attempts: number;
-  master_recovery_enabled: boolean;
+  totp_enforced: boolean;
+  totp_issuer: string;
+  totp_interval: number;
+  max_totp_attempts: number;
   updated_at?: string;
   updated_by?: string;
+}
+
+export interface UserTotpRecord {
+  user_id: string;
+  username: string;
+  role: UserRole;
+  totp_enabled: boolean;
+  totp_secret_encrypted: string;
+  totp_enrolled_at?: string;
+  last_totp_counter?: number;
+  backup_codes_hashed: string[];
+  backup_codes_used: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TotpSetupData {
+  challenge_id: string;
+  qr_code_url: string;
+  manual_key: string;
+  provisioning_uri: string;
+  plain_backup_codes: string[];
+  username: string;
+  role: UserRole;
+  expires_in_seconds: number;
 }
 
 export interface EmployeeAccount {

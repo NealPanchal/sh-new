@@ -91,16 +91,27 @@ export default function SettingsPage() {
   const [savingAdminPassword, setSavingAdminPassword] = useState(false);
   const [adminPasswordSuccess, setAdminPasswordSuccess] = useState(false);
 
+  interface Account2FA {
+    username: string;
+    name: string;
+    role: string;
+    phone?: string;
+    is_enrolled: boolean;
+    enrolled_at?: string | null;
+    backup_codes_left: number;
+  }
+
   // Security 2FA Controls & Audit Log State
   const [securityConfig, setSecurityConfig] = useState<SecurityConfig>({
-    require_otp: true,
-    otp_expiry_minutes: 5,
-    max_otp_attempts: 3,
-    master_recovery_enabled: true,
+    totp_enforced: true,
+    totp_issuer: 'Showhouse',
+    totp_interval: 30,
+    max_totp_attempts: 5,
   });
   const [securityLogs, setSecurityLogs] = useState<SecurityAuditEntry[]>([]);
+  const [accounts2FA, setAccounts2FA] = useState<Account2FA[]>([]);
   const [loadingSecurity, setLoadingSecurity] = useState(false);
-  const [savingSecurityConfig, setSavingSecurityConfig] = useState(false);
+  const [resettingUser, setResettingUser] = useState<string | null>(null);
 
   // Bank & Terms
   const [bankName, setBankName] = useState('');
@@ -124,6 +135,7 @@ export default function SettingsPage() {
         const data = await res.json();
         if (data.config) setSecurityConfig(data.config);
         if (Array.isArray(data.logs)) setSecurityLogs(data.logs);
+        if (Array.isArray(data.accounts)) setAccounts2FA(data.accounts);
       }
     } catch {
     } finally {
@@ -152,36 +164,38 @@ export default function SettingsPage() {
     }
   }, [mounted, isEmployee]);
 
-  const handleToggleOtpRequirement = async () => {
+  const handleResetUserTotp = async (targetUsername: string) => {
+    if (!confirm(`Are you sure you want to reset Google Authenticator for @${targetUsername}? They will be required to scan a new QR code on their next login.`)) {
+      return;
+    }
+
     try {
-      setSavingSecurityConfig(true);
+      setResettingUser(targetUsername);
       const token = getClientAuthToken();
-      const nextVal = !securityConfig.require_otp;
       const res = await fetch('/api/auth/security', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ require_otp: nextVal }),
+        body: JSON.stringify({
+          action: 'reset_totp',
+          target_username: targetUsername,
+          reason: 'Admin requested 2FA reset from settings',
+        }),
       });
+
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
-        setSecurityConfig(data.config);
-        showToast(
-          nextVal
-            ? '2FA OTP Verification enforced for all logins!'
-            : '2FA OTP Verification turned off.',
-          'success'
-        );
+        showToast(data.message || `2FA reset for @${targetUsername}`, 'success');
         fetchSecurityData();
       } else {
-        showToast(data.error || 'Failed to update security setting', 'error');
+        showToast(data.error || 'Failed to reset 2FA', 'error');
       }
     } catch {
-      showToast('Error updating security setting', 'error');
+      showToast('Error resetting user 2FA', 'error');
     } finally {
-      setSavingSecurityConfig(false);
+      setResettingUser(null);
     }
   };
 
@@ -986,92 +1000,168 @@ export default function SettingsPage() {
                 <RefreshCw size={13} className={loadingSecurity ? 'animate-spin' : ''} />
                 <span className="hidden sm:inline">Refresh Logs</span>
               </button>
-              <span
-                className={cn(
-                  'text-[11px] font-bold px-2.5 py-0.5 rounded-full border',
-                  securityConfig.require_otp
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-surface-100 text-surface-600 border-surface-200'
-                )}
-              >
-                {securityConfig.require_otp ? '2FA Enforced' : '2FA Optional'}
+              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                Google Authenticator 2FA Enforced (Zero Cost)
               </span>
             </div>
           </div>
 
-          {/* 2FA Controls & Feature Grid */}
+          {/* 2FA Policy & Recovery Information Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* OTP Enforcement Control */}
+            {/* TOTP Policy Info */}
             <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 space-y-3 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
                     <Key size={14} className="text-primary-600" />
-                    <span>2-Step OTP Verification</span>
+                    <span>RFC 6238 TOTP Two-Factor Authentication</span>
                   </span>
-                  <span
-                    className={cn(
-                      'text-[10px] font-bold px-2 py-0.5 rounded-md',
-                      securityConfig.require_otp
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-surface-200 text-surface-700'
-                    )}
-                  >
-                    {securityConfig.require_otp ? 'ACTIVE' : 'DISABLED'}
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                    MANDATORY
                   </span>
                 </div>
                 <p className="text-[11px] text-surface-500 mt-1.5 leading-relaxed">
-                  When enabled, all Admin and Staff logins require a cryptographically generated 6-digit OTP challenge. Staff cannot bypass without verifying.
+                  Every Admin and Staff account is strictly verified via <b>Google Authenticator</b> (or Microsoft Authenticator). No SMS, Twilio, or MSG91 gateway costs. Time-window: <b>30 seconds</b>, 6-digit dynamic codes with Fernet-encrypted secrets and anti-replay protection.
                 </p>
               </div>
 
-              <div className="pt-2 flex items-center justify-between border-t border-surface-200/80">
-                <span className="text-[11px] text-surface-500">
-                  Challenge Expiry: <b>{securityConfig.otp_expiry_minutes || 5} mins</b>
+              <div className="pt-2 flex items-center justify-between border-t border-surface-200/80 text-[11px] text-surface-600">
+                <span>Issuer: <b>Showhouse</b></span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                  <Check size={12} />
+                  <span>Zero-cost &amp; Offline Compatible</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={handleToggleOtpRequirement}
-                  disabled={savingSecurityConfig}
-                  className={cn(
-                    'text-xs font-bold py-1.5 px-3 rounded-lg transition-colors cursor-pointer border',
-                    securityConfig.require_otp
-                      ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                      : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
-                  )}
-                >
-                  {savingSecurityConfig
-                    ? 'Updating...'
-                    : securityConfig.require_otp
-                    ? 'Disable OTP Verification'
-                    : 'Enforce OTP Verification'}
-                </button>
               </div>
             </div>
 
-            {/* Anti-Brute Force & Master Emergency Recovery */}
+            {/* Emergency Recovery & Anti-Brute Force */}
             <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 space-y-3 flex flex-col justify-between">
               <div>
                 <span className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
                   <ShieldAlert size={14} className="text-amber-600" />
-                  <span>Anti-Brute Force & Emergency Recovery</span>
+                  <span>Single-Use Backup Codes &amp; Staff Reset</span>
                 </span>
                 <p className="text-[11px] text-surface-500 mt-1.5 leading-relaxed">
-                  Network rate limiting automatically locks any IP address after 5 consecutive failed attempts. OTP challenges expire in 5 minutes with a maximum 3 attempt limit.
+                  Each user receives <b>10 cryptographic single-use backup codes</b> upon first QR scan. If an employee loses their device, Admin can reset their 2FA credentials below, requiring them to scan a new QR code on their next login.
                 </p>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-[11px] text-amber-900 flex items-center justify-between">
+              <div className="p-2.5 rounded-lg bg-surface-100/70 border border-surface-200 text-[11px] text-surface-700 flex items-center justify-between">
                 <div>
-                  <span className="font-semibold block text-[10px] text-amber-700 uppercase tracking-wider">
-                    Master Admin Recovery Passcode:
+                  <span className="font-semibold block text-[10px] text-surface-500 uppercase tracking-wider">
+                    Anti-Brute Force Protection
                   </span>
-                  <code className="font-mono font-bold text-xs text-amber-950">SH-SECURE-2026</code>
+                  <span className="text-surface-700 font-mono text-[11px]">Auto-lockout after 5 failed OTP attempts</span>
                 </div>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded">
-                  Active Bypass
+                  Active
                 </span>
               </div>
+            </div>
+          </div>
+
+          {/* User 2FA Enrollment & Recovery Management Table */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-surface-800 flex items-center gap-1.5">
+                <Smartphone size={14} className="text-primary-600" />
+                <span>Account Authenticator Status &amp; Recovery</span>
+              </span>
+              <span className="text-[11px] text-surface-400">
+                {accounts2FA.length} total account{accounts2FA.length === 1 ? '' : 's'} managed
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-surface-200 rounded-lg shadow-2xs">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-surface-50 text-[10px] font-bold text-surface-600 uppercase border-b border-surface-200">
+                  <tr>
+                    <th className="px-3 py-2">User / Account</th>
+                    <th className="px-3 py-2 text-center w-24">Role</th>
+                    <th className="px-3 py-2">Phone</th>
+                    <th className="px-3 py-2 text-center w-36">2FA Status</th>
+                    <th className="px-3 py-2 text-center w-28">Backup Codes</th>
+                    <th className="px-3 py-2 text-right w-28">Recovery Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-100 bg-white">
+                  {accounts2FA.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-4 text-center text-surface-400 text-xs">
+                        Loading account 2FA statuses...
+                      </td>
+                    </tr>
+                  ) : (
+                    accounts2FA.map((acc) => {
+                      const enrolledDate = acc.enrolled_at ? new Date(acc.enrolled_at) : null;
+                      const enrolledStr = enrolledDate && !isNaN(enrolledDate.getTime())
+                        ? enrolledDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : null;
+
+                      return (
+                        <tr key={acc.username} className="hover:bg-surface-50/70 transition-colors">
+                          <td className="px-3 py-2 font-semibold text-surface-900 whitespace-nowrap">
+                            {acc.name || acc.username}
+                            <span className="text-[10px] text-surface-400 font-mono block">
+                              @{acc.username}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            <span
+                              className={cn(
+                                'text-[10px] font-bold px-2 py-0.5 rounded-full uppercase',
+                                acc.role === 'admin'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-primary-50 text-primary-700'
+                              )}
+                            >
+                              {acc.role}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 font-mono text-[11px] text-surface-600 whitespace-nowrap">
+                            {acc.phone || '—'}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            {acc.is_enrolled ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <Check size={11} />
+                                <span>Enrolled {enrolledStr ? `(${enrolledStr})` : ''}</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                                Setup on Next Login
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap font-mono text-[11px]">
+                            {acc.is_enrolled ? (
+                              <span className={cn(
+                                'font-semibold',
+                                acc.backup_codes_left <= 2 ? 'text-rose-600' : 'text-surface-700'
+                              )}>
+                                {acc.backup_codes_left} / 10 left
+                              </span>
+                            ) : (
+                              <span className="text-surface-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleResetUserTotp(acc.username)}
+                              disabled={resettingUser === acc.username}
+                              className="text-[11px] font-medium text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-1 rounded transition-colors disabled:opacity-50 cursor-pointer"
+                              title="Reset Authenticator (forces new QR code setup on next login)"
+                            >
+                              {resettingUser === acc.username ? 'Resetting...' : 'Reset 2FA'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -1125,12 +1215,21 @@ export default function SettingsPage() {
                       if (log.status === 'success') {
                         badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                         statusText = 'Login Success';
-                      } else if (log.status === 'otp_challenge_issued') {
+                      } else if (log.status === 'totp_challenge_issued') {
                         badgeClass = 'bg-sky-50 text-sky-700 border-sky-200';
-                        statusText = 'OTP Sent';
-                      } else if (log.status === 'otp_failed') {
+                        statusText = 'TOTP Prompt';
+                      } else if (log.status === 'totp_enrolled') {
+                        badgeClass = 'bg-teal-50 text-teal-700 border-teal-200';
+                        statusText = 'TOTP Enrolled';
+                      } else if (log.status === 'totp_reset') {
+                        badgeClass = 'bg-purple-50 text-purple-700 border-purple-200';
+                        statusText = '2FA Reset';
+                      } else if (log.status === 'backup_code_used') {
+                        badgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                        statusText = 'Backup Code Used';
+                      } else if (log.status === 'totp_failed') {
                         badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
-                        statusText = 'OTP Failed';
+                        statusText = 'TOTP Failed';
                       } else if (log.status === 'failed') {
                         badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
                         statusText = 'Failed Auth';

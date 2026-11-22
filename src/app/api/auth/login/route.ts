@@ -6,14 +6,14 @@ import {
   recordFailedLogin,
   resetLoginRateLimit,
   AUTH_COOKIE_NAME,
-  getSecurityConfig,
-  createOtpChallenge,
-  verifyOtpChallenge,
-  resendOtpChallenge,
   recordSecurityAuditLog,
-  getAdminCredentials,
+  isUserTotpEnrolled,
+  createTotpSetupChallenge,
+  activateTotpEnrollment,
+  createTotpLoginChallenge,
+  verifyTotpLoginCode,
+  getUserTotpRecord,
 } from '@/lib/server-auth';
-import { findEmployeeByUsername } from '@/lib/employee-accounts';
 
 export async function POST(req: NextRequest) {
   try {
@@ -46,46 +46,107 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { action, username, password, challenge_id, otp_code } = body;
+    const { action, username, password, challenge_id, totp_code } = body;
+
+    const isHttps =
+      req.nextUrl.protocol === 'https:' ||
+      req.headers.get('x-forwarded-proto') === 'https';
 
     // ----------------------------------------------------
-    // Scenario A: Resend 2FA OTP
+    // Scenario A: Activate First-Time Google Authenticator Enrollment
     // ----------------------------------------------------
-    if (action === 'resend_otp' && challenge_id) {
-      const resendRes = resendOtpChallenge(challenge_id);
-      if (!resendRes.success) {
+    if (action === 'verify_totp_setup') {
+      if (!challenge_id || !totp_code) {
         return NextResponse.json(
-          { success: false, error: resendRes.error || 'Failed to resend code' },
+          { success: false, error: 'Challenge ID and 6-digit Google Authenticator code are required' },
           { status: 400 }
         );
       }
 
-      return NextResponse.json({
-        success: true,
-        challenge_id: resendRes.challenge_id,
-        otp_preview: resendRes.otp_preview,
-        target_masked: resendRes.target_masked,
-        phone: resendRes.phone,
-        expires_at: resendRes.expires_at,
-        expires_in_seconds: resendRes.expires_in_seconds,
-      });
-    }
-
-    // ----------------------------------------------------
-    // Scenario B: Verify 2FA OTP Challenge
-    // ----------------------------------------------------
-    if (challenge_id && otp_code) {
-      const verifyRes = verifyOtpChallenge(challenge_id, otp_code);
-
-      if (!verifyRes.valid || !verifyRes.user) {
+      const activation = activateTotpEnrollment(challenge_id, totp_code);
+      if (!activation.success) {
         recordSecurityAuditLog({
-          username: 'challenge_user',
-          name: 'Staff / Admin',
+          username: username ? username.trim().toLowerCase() : 'setup_user',
+          name: 'Enrollment Attempt',
           role: 'employee',
           ip,
           user_agent: userAgent,
-          status: 'otp_failed',
-          note: verifyRes.error || 'Invalid 6-digit OTP code entered',
+          status: 'totp_failed',
+          note: activation.error || 'Failed to verify initial TOTP enrollment code',
+        });
+
+        return NextResponse.json(
+          { success: false, error: activation.error || 'Invalid verification code' },
+          { status: 400 }
+        );
+      }
+
+      // Enrollment Succeeded! Issue authenticated session
+      resetLoginRateLimit(ip);
+
+      const enrolledUsername = activation.username || (username ? username.trim().toLowerCase() : 'adminsh');
+      const totpRecord = getUserTotpRecord(enrolledUsername);
+      const userPayload = {
+        username: enrolledUsername,
+        name: enrolledUsername === 'adminsh' ? 'Admin SH' : enrolledUsername.toUpperCase(),
+        role: activation.role || totpRecord?.role || 'employee',
+      };
+
+      const token = createSignedSessionToken(userPayload);
+
+      recordSecurityAuditLog({
+        username: enrolledUsername,
+        name: userPayload.name,
+        role: userPayload.role,
+        ip,
+        user_agent: userAgent,
+        status: 'totp_enrolled',
+        note: 'Completed Google Authenticator TOTP Enrollment & activated 2FA',
+      });
+
+      const response = NextResponse.json({
+        success: true,
+        user: userPayload,
+        token,
+        plain_backup_codes: activation.plainBackupCodes || [],
+        backup_codes: activation.plainBackupCodes || [],
+      });
+
+      response.cookies.set({
+        name: AUTH_COOKIE_NAME,
+        value: token,
+        httpOnly: true,
+        secure: isHttps,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+      });
+
+      return response;
+    }
+
+    // ----------------------------------------------------
+    // Scenario B: Verify Google Authenticator Code on Normal Login
+    // ----------------------------------------------------
+    if (action === 'verify_totp' || (challenge_id && totp_code)) {
+      if (!challenge_id || !totp_code) {
+        return NextResponse.json(
+          { success: false, error: 'Challenge ID and 6-digit Authenticator code (or backup code) are required' },
+          { status: 400 }
+        );
+      }
+
+      const verifyRes = verifyTotpLoginCode(challenge_id, totp_code);
+
+      if (!verifyRes.valid || !verifyRes.username) {
+        recordSecurityAuditLog({
+          username: verifyRes.username || 'challenge_user',
+          name: 'Staff / Admin',
+          role: verifyRes.role || 'employee',
+          ip,
+          user_agent: userAgent,
+          status: 'totp_failed',
+          note: verifyRes.error || 'Invalid Google Authenticator code entered',
         });
 
         return NextResponse.json(
@@ -94,32 +155,34 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Successful OTP Verification!
+      // Successful 2FA Verification!
       resetLoginRateLimit(ip);
-      const token = createSignedSessionToken(verifyRes.user);
+
+      const userPayload = {
+        username: verifyRes.username,
+        name: verifyRes.username === 'adminsh' ? 'Admin SH' : verifyRes.username.toUpperCase(),
+        role: verifyRes.role || 'employee',
+      };
+
+      const token = createSignedSessionToken(userPayload);
 
       recordSecurityAuditLog({
-        username: verifyRes.user.username,
-        name: verifyRes.user.name,
-        role: verifyRes.user.role,
+        username: userPayload.username,
+        name: userPayload.name,
+        role: userPayload.role,
         ip,
         user_agent: userAgent,
-        status: 'success',
-        note: 'Completed 2-Step OTP Verification successfully',
+        status: verifyRes.isBackupCode ? 'backup_code_used' : 'success',
+        note: verifyRes.isBackupCode
+          ? 'Completed login using Single-Use Backup Code'
+          : 'Completed Google Authenticator TOTP verification successfully',
       });
-
-      const isHttps =
-        req.nextUrl.protocol === 'https:' ||
-        req.headers.get('x-forwarded-proto') === 'https';
 
       const response = NextResponse.json({
         success: true,
-        user: {
-          username: verifyRes.user.username,
-          name: verifyRes.user.name,
-          role: verifyRes.user.role,
-        },
+        user: userPayload,
         token,
+        is_backup_code: Boolean(verifyRes.isBackupCode),
       });
 
       response.cookies.set({
@@ -172,88 +235,64 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check Security Configuration
-    const secConfig = getSecurityConfig();
+    const cleanUsername = authResult.user.username.toLowerCase();
+    const isEnrolled = isUserTotpEnrolled(cleanUsername);
 
-    // If 2FA OTP is required (Default is Enabled)
-    if (secConfig.require_otp) {
-      let targetPhone = '';
-      if (authResult.user.role === 'employee') {
-        const emp = findEmployeeByUsername(authResult.user.username);
-        targetPhone = emp?.phone || '';
-      } else {
-        const adminCreds = getAdminCredentials();
-        targetPhone = adminCreds.phone || '+91 79773 95952'; // Admin registered phone (7977395952)
-      }
-
-      const challenge = createOtpChallenge(authResult.user, targetPhone);
+    // 1. If user has NOT enrolled in Google Authenticator yet -> Setup Challenge
+    if (!isEnrolled) {
+      const setupChallenge = await createTotpSetupChallenge(cleanUsername, authResult.user.role);
 
       recordSecurityAuditLog({
-        username: authResult.user.username,
+        username: cleanUsername,
         name: authResult.user.name,
         role: authResult.user.role,
         ip,
         user_agent: userAgent,
-        status: 'otp_challenge_issued',
-        note: `2FA challenge issued to ${challenge.target_masked}`,
+        status: 'totp_challenge_issued',
+        note: 'First-time login: Google Authenticator enrollment challenge generated',
       });
 
       return NextResponse.json({
         success: true,
-        requires_otp: true,
-        challenge_id: challenge.challenge_id,
-        target_masked: challenge.target_masked,
-        phone: challenge.phone,
-        otp_preview: challenge.otp_preview, // On-screen security token badge for 1-click convenience
-        expires_at: challenge.expires_at,
-        expires_in_seconds: challenge.expires_in_seconds,
+        requires_totp_setup: true,
+        challenge_id: setupChallenge.challenge_id,
+        qr_code_url: setupChallenge.qr_code_url,
+        manual_key: setupChallenge.manual_key,
+        provisioning_uri: setupChallenge.provisioning_uri,
+        plain_backup_codes: setupChallenge.plain_backup_codes,
+        expires_in_seconds: 300,
         user: {
-          username: authResult.user.username,
+          username: cleanUsername,
           name: authResult.user.name,
           role: authResult.user.role,
         },
       });
     }
 
-    // If OTP is disabled by admin, issue session directly
-    resetLoginRateLimit(ip);
-    const token = createSignedSessionToken(authResult.user);
+    // 2. User IS already enrolled -> Normal TOTP Login Challenge
+    const loginChallenge = createTotpLoginChallenge(cleanUsername, authResult.user.role);
 
     recordSecurityAuditLog({
-      username: authResult.user.username,
+      username: cleanUsername,
       name: authResult.user.name,
       role: authResult.user.role,
       ip,
       user_agent: userAgent,
-      status: 'success',
-      note: 'Direct login (OTP disabled in security settings)',
+      status: 'totp_challenge_issued',
+      note: 'Credentials verified: Prompting for Google Authenticator OTP',
     });
 
-    const isHttps =
-      req.nextUrl.protocol === 'https:' ||
-      req.headers.get('x-forwarded-proto') === 'https';
-
-    const response = NextResponse.json({
+    return NextResponse.json({
       success: true,
+      requires_totp: true,
+      challenge_id: loginChallenge.challenge_id,
+      expires_in_seconds: 300,
       user: {
-        username: authResult.user.username,
+        username: cleanUsername,
         name: authResult.user.name,
         role: authResult.user.role,
       },
-      token,
     });
-
-    response.cookies.set({
-      name: AUTH_COOKIE_NAME,
-      value: token,
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 30 * 24 * 60 * 60,
-    });
-
-    return response;
   } catch (err: any) {
     console.error('Login error:', err);
     return NextResponse.json(
