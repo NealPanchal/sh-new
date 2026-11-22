@@ -12,6 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { cleanTallyParticulars } from './utils';
 import {
   Customer,
   CustomerSite,
@@ -1389,11 +1390,28 @@ export function computeCustomerLedger(
     }
     if (options?.siteName && mle.site_name && mle.site_name.toLowerCase() !== options.siteName.toLowerCase()) return;
 
-    // Track this voucher/challan as handled so subsequent challan loop does not duplicate it
-    const refKey = (mle.voucher_no || '').trim().toLowerCase();
-    const idKey = (mle.challan_id || '').toLowerCase();
-    if (refKey) addedChallanKeys.add(refKey);
-    if (idKey) addedChallanKeys.add(idKey);
+    // Auto-heal any legacy entry with payment mode / "To By Cash" having debit > 0
+    const isPaymentMode =
+      (mle.payment_type && ['cash', 'upi', 'cheque', 'bank transfer', 'receipt', 'payment', 'credit adjustment'].includes(mle.payment_type.toLowerCase())) ||
+      (mle.particulars && /(by\s+(cash|upi|cheque|bank|hdfc)|to\s+by\s+(cash|upi|cheque|bank|hdfc))/i.test(mle.particulars));
+
+    if (isPaymentMode && Number(mle.debit) > 0 && Number(mle.credit) === 0) {
+      mle.credit = Number(mle.debit);
+      mle.debit = 0;
+      mle.particulars = cleanTallyParticulars(mle.particulars, false);
+    }
+
+    const isDebit = (Number(mle.debit) || 0) > 0;
+    const formattedParticulars = cleanTallyParticulars(mle.particulars, isDebit);
+
+    // CRITICAL: Only DEBIT manual entries (sales challan adjustments) override sales challans.
+    // A Credit receipt (payment) referencing the challan number must NEVER suppress the challan debit!
+    if (isDebit) {
+      const refKey = (mle.voucher_no || '').trim().toLowerCase();
+      const idKey = (mle.challan_id || '').toLowerCase();
+      if (refKey) addedChallanKeys.add(refKey);
+      if (idKey) addedChallanKeys.add(idKey);
+    }
 
     let linkedId = mle.challan_id;
     if (!linkedId && mle.voucher_no) {
@@ -1415,12 +1433,12 @@ export function computeCustomerLedger(
 
     rawEntries.push({
       date: mle.date,
-      particulars: mle.particulars,
+      particulars: formattedParticulars,
       reference: mle.voucher_no,
-      voucher_type: mle.debit > 0 ? 'sales_gst' : 'receipt',
+      voucher_type: isDebit ? 'sales_gst' : 'receipt',
       source_type: 'manual',
       manual_id: mle.id,
-      payment_type: mle.payment_type,
+      payment_type: mle.payment_type || (isDebit ? 'Sales GST' : 'Receipt'),
       site_name: mle.site_name,
       debit: Number(mle.debit) || 0,
       credit: Number(mle.credit) || 0,
@@ -1464,7 +1482,26 @@ export function computeCustomerLedger(
       if (c.reference_number) addedChallanKeys.add(c.reference_number.trim().toLowerCase());
 
       const itemsCount = (c.items || []).length;
-      const desc = c.apply_gst ? 'To SALE GST 18%' : `To SALE (${itemsCount} items)`;
+      let itemSummary = '';
+      if (Array.isArray(c.items) && c.items.length > 0) {
+        const itemNames = c.items
+          .map((it) => {
+            const desc = (it.item_description || it.brand || '').trim();
+            const qty = it.quantity ? ` (${it.quantity} ${it.unit || ''})`.trim() : '';
+            return `${desc}${qty}`.trim();
+          })
+          .filter(Boolean);
+        if (itemNames.length > 0) {
+          itemSummary = itemNames.slice(0, 3).join(', ') + (itemNames.length > 3 ? ` +${itemNames.length - 3} more` : '');
+        }
+      }
+
+      const basePrefix = c.apply_gst ? 'To SALE GST 18%' : 'To SALE';
+      const desc = (c as any).particulars && (c as any).particulars.trim()
+        ? (c as any).particulars.trim()
+        : itemSummary
+        ? `${basePrefix}: ${itemSummary}`
+        : `${basePrefix} (${itemsCount} items)`;
 
       const paidSum = (paymentsByChallan.get(c.id) || 0) + (paymentsByChallan.get(c.challan_number?.trim().toLowerCase()) || 0);
       const isPaid = Boolean(c.payment_status === 'paid' || (amt > 0 && paidSum >= amt));

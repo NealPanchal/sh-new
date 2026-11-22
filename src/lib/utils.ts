@@ -228,3 +228,20 @@ export function amountToWords(num: number): string {
   const words = convert(integerPart).trim();
   return `${words} Rupees Only`;
 }
+
+/**
+ * Normalizes ledger entry particulars according to standard Tally ERP conventions:
+ * - Sales / Receivables (Debit): "To ..." (e.g. "To SALE GST 18%", "To PVC Panel")
+ * - Receipts / Payments (Credit): "By ..." (e.g. "By Cash", "By HDFC BANK", "By UPI")
+ * Prevents and cleans corrupted prefixes like "To By Cash" or "By To Sale".
+ */
+export function cleanTallyParticulars(text: string | null | undefined, isDebit: boolean): string {
+  let clean = (text || '').trim();
+  // Strip any combination of "To", "By", "To By", "By To" from start (case-insensitive)
+  clean = clean.replace(/^(to\s+by\s+|by\s+to\s+|to\s+|by\s+)+/i, '').trim();
+  if (!clean) {
+    return isDebit ? 'To SALE GST 18%' : 'By Cash';
+  }
+  return isDebit ? `To ${clean}` : `By ${clean}`;
+}
+

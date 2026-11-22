@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession } from '@/lib/server-auth';
+import { cleanTallyParticulars } from '@/lib/utils';
 import {
   computeCustomerLedger,
   addManualLedgerEntry,
@@ -75,16 +76,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isDebit = (Number(debit) || 0) > 0;
+    const cleanPart = cleanTallyParticulars(particulars, isDebit);
     const entry: ManualLedgerEntry = {
       id: `mle_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       customer_id,
       customer_name: customer_name ? customer_name.trim() : undefined,
       date: date || new Date().toISOString().slice(0, 10),
-      particulars: particulars.trim(),
-      payment_type: payment_type || (debit > 0 ? 'Sales GST' : 'Receipt'),
-      voucher_no: voucher_no ? voucher_no.trim() : `VCH-${Date.now().toString().slice(-4)}`,
-      debit: Number(debit) || 0,
-      credit: Number(credit) || 0,
+      particulars: cleanPart,
+      payment_type: payment_type || (isDebit ? 'Sales GST' : 'Receipt'),
+      voucher_no: voucher_no ? voucher_no.trim() : (isDebit ? `VCH-${Date.now().toString().slice(-4)}` : `REC-${Date.now().toString().slice(-4)}`),
+      debit: isDebit ? Number(debit) || 0 : 0,
+      credit: !isDebit ? Number(credit) || 0 : 0,
       site_name: site_name ? site_name.trim() : undefined,
       challan_id: challan_id ? challan_id.trim() : undefined,
       created_at: new Date().toISOString(),
@@ -212,14 +215,17 @@ export async function PUT(req: NextRequest) {
         changes: diffs,
       });
 
+      const isDr = debit !== undefined ? Number(debit) > 0 : Number(prev.debit) > 0;
+      const cleanPart = particulars ? cleanTallyParticulars(particulars, isDr) : cleanTallyParticulars(prev.particulars, isDr);
+
       manualEntries[manualIdx] = {
         ...prev,
         date: date || prev.date,
-        particulars: particulars ? particulars.trim() : prev.particulars,
-        payment_type: payment_type || prev.payment_type,
+        particulars: cleanPart,
+        payment_type: payment_type || (isDr ? 'Sales GST' : 'Receipt'),
         voucher_no: voucher_no ? voucher_no.trim() : prev.voucher_no,
-        debit: debit !== undefined ? Number(debit) || 0 : prev.debit,
-        credit: credit !== undefined ? Number(credit) || 0 : prev.credit,
+        debit: isDr ? (debit !== undefined ? Number(debit) || 0 : prev.debit) : 0,
+        credit: !isDr ? (credit !== undefined ? Number(credit) || 0 : prev.credit) : 0,
         site_name: site_name !== undefined ? (site_name ? site_name.trim() : undefined) : prev.site_name,
         last_updated: now,
         updated_by: operatorName,
@@ -230,20 +236,22 @@ export async function PUT(req: NextRequest) {
       updatedRecord = manualEntries[manualIdx];
     } else {
       // Create manual entry override so changes to debit/credit, amounts, and sites persist in ledger
+      const isDr = (Number(debit) || 0) > 0;
+      const cleanPart = particulars ? cleanTallyParticulars(particulars, isDr) : (isDr ? 'To SALE GST 18%' : 'By Cash');
       const diffs: string[] = [];
-      diffs.push(`Admin ledger update: ${Number(debit) > 0 ? 'Debit ₹' + debit : 'Credit ₹' + credit}`);
-      if (particulars) diffs.push(`Particulars: "${particulars}"`);
+      diffs.push(`Admin ledger update: ${isDr ? 'Debit ₹' + debit : 'Credit ₹' + credit}`);
+      if (particulars) diffs.push(`Particulars: "${cleanPart}"`);
       if (site_name) diffs.push(`Site: "${site_name}"`);
 
       const newEntry = {
         id: targetId.startsWith('mle_') ? targetId : `mle_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         customer_id: customer_id || '',
         date: date || now.slice(0, 10),
-        particulars: particulars ? particulars.trim() : (Number(debit) > 0 ? 'To SALE GST 18%' : 'By Receipt'),
-        payment_type: payment_type || 'Sales GST',
+        particulars: cleanPart,
+        payment_type: payment_type || (isDr ? 'Sales GST' : 'Receipt'),
         voucher_no: voucher_no ? voucher_no.trim() : '',
-        debit: Number(debit) || 0,
-        credit: Number(credit) || 0,
+        debit: isDr ? Number(debit) || 0 : 0,
+        credit: !isDr ? Number(credit) || 0 : 0,
         site_name: site_name ? site_name.trim() : undefined,
         challan_id: challan_id || (source_type === 'challan' ? targetId : undefined),
         source_type: 'manual' as const,

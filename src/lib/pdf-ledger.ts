@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { cleanTallyParticulars } from './utils';
 import { Customer, CustomerLedgerEntry, CustomerSite } from '@/types';
 
 interface ExportLedgerPDFOptions {
@@ -135,12 +136,13 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
   entries.forEach((entry) => {
     const isPaidChallan = entry.is_paid && entry.debit > 0;
     const refDisplay = isPaidChallan ? `${entry.reference} [PAID]` : entry.reference;
+    const isDr = (Number(entry.debit) || 0) > 0;
 
     tableData.push([
       tableData.length + 1,
       entry.date ? formatDateShort(entry.date) : '',
-      entry.particulars,
-      entry.payment_type || (entry.debit > 0 ? 'Sales GST' : 'Receipt'),
+      cleanTallyParticulars(entry.particulars, isDr),
+      entry.payment_type || (isDr ? 'Sales GST' : 'Receipt'),
       refDisplay,
       entry.debit > 0 ? entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
       entry.credit > 0 ? entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',

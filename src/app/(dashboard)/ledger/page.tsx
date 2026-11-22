@@ -41,7 +41,7 @@ import {
 import { Customer, CustomerSite, CustomerLedgerEntry, PaymentMode } from '@/types';
 import { useApp } from '@/lib/context';
 import { getClientAuthToken, getCurrentUser, isAdmin, canManageAccounting } from '@/lib/auth';
-import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import { formatCurrency, formatDate, cn, cleanTallyParticulars } from '@/lib/utils';
 import { exportLedgerToPDF } from '@/lib/pdf-ledger';
 import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
 
@@ -167,11 +167,8 @@ function saveLocalManualEntry(entry: LocalManualEntry) {
   if (typeof window === 'undefined') return;
   try {
     const entries = getLocalManualEntries();
-    const idx = entries.findIndex(
-      (e) =>
-        e.id === entry.id ||
-        (entry.voucher_no && e.voucher_no && e.voucher_no.toLowerCase() === entry.voucher_no.toLowerCase())
-    );
+    // Strictly match by ID so distinct vouchers / payments never overwrite each other
+    const idx = entries.findIndex((e) => e.id === entry.id);
     if (idx >= 0) {
       entries[idx] = { ...entries[idx], ...entry };
     } else {
@@ -187,11 +184,7 @@ function removeLocalManualEntry(id: string, voucherNo?: string) {
   if (typeof window === 'undefined') return;
   try {
     const entries = getLocalManualEntries();
-    const filtered = entries.filter((e) => {
-      if (e.id === id) return false;
-      if (voucherNo && e.voucher_no && e.voucher_no.toLowerCase() === voucherNo.toLowerCase()) return false;
-      return true;
-    });
+    const filtered = entries.filter((e) => e.id !== id);
     localStorage.setItem(LOCAL_MANUAL_ENTRIES_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn('removeLocalManualEntry note:', err);
@@ -568,29 +561,59 @@ function MasterPartyLedgerContent() {
 
         if (!matches) return;
 
+        // Auto-heal any legacy entry that had "To By Cash" or "Cash" with debit > 0
+        const isCashOrReceipt =
+          (lme.payment_type && ['cash', 'upi', 'cheque', 'bank transfer', 'receipt'].includes(lme.payment_type.toLowerCase())) ||
+          (lme.particulars && /by\s+(cash|upi|cheque|bank|hdfc)/i.test(lme.particulars));
+
+        if (isCashOrReceipt && Number(lme.debit) > 0 && Number(lme.credit) === 0) {
+          lme.credit = Number(lme.debit);
+          lme.debit = 0;
+          lme.particulars = cleanTallyParticulars(lme.particulars, false);
+          saveLocalManualEntry(lme);
+        }
+
         const refKey = (lme.voucher_no || '').trim().toLowerCase();
-        const exists = mergedEntries.some(
+        const isLmeDebit = (Number(lme.debit) || 0) > 0;
+
+        // Match existing entry strictly with same debit/credit polarity so a receipt never wipes out a challan
+        const existingIdx = mergedEntries.findIndex(
           (e: any) =>
             (e.id && e.id === lme.id) ||
-            (refKey && e.reference && e.reference.trim().toLowerCase() === refKey)
+            (lme.challan_id && e.challan_id && e.challan_id === lme.challan_id && ((Number(e.debit) > 0) === isLmeDebit)) ||
+            (refKey && e.reference && e.reference.trim().toLowerCase() === refKey && ((Number(e.debit) > 0) === isLmeDebit))
         );
 
-        if (!exists) {
-          const isDebit = (Number(lme.debit) || 0) > 0;
+        if (existingIdx >= 0) {
+          // Preserve user edited particulars, site, and values!
+          if (lme.particulars) {
+            mergedEntries[existingIdx].particulars = cleanTallyParticulars(lme.particulars, isLmeDebit);
+          }
+          if (lme.site_name) {
+            mergedEntries[existingIdx].site_name = lme.site_name;
+          }
+          if (lme.date) {
+            mergedEntries[existingIdx].date = toInputDateFormat(lme.date);
+          }
+          if (Number(lme.debit) > 0 || Number(lme.credit) > 0) {
+            mergedEntries[existingIdx].debit = Number(lme.debit) || 0;
+            mergedEntries[existingIdx].credit = Number(lme.credit) || 0;
+          }
+        } else {
           mergedEntries.push({
             id: lme.id,
             date: toInputDateFormat(lme.date),
-            particulars: lme.particulars,
+            particulars: cleanTallyParticulars(lme.particulars, isLmeDebit),
             reference: lme.voucher_no,
-            voucher_type: isDebit ? 'sales_gst' : 'receipt',
+            voucher_type: isLmeDebit ? 'sales_gst' : 'receipt',
             source_type: 'manual',
-            payment_type: (lme.payment_type as any) || (isDebit ? 'Sales GST' : 'Receipt'),
+            payment_type: (lme.payment_type as any) || (isLmeDebit ? 'Sales GST' : 'Receipt'),
             site_name: lme.site_name || undefined,
             debit: Number(lme.debit) || 0,
             credit: Number(lme.credit) || 0,
             running_balance: 0,
             challan_id: lme.challan_id || undefined,
-            is_paid: !isDebit,
+            is_paid: !isLmeDebit,
           });
         }
       });
@@ -617,7 +640,25 @@ function MasterPartyLedgerContent() {
         if (cId) existingChallanIds.add(cId);
 
         const itemsCount = Array.isArray(c.items) ? c.items.length : 0;
-        const particulars = c.apply_gst ? 'To SALE GST 18%' : `To SALE (${itemsCount} items)`;
+        let itemSummary = '';
+        if (Array.isArray(c.items) && c.items.length > 0) {
+          const itemNames = c.items
+            .map((it: any) => {
+              const name = (it.item_description || it.name || it.brand || '').trim();
+              const qty = it.quantity ? ` (${it.quantity} ${it.unit || ''})`.trim() : '';
+              return `${name}${qty}`.trim();
+            })
+            .filter(Boolean);
+          if (itemNames.length > 0) {
+            itemSummary = itemNames.slice(0, 3).join(', ') + (itemNames.length > 3 ? ` +${itemNames.length - 3} more` : '');
+          }
+        }
+        const basePrefix = c.apply_gst ? 'To SALE GST 18%' : 'To SALE';
+        const particulars = (c as any).particulars && (c as any).particulars.trim()
+          ? (c as any).particulars.trim()
+          : itemSummary
+          ? `${basePrefix}: ${itemSummary}`
+          : `${basePrefix} (${itemsCount} items)`;
 
         mergedEntries.push({
           id: `entry_ch_${c.id}`,
@@ -1769,14 +1810,7 @@ function MasterPartyLedgerContent() {
     }
 
     const isDebit = entryDebitOrCredit === 'debit';
-    let formattedParticulars = (entryParticulars || '').trim();
-    if (!formattedParticulars) {
-      formattedParticulars = isDebit ? 'To SALE GST 18%' : 'By HDFC BANK-50200003880041';
-    } else if (isDebit && !formattedParticulars.toLowerCase().startsWith('to ')) {
-      formattedParticulars = `To ${formattedParticulars}`;
-    } else if (!isDebit && !formattedParticulars.toLowerCase().startsWith('by ')) {
-      formattedParticulars = `By ${formattedParticulars}`;
-    }
+    const formattedParticulars = cleanTallyParticulars(entryParticulars, isDebit);
 
     const safeDate = toInputDateFormat(entryDate);
     const safeVoucher = (entryVoucherNo || '').trim() || (isDebit ? `VCH-${Date.now().toString().slice(-4)}` : `REC-${Date.now().toString().slice(-4)}`);
@@ -1916,12 +1950,16 @@ function MasterPartyLedgerContent() {
   const handleOpenEditEntry = (entry: CustomerLedgerEntry) => {
     setEditingEntry(entry);
     setEditEntryDate(toInputDateFormat(entry.date));
-    setEditEntryParticulars(entry.particulars || '');
     setEditEntryType(entry.payment_type || (entry.debit > 0 ? 'Sales GST' : 'Receipt'));
-    const isCr = Number(entry.credit) > 0 && Number(entry.debit) === 0;
+    const isPaymentType =
+      (entry.payment_type && ['cash', 'upi', 'cheque', 'bank transfer', 'receipt', 'credit adjustment', 'generic receipt (credit)'].includes(entry.payment_type.toLowerCase())) ||
+      (entry.particulars && /^(to\s+by|by)\s+(cash|upi|cheque|bank|hdfc|receipt)/i.test(entry.particulars));
+    const isCr = Number(entry.credit) > 0 || (isPaymentType && Number(entry.debit) > 0);
     setEditEntryDebitOrCredit(isCr ? 'credit' : 'debit');
     setEditEntryVoucherNo(entry.reference || '');
-    setEditEntryAmount(String(isCr ? entry.credit : entry.debit));
+    const amt = isCr ? (Number(entry.credit) > 0 ? entry.credit : entry.debit) : entry.debit;
+    setEditEntryAmount(String(amt || ''));
+    setEditEntryParticulars(cleanTallyParticulars(entry.particulars, !isCr));
     setEditEntrySiteName(entry.site_name || '');
     setEditEntryReason(entry.reason || '');
     setShowEditEntryModal(true);
@@ -1938,6 +1976,7 @@ function MasterPartyLedgerContent() {
     }
 
     const isDebit = editEntryDebitOrCredit === 'debit';
+    const formattedParticulars = cleanTallyParticulars(editEntryParticulars, isDebit);
     const reasonText = editEntryReason.trim() || 'Admin ledger adjustment / rate correction';
 
     try {
@@ -1946,11 +1985,11 @@ function MasterPartyLedgerContent() {
       // 1. Optimistic local update
       setLedgerData((prev) => {
         const updated = prev.entries.map((item) => {
-          if (item.id === editingEntry.id || (editingEntry.challan_id && item.challan_id === editingEntry.challan_id)) {
+          if (item.id === editingEntry.id) {
             return {
               ...item,
               date: toInputDateFormat(editEntryDate),
-              particulars: editEntryParticulars.trim(),
+              particulars: formattedParticulars,
               payment_type: editEntryType,
               reference: editEntryVoucherNo.trim(),
               debit: isDebit ? numAmt : 0,
@@ -1995,7 +2034,7 @@ function MasterPartyLedgerContent() {
         customer_id: selectedCustomer?.id || selectedCustomerId,
         customer_name: (selectedCustomer?.name || selectedCustomer?.business_name || '').trim() || undefined,
         date: toInputDateFormat(editEntryDate),
-        particulars: editEntryParticulars.trim(),
+        particulars: formattedParticulars,
         payment_type: editEntryType,
         voucher_no: editEntryVoucherNo.trim(),
         debit: isDebit ? numAmt : 0,
@@ -2017,7 +2056,7 @@ function MasterPartyLedgerContent() {
           id: editingEntry.id,
           customer_id: selectedCustomer?.id || selectedCustomerId,
           date: toInputDateFormat(editEntryDate),
-          particulars: editEntryParticulars.trim(),
+          particulars: formattedParticulars,
           payment_type: editEntryType,
           voucher_no: editEntryVoucherNo.trim(),
           debit: isDebit ? numAmt : 0,
@@ -2644,7 +2683,7 @@ function MasterPartyLedgerContent() {
                           </td>
                           <td className="py-2 px-3 font-semibold text-surface-900 border border-surface-200">
                             <div className="flex items-center justify-between gap-1.5">
-                              <span>{e.particulars}</span>
+                              <span>{cleanTallyParticulars(e.particulars, (Number(e.debit) || 0) > 0)}</span>
                               {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
                                 <button
                                   type="button"
@@ -2786,7 +2825,7 @@ function MasterPartyLedgerContent() {
                           </td>
                           <td className="py-2 px-3 font-semibold text-surface-900 border border-surface-200">
                             <div className="flex items-center justify-between gap-1.5">
-                              <span>{e.particulars}</span>
+                              <span>{cleanTallyParticulars(e.particulars, (Number(e.debit) || 0) > 0)}</span>
                               {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
                                 <button
                                   type="button"
@@ -2970,7 +3009,7 @@ function MasterPartyLedgerContent() {
                             </td>
                             <td className="py-2 px-3 font-semibold text-surface-900 border border-surface-200">
                               <div className="flex items-center justify-between gap-1.5">
-                                <span>{e.particulars}</span>
+                                <span>{cleanTallyParticulars(e.particulars, (Number(e.debit) || 0) > 0)}</span>
                                 {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
                                   <button
                                     type="button"
@@ -3830,9 +3869,7 @@ function MasterPartyLedgerContent() {
                     type="button"
                     onClick={() => {
                       setEntryDebitOrCredit('debit');
-                      if (!entryParticulars || entryParticulars.startsWith('By ')) {
-                        setEntryParticulars(entryParticulars.replace(/^By\s+/i, 'To ') || 'To SALE GST 18%');
-                      }
+                      setEntryParticulars(cleanTallyParticulars(entryParticulars, true));
                     }}
                     className={cn(
                       'py-2 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer',
@@ -3849,9 +3886,7 @@ function MasterPartyLedgerContent() {
                     type="button"
                     onClick={() => {
                       setEntryDebitOrCredit('credit');
-                      if (!entryParticulars || entryParticulars.startsWith('To ')) {
-                        setEntryParticulars(entryParticulars.replace(/^To\s+/i, 'By ') || 'By HDFC BANK-50200003880041');
-                      }
+                      setEntryParticulars(cleanTallyParticulars(entryParticulars, false));
                     }}
                     className={cn(
                       'py-2 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer',
@@ -3885,24 +3920,35 @@ function MasterPartyLedgerContent() {
                     onChange={(e) => {
                       const val = e.target.value;
                       setEntryType(val as any);
-                      if (val === 'Party Challan') setEntryParticulars('To SALE GST 18%');
-                      else if (val === 'UPI') setEntryParticulars('By UPI');
-                      else if (val === 'Cash') setEntryParticulars('By Cash');
-                      else if (val === 'Cheque') setEntryParticulars('By Cheque');
-                      else if (val === 'Bank Transfer') setEntryParticulars('By HDFC BANK-50200003880041');
-                      else if (val === 'Sales GST') setEntryParticulars('To SALE GST 18%');
+                      const isCr = ['UPI', 'Cash', 'Cheque', 'Bank Transfer', 'Receipt', 'Credit Adjustment'].includes(val);
+                      setEntryDebitOrCredit(isCr ? 'credit' : 'debit');
+                      if (val === 'Party Challan' || val === 'Sales GST') {
+                        setEntryParticulars('To SALE GST 18%');
+                      } else if (val === 'UPI') {
+                        setEntryParticulars('By UPI');
+                      } else if (val === 'Cash') {
+                        setEntryParticulars('By Cash');
+                      } else if (val === 'Cheque') {
+                        setEntryParticulars('By Cheque');
+                      } else if (val === 'Bank Transfer') {
+                        setEntryParticulars('By HDFC BANK-50200003880041');
+                      } else if (val === 'Receipt') {
+                        setEntryParticulars('By Receipt');
+                      } else {
+                        setEntryParticulars(cleanTallyParticulars(entryParticulars, !isCr));
+                      }
                     }}
                     className="input text-xs w-full font-bold"
                   >
                     <option value="Party Challan">Party Challan (Sales Debit)</option>
-                    <option value="UPI">UPI (Receipt)</option>
-                    <option value="Cash">Cash (Receipt)</option>
-                    <option value="Bank Transfer">Bank Transfer (Receipt)</option>
-                    <option value="Cheque">Cheque (Receipt)</option>
+                    <option value="Cash">Cash Receipt (Credit)</option>
+                    <option value="UPI">UPI (Receipt - Credit)</option>
+                    <option value="Bank Transfer">Bank Transfer (HDFC Bank - Credit)</option>
+                    <option value="Cheque">Cheque (Receipt - Credit)</option>
                     <option value="Receipt">Generic Receipt (Credit)</option>
                     <option value="Sales GST">Sales GST (Debit)</option>
-                    <option value="Payment">Payment (Debit)</option>
-                    <option value="Journal">Journal (Adjustment)</option>
+                    <option value="Debit Adjustment">Debit Adjustment (+)</option>
+                    <option value="Credit Adjustment">Credit Adjustment (-)</option>
                   </select>
                 </div>
               </div>
@@ -4408,9 +4454,7 @@ function MasterPartyLedgerContent() {
                     type="button"
                     onClick={() => {
                       setEditEntryDebitOrCredit('debit');
-                      if (editEntryParticulars.toLowerCase().startsWith('by ')) {
-                        setEditEntryParticulars(editEntryParticulars.replace(/^by\s+/i, 'To '));
-                      }
+                      setEditEntryParticulars(cleanTallyParticulars(editEntryParticulars, true));
                     }}
                     className={`py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                       editEntryDebitOrCredit === 'debit'
@@ -4425,9 +4469,7 @@ function MasterPartyLedgerContent() {
                     type="button"
                     onClick={() => {
                       setEditEntryDebitOrCredit('credit');
-                      if (editEntryParticulars.toLowerCase().startsWith('to ')) {
-                        setEditEntryParticulars(editEntryParticulars.replace(/^to\s+/i, 'By '));
-                      }
+                      setEditEntryParticulars(cleanTallyParticulars(editEntryParticulars, false));
                     }}
                     className={`py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                       editEntryDebitOrCredit === 'credit'
@@ -4457,16 +4499,34 @@ function MasterPartyLedgerContent() {
                   <label className="font-bold text-surface-700">Transaction Type *</label>
                   <select
                     value={editEntryType}
-                    onChange={(e) => setEditEntryType(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditEntryType(val as any);
+                      const isCr = ['Generic Receipt (Credit)', 'Bank Transfer', 'UPI', 'Cash', 'Cheque', 'Credit Adjustment', 'Receipt'].includes(val);
+                      setEditEntryDebitOrCredit(isCr ? 'credit' : 'debit');
+                      if (val === 'Cash') {
+                        setEditEntryParticulars('By Cash');
+                      } else if (val === 'UPI') {
+                        setEditEntryParticulars('By UPI');
+                      } else if (val === 'Cheque') {
+                        setEditEntryParticulars('By Cheque');
+                      } else if (val === 'Bank Transfer') {
+                        setEditEntryParticulars('By HDFC BANK-50200003880041');
+                      } else if (val === 'Party Challan' || val === 'Sales GST') {
+                        setEditEntryParticulars('To SALE GST 18%');
+                      } else {
+                        setEditEntryParticulars(cleanTallyParticulars(editEntryParticulars, !isCr));
+                      }
+                    }}
                     className="input text-xs w-full font-medium"
                   >
-                    <option value="Sales GST">Sales GST (Challan / Bill)</option>
-                    <option value="Party Challan">Party Challan (Delivery)</option>
+                    <option value="Sales GST">Sales GST (Challan / Bill - Debit)</option>
+                    <option value="Party Challan">Party Challan (Delivery - Debit)</option>
+                    <option value="Cash">Cash Receipt (Credit)</option>
+                    <option value="UPI">UPI Payment (Credit)</option>
+                    <option value="Bank Transfer">Bank Transfer (HDFC Bank - Credit)</option>
+                    <option value="Cheque">Cheque (Credit)</option>
                     <option value="Generic Receipt (Credit)">Generic Receipt (Credit)</option>
-                    <option value="Bank Transfer">Bank Transfer (HDFC Bank)</option>
-                    <option value="UPI">UPI Payment</option>
-                    <option value="Cash">Cash Receipt</option>
-                    <option value="Cheque">Cheque</option>
                     <option value="Debit Adjustment">Debit Adjustment (+)</option>
                     <option value="Credit Adjustment">Credit Adjustment (-)</option>
                   </select>
