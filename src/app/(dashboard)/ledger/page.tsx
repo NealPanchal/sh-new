@@ -65,8 +65,9 @@ function formatAmountDisplay(val: number | undefined | null): string {
   return val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function toInputDateFormat(val?: string): string {
+function toInputDateFormat(val?: string | Date | null): string {
   if (!val) return new Date().toISOString().slice(0, 10);
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
   const trimmed = String(val).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   if (trimmed.includes('T')) return trimmed.slice(0, 10);
@@ -2226,30 +2227,27 @@ function MasterPartyLedgerContent() {
     }
   };
 
-  // If user is employee, show restricted access
-  if (currentUser?.role === 'employee') {
-    return (
-      <div className="card p-8 sm:p-12 text-center max-w-lg mx-auto my-12 space-y-4 shadow-sm border border-surface-200">
-        <div className="w-14 h-14 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
-          <ShieldAlert size={28} />
-        </div>
-        <h2 className="text-lg font-bold text-surface-900">Ledger Restricted to Admin</h2>
-        <p className="text-xs text-surface-500 max-w-sm mx-auto leading-relaxed">
-          You are currently signed in as <b>{currentUser?.name}</b> (Staff Account).
-          Party ledgers, double-entry financial statements, and site adjustments are only accessible by Showhouse Administrators and Accountants.
-        </p>
-        <Link
-          href="/"
-          className="btn-primary inline-flex items-center gap-1.5 text-xs py-2 px-4 shadow-xs mt-2"
-        >
-          Return to Dashboard
-        </Link>
-      </div>
-    );
-  }
+  const isEmployee = currentUser?.role === 'employee';
 
   return (
     <div className="space-y-5 pb-20 max-w-7xl mx-auto select-none print:p-0 print:m-0 print:max-w-none">
+      {/* Staff View (Read-Only Mode) Notice Banner */}
+      {isEmployee && (
+        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900 font-medium print:hidden">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg shrink-0">
+              <ShieldCheck size={16} />
+            </div>
+            <div>
+              <span className="font-bold">Staff Read-Only Access Active:</span> You can view party ledger statements, attached delivery sites, search transactions, and export PDF / print. Modifications, settlements, and entry creation require Administrator privileges.
+            </div>
+          </div>
+          <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-blue-200/80 text-blue-900 uppercase tracking-wider shrink-0 ml-3">
+            Read Only
+          </span>
+        </div>
+      )}
+
       {/* Toast Notification */}
       {toast && (
         <div
@@ -2431,19 +2429,22 @@ function MasterPartyLedgerContent() {
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPayAmount(effectiveClosingBalance > 0 ? String(effectiveClosingBalance) : '');
-                    setPaySiteName(siteFilter !== 'all' ? siteFilter : '');
-                    setShowPaymentModal(true);
-                  }}
-                  className="px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs active:scale-95 cursor-pointer"
-                  title="Record Payment Received for this Customer"
-                >
-                  <WalletCards size={14} />
-                  <span>Record Payment</span>
-                </button>
+                {isAdminUser && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPayAmount(effectiveClosingBalance > 0 ? String(effectiveClosingBalance) : '');
+                      setPaySiteName(siteFilter !== 'all' ? siteFilter : '');
+                      setPayDate(toInputDateFormat(new Date()));
+                      setShowPaymentModal(true);
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs active:scale-95 cursor-pointer"
+                    title="Record Payment Received for this Customer"
+                  >
+                    <WalletCards size={14} />
+                    <span>Record Payment</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => window.print()}
@@ -2623,7 +2624,10 @@ function MasterPartyLedgerContent() {
                 {isAdminUser && (
                   <button
                     type="button"
-                    onClick={() => setShowAddEntryModal(true)}
+                    onClick={() => {
+                      setEntryDate(toInputDateFormat(new Date()));
+                      setShowAddEntryModal(true);
+                    }}
                     className="btn-secondary py-1.5 px-3 text-xs font-bold text-surface-800 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center justify-center gap-1 whitespace-nowrap shadow-xs"
                     title="Record manual receipt, payment or adjustment"
                   >
@@ -3840,9 +3844,15 @@ function MasterPartyLedgerContent() {
                     if (match) {
                       setEntryVoucherNo(match.voucher_no);
                       setEntryAmount(String(match.amount || ''));
-                      if (match.date) setEntryDate(toInputDateFormat(match.date));
+                      if (entryDebitOrCredit === 'credit') {
+                        // Credit entry made against a challan is dated TODAY
+                        setEntryDate(toInputDateFormat(new Date()));
+                        setEntryParticulars(`By Payment - Challan ${match.voucher_no}`);
+                      } else {
+                        if (match.date) setEntryDate(toInputDateFormat(match.date));
+                        setEntryParticulars(match.particulars);
+                      }
                       if (match.site_name) setEntrySiteName(match.site_name);
-                      setEntryParticulars(match.particulars);
                       setEntryType(match.type);
                       setEntryDebitOrCredit(match.effect);
                     }
@@ -3886,7 +3896,17 @@ function MasterPartyLedgerContent() {
                     type="button"
                     onClick={() => {
                       setEntryDebitOrCredit('credit');
-                      setEntryParticulars(cleanTallyParticulars(entryParticulars, false));
+                      // Credit / payment entry made today strictly defaults to today's date
+                      setEntryDate(toInputDateFormat(new Date()));
+                      if (entryParticulars.includes('To SALE')) {
+                        setEntryParticulars(
+                          entryParticulars
+                            .replace('To SALE GST 18%', 'By Payment')
+                            .replace('To SALE', 'By Payment')
+                        );
+                      } else {
+                        setEntryParticulars(cleanTallyParticulars(entryParticulars, false));
+                      }
                     }}
                     className={cn(
                       'py-2 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer',

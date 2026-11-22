@@ -217,6 +217,67 @@ function CreateChallanContent() {
     );
   }, [customers, selectedCustomerId, customerName]);
 
+  // Customer Previous Closing Balance Engine
+  const [customerClosingBalance, setCustomerClosingBalance] = useState<number | null>(null);
+  const [loadingClosingBalance, setLoadingClosingBalance] = useState(false);
+
+  useEffect(() => {
+    const custId = matchedCustomer?.id || selectedCustomerId;
+    const custName = (matchedCustomer?.business_name || customerName || '').trim();
+
+    if (!custId && !custName) {
+      setCustomerClosingBalance(null);
+      return;
+    }
+
+    let isCancelled = false;
+    setLoadingClosingBalance(true);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('showhouse_admin_token') : null;
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+    const url = `/api/ledger?customerId=${encodeURIComponent(custId || custName)}&customerName=${encodeURIComponent(custName)}`;
+
+    fetch(url, { headers })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isCancelled && data?.success && data?.ledger) {
+          const bal =
+            data.ledger.closingBalance ??
+            (data.ledger.totalDebit || 0) - (data.ledger.totalCredit || 0);
+          setCustomerClosingBalance(typeof bal === 'number' ? bal : 0);
+        } else if (!isCancelled) {
+          // If no server ledger, calculate from local matching delivered challans
+          const pastDebits = liveChallans
+            .filter((c) => {
+              const matchesCust =
+                (c.customer_id && custId && c.customer_id === custId) ||
+                (c.customer_name && custName && c.customer_name.trim().toLowerCase() === custName.toLowerCase());
+              return matchesCust && !c.is_deleted && c.status !== 'void';
+            })
+            .reduce(
+              (sum, c) =>
+                sum +
+                (c.payment_status === 'paid'
+                  ? 0
+                  : (Number(c.total_amount) || 0) - (Number(c.paid_amount) || 0)),
+              0
+            );
+          setCustomerClosingBalance(pastDebits);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) setCustomerClosingBalance(null);
+      })
+      .finally(() => {
+        if (!isCancelled) setLoadingClosingBalance(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [matchedCustomer?.id, matchedCustomer?.business_name, selectedCustomerId, customerName, liveChallans]);
+
   const customerSites: CustomerSite[] = useMemo(() => {
     const list: CustomerSite[] = [];
     const seen = new Set<string>();
@@ -951,7 +1012,36 @@ function CreateChallanContent() {
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           {/* Customer Name Search / Input */}
           <div className="sm:col-span-6 relative">
-            <label className="label text-xs">Customer Name *</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="label text-xs mb-0">Customer Name *</label>
+              {(customerName.trim() || matchedCustomer) && (
+                <div className="flex items-center gap-1.5">
+                  {loadingClosingBalance ? (
+                    <span className="text-[10px] text-surface-400 font-medium animate-pulse">
+                      Checking balance...
+                    </span>
+                  ) : customerClosingBalance !== null ? (
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border shadow-2xs transition-all',
+                        customerClosingBalance > 0
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : customerClosingBalance < 0
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      )}
+                      title="Customer's previous ledger balance across all delivery challans & payments"
+                    >
+                      <span className="font-normal text-[10px] text-surface-500">Closing Balance:</span>
+                      <span className="font-mono">
+                        ₹{Math.abs(customerClosingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {customerClosingBalance > 0 ? ' (Dr)' : customerClosingBalance < 0 ? ' (Cr)' : ' (Nil)'}
+                      </span>
+                    </span>
+                  ) : null}
+                </div>
+              )}
+            </div>
             <div className="relative">
               <input
                 type="text"

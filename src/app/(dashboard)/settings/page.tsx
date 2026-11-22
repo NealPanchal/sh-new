@@ -203,12 +203,47 @@ export default function SettingsPage() {
     }
   };
 
-  const handleChangeAdminPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminCurrentPassword) {
-      showToast('Please enter your current admin password', 'error');
+  const [savingAdminPhone, setSavingAdminPhone] = useState(false);
+  const [adminPhoneSuccess, setAdminPhoneSuccess] = useState(false);
+
+  const handleSaveAdminPhone = async () => {
+    if (!adminPhone || !adminPhone.trim()) {
+      showToast('Please enter a valid mobile number', 'error');
       return;
     }
+    try {
+      setSavingAdminPhone(true);
+      const token = getClientAuthToken();
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          phone: adminPhone.trim(),
+          newUsername: adminUsername.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Failed to update admin contact number', 'error');
+        return;
+      }
+
+      setAdminPhoneSuccess(true);
+      setTimeout(() => setAdminPhoneSuccess(false), 4000);
+      showToast('Admin mobile number updated successfully!', 'success');
+    } catch {
+      showToast('Error updating admin phone', 'error');
+    } finally {
+      setSavingAdminPhone(false);
+    }
+  };
+
+  const handleChangeAdminPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!adminNewPassword || adminNewPassword.length < 6) {
       showToast('New password must be at least 6 characters long', 'error');
       return;
@@ -228,11 +263,11 @@ export default function SettingsPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          currentPassword: adminCurrentPassword,
-          newPassword: adminNewPassword,
-          confirmPassword: adminConfirmPassword,
-          newUsername: adminUsername,
-          phone: adminPhone,
+          currentPassword: adminCurrentPassword ? adminCurrentPassword.trim() : undefined,
+          newPassword: adminNewPassword.trim(),
+          confirmPassword: adminConfirmPassword.trim(),
+          newUsername: adminUsername.trim(),
+          phone: adminPhone.trim(),
         }),
       });
 
@@ -875,7 +910,18 @@ export default function SettingsPage() {
 
               {/* Admin Mobile / Phone */}
               <div>
-                <label className="label text-xs font-bold text-surface-700">Admin Mobile (OTP)</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label text-xs font-bold text-surface-700 mb-0">Admin Mobile (OTP)</label>
+                  <button
+                    type="button"
+                    onClick={handleSaveAdminPhone}
+                    disabled={savingAdminPhone}
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                    title="1-Click: Save updated mobile number"
+                  >
+                    {savingAdminPhone ? 'Saving...' : adminPhoneSuccess ? '✓ Saved!' : 'Save Phone'}
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={adminPhone}
@@ -883,19 +929,18 @@ export default function SettingsPage() {
                   placeholder="+91 79773 95952"
                   className="input font-mono text-xs font-bold text-emerald-800 bg-emerald-50/50 border-emerald-300 w-full"
                 />
-                <span className="text-[10px] text-emerald-700 mt-1 block">2FA OTP target</span>
+                <span className="text-[10px] text-emerald-700 mt-1 block">Editable • Click &quot;Save Phone&quot; to update</span>
               </div>
 
-              {/* Current Password */}
+              {/* Current Password (Optional if logged in) */}
               <div>
-                <label className="label text-xs font-bold text-surface-700">Current Password *</label>
+                <label className="label text-xs font-bold text-surface-700">Current Password</label>
                 <div className="relative">
                   <input
                     type={showCurrentPassword ? 'text' : 'password'}
                     value={adminCurrentPassword}
                     onChange={(e) => setAdminCurrentPassword(e.target.value)}
-                    placeholder="Enter current password"
-                    required
+                    placeholder="Current password (optional)"
                     className="input text-xs pr-8 w-full font-mono"
                   />
                   <button
@@ -907,7 +952,7 @@ export default function SettingsPage() {
                     {showCurrentPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
-                <span className="text-[10px] text-surface-400 mt-1 block">Verify security ownership</span>
+                <span className="text-[10px] text-surface-400 mt-1 block">Leave blank or verify</span>
               </div>
 
               {/* New Password */}
@@ -976,7 +1021,13 @@ export default function SettingsPage() {
 
               <button
                 type="submit"
-                disabled={savingAdminPassword || !adminCurrentPassword || !adminNewPassword || !adminConfirmPassword}
+                disabled={
+                  savingAdminPassword ||
+                  !adminNewPassword ||
+                  adminNewPassword.length < 6 ||
+                  !adminConfirmPassword ||
+                  adminNewPassword !== adminConfirmPassword
+                }
                 className="btn-primary text-xs py-2 px-4 flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer self-start sm:self-auto"
               >
                 <Lock size={14} />

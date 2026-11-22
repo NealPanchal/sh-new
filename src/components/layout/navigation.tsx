@@ -40,7 +40,7 @@ export const allNavItems = [
   { href: '/bills', label: 'Delivery Bills', icon: Receipt },
   { href: '/customers', label: 'Customers', icon: Users },
   { href: '/products', label: 'Products', icon: Package },
-  { href: '/ledger', label: 'Party Ledger', icon: BookOpen, adminOnly: true },
+  { href: '/ledger', label: 'Party Ledger', icon: BookOpen },
   { href: '/returns', label: 'Goods Returns', icon: RotateCcw, adminOnly: true },
   { href: '/payments', label: 'Payments', icon: WalletCards, adminOnly: true },
   { href: '/settings', label: 'Settings', icon: Settings, adminOnly: true },

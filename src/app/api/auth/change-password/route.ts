@@ -25,13 +25,50 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { currentPassword, newPassword, confirmPassword, newUsername, phone } = body;
 
-    if (!currentPassword) {
-      return NextResponse.json(
-        { success: false, error: 'Current admin password is required.' },
-        { status: 400 }
-      );
+    const adminCreds = getAdminCredentials();
+    const isProfileOnly = !newPassword && (phone !== undefined || newUsername !== undefined);
+
+    // Case 1: Updating Admin Profile / Phone only (No password change required)
+    if (isProfileOnly) {
+      const targetUsername = (newUsername && typeof newUsername === 'string' && newUsername.trim())
+        ? newUsername.trim().toLowerCase()
+        : adminCreds.username;
+
+      const targetPhone = phone && typeof phone === 'string' && phone.trim()
+        ? phone.trim()
+        : (adminCreds.phone || '+91 79773 95952');
+
+      setAdminCredentials(targetUsername, adminCreds.password, targetPhone);
+
+      const newToken = createSignedSessionToken({
+        username: targetUsername,
+        name: 'Admin SH',
+        role: 'admin',
+      });
+
+      const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
+      const res = NextResponse.json({
+        success: true,
+        message: 'Admin mobile number and contact details updated successfully!',
+        username: targetUsername,
+        phone: targetPhone,
+        token: newToken,
+      });
+
+      res.cookies.set({
+        name: AUTH_COOKIE_NAME,
+        value: newToken,
+        httpOnly: true,
+        secure: isHttps,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60,
+      });
+
+      return res;
     }
 
+    // Case 2: Changing Admin Password
     if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 6) {
       return NextResponse.json(
         { success: false, error: 'New password must be at least 6 characters long.' },
@@ -46,19 +83,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify current password with constant-time equality
-    const adminCreds = getAdminCredentials();
-    const curBuf = Buffer.from(currentPassword);
-    const expectedBuf = Buffer.from(adminCreds.password);
-
-    if (curBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(curBuf, expectedBuf)) {
-      return NextResponse.json(
-        { success: false, error: 'Current password is incorrect. Please verify and try again.' },
-        { status: 400 }
-      );
+    // If currentPassword was provided, verify it
+    if (currentPassword && currentPassword.trim()) {
+      const curBuf = Buffer.from(currentPassword.trim());
+      const expectedBuf = Buffer.from(adminCreds.password);
+      if (curBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(curBuf, expectedBuf)) {
+        return NextResponse.json(
+          { success: false, error: 'Current password is incorrect. Please verify and try again.' },
+          { status: 400 }
+        );
+      }
     }
 
-    // Determine target username
+    // Determine target username & phone
     const targetUsername = (newUsername && typeof newUsername === 'string' && newUsername.trim())
       ? newUsername.trim().toLowerCase()
       : adminCreds.username;
