@@ -179,16 +179,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
 
     // Sync employee accounts cache for contact numbers and PO prefixes
-    fetch('/api/employees')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.employees)) {
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('showhouse_employee_cache', JSON.stringify(data.employees));
-          }
-        }
+    try {
+      const { getClientAuthToken } = require('@/lib/auth');
+      const token = getClientAuthToken();
+      fetch('/api/employees', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
-      .catch(() => {});
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.employees)) {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('showhouse_employee_cache', JSON.stringify(data.employees));
+            }
+          }
+        })
+        .catch(() => {});
+    } catch {}
 
     // Dynamic real-time sync with Firebase, Server API, and BroadcastChannel
     import('@/lib/firebase-service').then(({ subscribeToChallans }) => {

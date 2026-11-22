@@ -43,7 +43,7 @@ export const allNavItems = [
   { href: '/ledger', label: 'Party Ledger', icon: BookOpen },
   { href: '/returns', label: 'Goods Returns', icon: RotateCcw, adminOnly: true },
   { href: '/payments', label: 'Payments', icon: WalletCards, adminOnly: true },
-  { href: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export const navItems = allNavItems;

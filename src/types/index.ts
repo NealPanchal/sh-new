@@ -91,7 +91,8 @@ export interface SecurityAuditEntry {
     | 'totp_reset'
     | 'backup_code_used'
     | 'rate_limited'
-    | 'banned_attempt';
+    | 'banned_attempt'
+    | 'password_changed';
   note?: string;
 }
 

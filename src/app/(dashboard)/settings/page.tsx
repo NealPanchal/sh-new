@@ -91,6 +91,17 @@ export default function SettingsPage() {
   const [savingAdminPassword, setSavingAdminPassword] = useState(false);
   const [adminPasswordSuccess, setAdminPasswordSuccess] = useState(false);
 
+  // Employee self-service password & row save states
+  const [empCurrentPassword, setEmpCurrentPassword] = useState('');
+  const [empNewPassword, setEmpNewPassword] = useState('');
+  const [empConfirmPassword, setEmpConfirmPassword] = useState('');
+  const [showEmpCurrentPassword, setShowEmpCurrentPassword] = useState(false);
+  const [showEmpNewPassword, setShowEmpNewPassword] = useState(false);
+  const [showEmpConfirmPassword, setShowEmpConfirmPassword] = useState(false);
+  const [savingEmpPassword, setSavingEmpPassword] = useState(false);
+  const [empPasswordSuccess, setEmpPasswordSuccess] = useState(false);
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
+
   interface Account2FA {
     username: string;
     name: string;
@@ -336,7 +347,10 @@ export default function SettingsPage() {
   useEffect(() => {
     if (mounted && !isEmployee) {
       setLoadingAccounts(true);
-      fetch('/api/employees')
+      const token = getClientAuthToken();
+      fetch('/api/employees', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
         .then((res) => res.json())
         .then((data) => {
           if (data.success && Array.isArray(data.employees)) {
@@ -533,17 +547,18 @@ export default function SettingsPage() {
         body: JSON.stringify({ employees: employeeAccounts }),
       });
       const data = await res.json();
-      if (data.success) {
-        const activeNames = employeeAccounts
-          .filter((a) => a.is_active !== false && !a.is_banned)
-          .map((a) => a.name.trim())
+      if (data.success && Array.isArray(data.employees)) {
+        setEmployeeAccounts(data.employees);
+        const activeNames = data.employees
+          .filter((a: any) => a.is_active !== false && !a.is_banned)
+          .map((a: any) => a.name.trim())
           .filter(Boolean);
         setEmployees(activeNames);
         saveProfile({ employees: activeNames });
         if (typeof window !== 'undefined') {
-          localStorage.setItem('showhouse_employee_cache', JSON.stringify(employeeAccounts));
+          localStorage.setItem('showhouse_employee_cache', JSON.stringify(data.employees));
         }
-        showToast('All employee logins & contact numbers saved successfully!', 'success');
+        showToast('All employee logins & contact numbers saved successfully in database!', 'success');
       } else {
         showToast(data.error || 'Failed to save employee accounts', 'error');
       }
@@ -551,6 +566,94 @@ export default function SettingsPage() {
       showToast('Network error while saving accounts', 'error');
     } finally {
       setSavingAccounts(false);
+    }
+  };
+
+  const handleSaveSingleStaffRow = async (acc: EmployeeAccount) => {
+    if (!acc.password || acc.password.trim().length < 6) {
+      showToast(`Password for ${acc.name} must be at least 6 characters long`, 'error');
+      return;
+    }
+
+    try {
+      setSavingRowId(acc.id);
+      const token = getClientAuthToken();
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'update_password',
+          employeeId: acc.id,
+          username: acc.username,
+          newPassword: acc.password.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        showToast(`Saved password & login credentials for ${acc.name}!`, 'success');
+        // Trigger full sync to save phone, po_prefix, name as well
+        handleSaveAccounts();
+      } else {
+        showToast(data.error || `Failed to save password for ${acc.name}`, 'error');
+      }
+    } catch {
+      showToast('Error saving staff member credentials', 'error');
+    } finally {
+      setSavingRowId(null);
+    }
+  };
+
+  const handleChangeEmployeePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!empNewPassword || empNewPassword.length < 6) {
+      showToast('New password must be at least 6 characters long', 'error');
+      return;
+    }
+    if (empNewPassword !== empConfirmPassword) {
+      showToast('New password and confirm password do not match', 'error');
+      return;
+    }
+
+    try {
+      setSavingEmpPassword(true);
+      const token = getClientAuthToken();
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          currentPassword: empCurrentPassword ? empCurrentPassword.trim() : undefined,
+          newPassword: empNewPassword.trim(),
+          confirmPassword: empConfirmPassword.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Failed to update password', 'error');
+        return;
+      }
+
+      if (data.token && typeof window !== 'undefined') {
+        localStorage.setItem('showhouse_admin_token', data.token);
+      }
+
+      setEmpCurrentPassword('');
+      setEmpNewPassword('');
+      setEmpConfirmPassword('');
+      setEmpPasswordSuccess(true);
+      setTimeout(() => setEmpPasswordSuccess(false), 5000);
+      showToast('Your staff password updated and recorded successfully!', 'success');
+    } catch {
+      showToast('Error updating staff password', 'error');
+    } finally {
+      setSavingEmpPassword(false);
     }
   };
 
@@ -569,24 +672,170 @@ export default function SettingsPage() {
     );
   }
 
-  // Security Check: If an employee tries to access Settings, block them!
+  // If signed in as an employee: Render Staff Security & Password Change
   if (isEmployee) {
     return (
-      <div className="card p-8 sm:p-12 text-center max-w-lg mx-auto my-12 space-y-4 shadow-sm border border-surface-200">
-        <div className="w-14 h-14 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
-          <ShieldAlert size={28} />
+      <div className="max-w-2xl mx-auto space-y-6 pb-12 pt-4">
+        {/* Header */}
+        <div className="border-b border-surface-200 pb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-surface-900 tracking-tight">Staff Account Security</h1>
+            <p className="text-xs text-surface-500 mt-0.5">
+              Manage your personal staff password and Google Authenticator 2FA settings
+            </p>
+          </div>
+          <Link href="/" className="btn-secondary text-xs py-2 px-3">
+            Dashboard
+          </Link>
         </div>
-        <h2 className="text-lg font-bold text-surface-900">Settings Restricted to Admin</h2>
-        <p className="text-xs text-surface-500 max-w-sm mx-auto leading-relaxed">
-          You are currently signed in as <b>{currentUser?.name}</b> (Staff Account).
-          Business profile, tax settings, and employee credentials are only accessible by the Showhouse Admin.
-        </p>
-        <Link
-          href="/"
-          className="btn-primary inline-flex items-center gap-1.5 text-xs py-2 px-4 shadow-xs mt-2"
-        >
-          Return to Dashboard
-        </Link>
+
+        {/* Staff Profile Card */}
+        <div className="card p-5 space-y-3 bg-surface-50/50 border border-surface-200">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-surface-700 uppercase tracking-wider">Staff Account Profile</span>
+            <span className="text-[11px] font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-full border border-primary-200">
+              Active Staff Member
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+            <div className="p-2.5 rounded-lg bg-white border border-surface-200">
+              <span className="text-[10px] text-surface-400 block font-bold uppercase">Staff Name</span>
+              <span className="text-xs font-bold text-surface-900">{currentUser?.name || 'Staff'}</span>
+            </div>
+            <div className="p-2.5 rounded-lg bg-white border border-surface-200">
+              <span className="text-[10px] text-surface-400 block font-bold uppercase">Username</span>
+              <span className="text-xs font-mono font-bold text-primary-700">@{currentUser?.username}</span>
+            </div>
+            <div className="p-2.5 rounded-lg bg-white border border-surface-200 col-span-2 sm:col-span-1">
+              <span className="text-[10px] text-surface-400 block font-bold uppercase">Security Role</span>
+              <span className="text-xs font-bold text-surface-700">Billing / Staff User</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Employee Password Change Card */}
+        <div className="card p-6 space-y-4 border-2 border-primary-500/25 shadow-xs">
+          <div className="flex items-center justify-between pb-2 border-b border-surface-100">
+            <div className="flex items-center gap-2.5 text-surface-900 font-bold text-base">
+              <div className="p-2 rounded-xl bg-primary-100 text-primary-700">
+                <Key size={18} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-surface-900">Change Staff Password</h3>
+                <p className="text-[11px] text-surface-500 font-normal">
+                  Update your personal login password. It will record instantly to the database.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleChangeEmployeePassword} className="space-y-4 pt-1">
+            <div className="space-y-3">
+              <div>
+                <label className="label text-xs font-bold text-surface-700">Current Password</label>
+                <div className="relative">
+                  <input
+                    type={showEmpCurrentPassword ? 'text' : 'password'}
+                    value={empCurrentPassword}
+                    onChange={(e) => setEmpCurrentPassword(e.target.value)}
+                    placeholder="Enter current password (optional)"
+                    className="input text-xs pr-8 w-full font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEmpCurrentPassword((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-700 cursor-pointer"
+                  >
+                    {showEmpCurrentPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <span className="text-[10px] text-surface-400 mt-1 block">Optional if logged in</span>
+              </div>
+
+              <div>
+                <label className="label text-xs font-bold text-surface-700">New Password *</label>
+                <div className="relative">
+                  <input
+                    type={showEmpNewPassword ? 'text' : 'password'}
+                    value={empNewPassword}
+                    onChange={(e) => setEmpNewPassword(e.target.value)}
+                    placeholder="Min. 6 characters"
+                    required
+                    minLength={6}
+                    className="input text-xs pr-8 w-full font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEmpNewPassword((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-700 cursor-pointer"
+                  >
+                    {showEmpNewPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <span className="text-[10px] text-surface-400 mt-1 block">At least 6 characters</span>
+              </div>
+
+              <div>
+                <label className="label text-xs font-bold text-surface-700">Confirm New Password *</label>
+                <div className="relative">
+                  <input
+                    type={showEmpConfirmPassword ? 'text' : 'password'}
+                    value={empConfirmPassword}
+                    onChange={(e) => setEmpConfirmPassword(e.target.value)}
+                    placeholder="Repeat new password"
+                    required
+                    minLength={6}
+                    className="input text-xs pr-8 w-full font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEmpConfirmPassword((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-700 cursor-pointer"
+                  >
+                    {showEmpConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <span className="text-[10px] text-surface-400 mt-1 block">Must match new password</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              {empPasswordSuccess && (
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md inline-flex items-center gap-1">
+                  <Check size={14} />
+                  <span>Password Updated &amp; Recorded!</span>
+                </span>
+              )}
+              {!empPasswordSuccess && <span />}
+
+              <button
+                type="submit"
+                disabled={
+                  savingEmpPassword ||
+                  !empNewPassword ||
+                  empNewPassword.length < 6 ||
+                  !empConfirmPassword ||
+                  empNewPassword !== empConfirmPassword
+                }
+                className="btn-primary text-xs py-2 px-5 flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Lock size={14} />
+                <span>{savingEmpPassword ? 'Saving to Database...' : 'Save New Password'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Company Settings Restricted Banner */}
+        <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 text-xs text-surface-500 space-y-1">
+          <div className="flex items-center gap-1.5 font-bold text-surface-700">
+            <ShieldAlert size={14} className="text-amber-600" />
+            <span>Master Settings Restricted</span>
+          </div>
+          <p className="text-[11px] leading-relaxed">
+            Company profile, tax rates, GSTIN, challan sequences, and other staff records can only be configured by the Showhouse Master Administrator.
+          </p>
+        </div>
       </div>
     );
   }
@@ -623,13 +872,21 @@ export default function SettingsPage() {
       });
 
       if (employeeAccounts.length > 0) {
-        await fetch('/api/employees', {
+        const token = getClientAuthToken();
+        const res = await fetch('/api/employees', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ employees: employeeAccounts }),
         });
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('showhouse_employee_cache', JSON.stringify(employeeAccounts));
+        const empData = await res.json().catch(() => ({}));
+        if (empData.success && Array.isArray(empData.employees)) {
+          setEmployeeAccounts(empData.employees);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('showhouse_employee_cache', JSON.stringify(empData.employees));
+          }
         }
       }
 
@@ -1294,6 +1551,9 @@ export default function SettingsPage() {
                       } else if (log.status === 'banned_attempt') {
                         badgeClass = 'bg-gray-100 text-gray-800 border-gray-300';
                         statusText = 'Banned User';
+                      } else if (log.status === 'password_changed') {
+                        badgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
+                        statusText = 'Password Changed';
                       }
 
                       return (
@@ -1487,6 +1747,16 @@ export default function SettingsPage() {
                         </td>
                         <td className="px-3 py-2 text-right">
                           <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSingleStaffRow(acc)}
+                              disabled={savingRowId === acc.id}
+                              className="px-2 py-1 rounded text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 inline-flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                              title={`Save password & details for ${acc.name} immediately`}
+                            >
+                              <Save size={12} />
+                              <span>{savingRowId === acc.id ? 'Saving...' : 'Save'}</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleToggleBanAccount(acc.id)}

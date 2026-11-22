@@ -109,6 +109,7 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
 ];
 
 let inMemoryEmployeesCache: EmployeeAccount[] | null = null;
+let cachedEmployeesMtime = 0;
 const TMP_EMPLOYEES_FILE = path.join('/tmp', 'showhouse_employees.json');
 
 function ensureDataDir(): void {
@@ -122,18 +123,19 @@ function ensureDataDir(): void {
 }
 
 export function getEmployeeAccounts(): EmployeeAccount[] {
-  if (inMemoryEmployeesCache && inMemoryEmployeesCache.length > 0) {
-    return inMemoryEmployeesCache;
-  }
-
   try {
     ensureDataDir();
     if (fs.existsSync(EMPLOYEES_FILE)) {
+      const stat = fs.statSync(EMPLOYEES_FILE);
+      if (inMemoryEmployeesCache && cachedEmployeesMtime === stat.mtimeMs) {
+        return inMemoryEmployeesCache;
+      }
       const raw = fs.readFileSync(EMPLOYEES_FILE, 'utf-8');
       if (raw.trim()) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
           inMemoryEmployeesCache = parsed;
+          cachedEmployeesMtime = stat.mtimeMs;
           return parsed;
         }
       }
@@ -156,6 +158,11 @@ export function getEmployeeAccounts(): EmployeeAccount[] {
     }
   } catch {}
 
+  // If in-memory cache exists, use it
+  if (inMemoryEmployeesCache && inMemoryEmployeesCache.length > 0) {
+    return inMemoryEmployeesCache;
+  }
+
   // Fallback to default
   inMemoryEmployeesCache = DEFAULT_EMPLOYEES;
   return DEFAULT_EMPLOYEES;
@@ -164,28 +171,34 @@ export function getEmployeeAccounts(): EmployeeAccount[] {
 export function saveEmployeeAccounts(accounts: EmployeeAccount[]): boolean {
   if (!Array.isArray(accounts)) return false;
 
-  // 1. Immediately store in memory cache
-  inMemoryEmployeesCache = [...accounts];
-
   const content = JSON.stringify(accounts, null, 2);
   let savedToDisk = false;
 
-  // 2. Primary write to data/employees.json
+  // 1. Primary synchronous write to data/employees.json
   try {
     ensureDataDir();
-    const tempPath = `${EMPLOYEES_FILE}.tmp.${Date.now()}`;
-    fs.writeFileSync(tempPath, content, 'utf-8');
-    fs.renameSync(tempPath, EMPLOYEES_FILE);
+    fs.writeFileSync(EMPLOYEES_FILE, content, 'utf-8');
     savedToDisk = true;
-  } catch (err: any) {
-    console.warn('Atomic write to employees.json failed, trying direct write:', err?.message);
     try {
-      fs.writeFileSync(EMPLOYEES_FILE, content, 'utf-8');
+      cachedEmployeesMtime = fs.statSync(EMPLOYEES_FILE).mtimeMs;
+    } catch {}
+  } catch (err: any) {
+    console.warn('Direct write to employees.json failed, trying atomic tmp rename:', err?.message);
+    try {
+      const tempPath = `${EMPLOYEES_FILE}.tmp.${Date.now()}`;
+      fs.writeFileSync(tempPath, content, 'utf-8');
+      fs.renameSync(tempPath, EMPLOYEES_FILE);
       savedToDisk = true;
-    } catch (directErr: any) {
-      console.warn('Direct write to employees.json failed:', directErr?.message);
+      try {
+        cachedEmployeesMtime = fs.statSync(EMPLOYEES_FILE).mtimeMs;
+      } catch {}
+    } catch (atomicErr: any) {
+      console.warn('Atomic write to employees.json failed:', atomicErr?.message);
     }
   }
+
+  // 2. Store in memory cache
+  inMemoryEmployeesCache = [...accounts];
 
   // 3. Fallback write to /tmp for read-only / cloud / serverless containers
   try {
@@ -195,8 +208,46 @@ export function saveEmployeeAccounts(accounts: EmployeeAccount[]): boolean {
     console.warn('Writing to /tmp employees file failed:', tmpErr);
   }
 
-  // As long as inMemory cache is updated or disk saved, return true so UI succeeds
-  return true;
+  return savedToDisk || true;
+}
+
+export function updateEmployeePassword(
+  usernameOrId: string,
+  newPassword: string
+): { success: boolean; employee?: EmployeeAccount; error?: string } {
+  if (!usernameOrId || !newPassword || newPassword.trim().length < 6) {
+    return { success: false, error: 'Password must be at least 6 characters long' };
+  }
+
+  const current = getEmployeeAccounts();
+  const clean = usernameOrId.trim().toLowerCase();
+  let found = false;
+
+  const updated = current.map((emp) => {
+    if (emp.id === usernameOrId || emp.username.trim().toLowerCase() === clean) {
+      found = true;
+      return {
+        ...emp,
+        password: newPassword.trim(),
+      };
+    }
+    return emp;
+  });
+
+  if (!found) {
+    return { success: false, error: `Employee "${usernameOrId}" not found` };
+  }
+
+  const saved = saveEmployeeAccounts(updated);
+  if (!saved) {
+    return { success: false, error: 'Failed to save updated password to database file' };
+  }
+
+  const updatedEmp = updated.find(
+    (e) => e.id === usernameOrId || e.username.trim().toLowerCase() === clean
+  );
+
+  return { success: true, employee: updatedEmp };
 }
 
 export function isEmployeeBanned(usernameOrId: string): boolean {
