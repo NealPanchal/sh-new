@@ -81,6 +81,7 @@ export default function SettingsPage() {
 
   // Admin Password Management State
   const [adminUsername, setAdminUsername] = useState('adminsh');
+  const [adminPhone, setAdminPhone] = useState('+91 79773 95952');
   const [adminCurrentPassword, setAdminCurrentPassword] = useState('');
   const [adminNewPassword, setAdminNewPassword] = useState('');
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
@@ -140,6 +141,9 @@ export default function SettingsPage() {
         .then((data) => {
           if (data?.username) {
             setAdminUsername(data.username);
+          }
+          if (data?.phone) {
+            setAdminPhone(data.phone);
           }
         })
         .catch(() => {});
@@ -210,6 +214,7 @@ export default function SettingsPage() {
           newPassword: adminNewPassword,
           confirmPassword: adminConfirmPassword,
           newUsername: adminUsername,
+          phone: adminPhone,
         }),
       });
 
@@ -835,7 +840,7 @@ export default function SettingsPage() {
           </div>
 
           <form onSubmit={handleChangeAdminPassword} className="space-y-4 pt-1">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {/* Admin Username */}
               <div>
                 <label className="label text-xs font-bold text-surface-700">Admin Username</label>
@@ -848,6 +853,19 @@ export default function SettingsPage() {
                   className="input font-mono text-xs font-bold text-surface-900 bg-surface-50 w-full"
                 />
                 <span className="text-[10px] text-surface-400 mt-1 block">Default: adminsh</span>
+              </div>
+
+              {/* Admin Mobile / Phone */}
+              <div>
+                <label className="label text-xs font-bold text-surface-700">Admin Mobile (OTP)</label>
+                <input
+                  type="text"
+                  value={adminPhone}
+                  onChange={(e) => setAdminPhone(e.target.value)}
+                  placeholder="+91 79773 95952"
+                  className="input font-mono text-xs font-bold text-emerald-800 bg-emerald-50/50 border-emerald-300 w-full"
+                />
+                <span className="text-[10px] text-emerald-700 mt-1 block">2FA OTP target</span>
               </div>
 
               {/* Current Password */}

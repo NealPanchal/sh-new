@@ -10,6 +10,7 @@ export const AUTH_COOKIE_NAME = 'sh_admin_session';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'sh_secret_e8c4a179d63f25b901a884fc5710294e7b8c_showhouse_2026';
 const DEFAULT_ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'adminsh').trim().toLowerCase();
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'showhouse@2026!';
+const DEFAULT_ADMIN_PHONE = (process.env.ADMIN_PHONE || '+91 79773 95952').trim();
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const ADMIN_CONFIG_FILE = path.join(DATA_DIR, 'admin_credentials.json');
@@ -289,6 +290,7 @@ export function resendOtpChallenge(challenge_id: string) {
 export interface AdminCredentials {
   username: string;
   password: string;
+  phone?: string;
   updated_at?: string;
 }
 
@@ -308,6 +310,7 @@ export function getAdminCredentials(): AdminCredentials {
         cachedAdminCreds = {
           username: (parsed.username || DEFAULT_ADMIN_USERNAME).trim().toLowerCase(),
           password: parsed.password || DEFAULT_ADMIN_PASSWORD,
+          phone: (parsed.phone || DEFAULT_ADMIN_PHONE).trim(),
           updated_at: parsed.updated_at,
         };
         cachedMtime = stat.mtimeMs;
@@ -321,18 +324,21 @@ export function getAdminCredentials(): AdminCredentials {
   return {
     username: DEFAULT_ADMIN_USERNAME,
     password: DEFAULT_ADMIN_PASSWORD,
+    phone: DEFAULT_ADMIN_PHONE,
   };
 }
 
-export function setAdminCredentials(username: string, password: string): void {
+export function setAdminCredentials(username: string, password: string, phone?: string): void {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     const cleanUsername = username.trim().toLowerCase();
+    const currentCreds = getAdminCredentials();
     const payload: AdminCredentials = {
       username: cleanUsername,
       password: password,
+      phone: phone !== undefined && phone.trim() ? phone.trim() : (currentCreds.phone || DEFAULT_ADMIN_PHONE),
       updated_at: new Date().toISOString(),
     };
     fs.writeFileSync(ADMIN_CONFIG_FILE, JSON.stringify(payload, null, 2), 'utf-8');

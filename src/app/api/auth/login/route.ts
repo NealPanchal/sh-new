@@ -11,6 +11,7 @@ import {
   verifyOtpChallenge,
   resendOtpChallenge,
   recordSecurityAuditLog,
+  getAdminCredentials,
 } from '@/lib/server-auth';
 import { findEmployeeByUsername } from '@/lib/employee-accounts';
 
@@ -181,7 +182,8 @@ export async function POST(req: NextRequest) {
         const emp = findEmployeeByUsername(authResult.user.username);
         targetPhone = emp?.phone || '';
       } else {
-        targetPhone = '+91 98203 62457'; // Admin registered phone
+        const adminCreds = getAdminCredentials();
+        targetPhone = adminCreds.phone || '+91 79773 95952'; // Admin registered phone (7977395952)
       }
 
       const challenge = createOtpChallenge(authResult.user, targetPhone);

@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { currentPassword, newPassword, confirmPassword, newUsername } = body;
+    const { currentPassword, newPassword, confirmPassword, newUsername, phone } = body;
 
     if (!currentPassword) {
       return NextResponse.json(
@@ -63,8 +63,12 @@ export async function POST(req: NextRequest) {
       ? newUsername.trim().toLowerCase()
       : adminCreds.username;
 
+    const targetPhone = phone && typeof phone === 'string' && phone.trim()
+      ? phone.trim()
+      : (adminCreds.phone || '+91 79773 95952');
+
     // Save updated credentials to persistent data storage
-    setAdminCredentials(targetUsername, newPassword.trim());
+    setAdminCredentials(targetUsername, newPassword.trim(), targetPhone);
 
     // Generate fresh session token with updated credentials
     const newToken = createSignedSessionToken({
@@ -76,8 +80,9 @@ export async function POST(req: NextRequest) {
     const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
     const res = NextResponse.json({
       success: true,
-      message: 'Admin password changed successfully!',
+      message: 'Admin password and security credentials updated successfully!',
       username: targetUsername,
+      phone: targetPhone,
       token: newToken,
     });
 
@@ -109,6 +114,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     success: true,
     username: adminCreds.username,
+    phone: adminCreds.phone || '+91 79773 95952',
     updatedAt: adminCreds.updated_at || null,
   });
 }
