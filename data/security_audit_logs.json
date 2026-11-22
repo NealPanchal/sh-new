@@ -1,5 +1,60 @@
 [
   {
+    "id": "sec_1795382017959_4mezd",
+    "timestamp": "2026-11-22T21:13:37.959Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "totp_challenge_issued",
+    "note": "First-time login: Google Authenticator enrollment challenge generated"
+  },
+  {
+    "id": "sec_1795382010011_h9t5x",
+    "timestamp": "2026-11-22T21:13:30.011Z",
+    "username": "adminsh",
+    "name": "Unauthenticated User",
+    "role": "employee",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "failed",
+    "note": "Invalid credentials attempt"
+  },
+  {
+    "id": "sec_1795382006530_qtcdj",
+    "timestamp": "2026-11-22T21:13:26.530Z",
+    "username": "adminsh",
+    "name": "Unauthenticated User",
+    "role": "employee",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "failed",
+    "note": "Invalid credentials attempt"
+  },
+  {
+    "id": "sec_1795381472831_o4wgr",
+    "timestamp": "2026-11-22T21:04:32.831Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "Completed Google Authenticator TOTP verification successfully"
+  },
+  {
+    "id": "sec_1795381460674_uj6my",
+    "timestamp": "2026-11-22T21:04:20.674Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "totp_challenge_issued",
+    "note": "Credentials verified: Prompting for Google Authenticator OTP"
+  },
+  {
     "id": "sec_1795376435430_z0e8d",
     "timestamp": "2026-11-22T19:40:35.430Z",
     "username": "adminsh",

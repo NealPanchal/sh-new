@@ -207,14 +207,14 @@ export async function logoutAdmin(): Promise<void> {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-  } catch {}
+  } catch { }
 
   if (typeof window !== 'undefined') {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem(AUTH_TOKEN_KEY);
     try {
       sessionStorage.removeItem('sh_stealth_unlocked');
-    } catch {}
+    } catch { }
     window.location.href = '/login';
   }
 }
@@ -228,7 +228,7 @@ export function clearAdminSession(): void {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     try {
       sessionStorage.removeItem('sh_stealth_unlocked');
-    } catch {}
+    } catch { }
   }
 }
 

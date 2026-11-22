@@ -69,8 +69,8 @@ export default function LoginPage() {
         step === 'totp_setup'
           ? 'Showhouse — Setup Authenticator'
           : step === 'totp'
-          ? 'Showhouse — Two-Step Verification'
-          : 'Showhouse — Login';
+            ? 'Showhouse — Two-Step Verification'
+            : 'Showhouse — Login';
     }
   }, [mounted, step]);
 
@@ -308,8 +308,8 @@ export default function LoginPage() {
               {step === 'totp_setup'
                 ? 'Google Authenticator Enrollment'
                 : step === 'totp'
-                ? 'Mandatory Two-Factor Authentication'
-                : 'Secure Portal • Admin & Staff'}
+                  ? 'Mandatory Two-Factor Authentication'
+                  : 'Secure Portal • Admin & Staff'}
             </span>
           </div>
         </div>
@@ -619,10 +619,10 @@ export default function LoginPage() {
                 <input
                   type="text"
                   autoFocus
-                  maxLength={12}
+                  maxLength={24}
                   value={backupCodeInput}
                   onChange={(e) => setBackupCodeInput(e.target.value.toUpperCase())}
-                  placeholder="e.g. A1B2-C3D4"
+                  placeholder="e.g. A1B2-C3D4 or Emergency Code"
                   className="w-full bg-surface-950 border border-surface-700 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 text-white rounded-lg px-3 py-2.5 text-center text-sm font-bold font-mono tracking-widest outline-hidden transition-colors"
                 />
               </div>
