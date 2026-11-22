@@ -234,12 +234,12 @@ export default function CustomerDetailPage() {
                 </span>
               )}
               {customer.credit_status === 'no_credit' || customer.is_credit_blocked ? (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 uppercase tracking-wide border border-rose-200">
-                  ⛔ No Credit (Cash/Advance Only)
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 uppercase tracking-wide border border-rose-200">
+                  No Credit
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase tracking-wide border border-emerald-200">
-                  ✓ Credit Allowed
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 uppercase tracking-wide border border-emerald-200">
+                  Credit
                 </span>
               )}
             </h1>

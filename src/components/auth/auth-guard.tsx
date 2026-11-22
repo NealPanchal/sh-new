@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { isAdminAuthenticated } from '@/lib/auth';
+import { isAdminAuthenticated, verifySessionWithServer } from '@/lib/auth';
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -16,12 +16,43 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!isAdminAuthenticated()) {
-      setAuthorized(false);
-      router.replace('/login');
-    } else {
+    if (isAdminAuthenticated()) {
       setAuthorized(true);
+      return;
     }
+
+    // Check with server if session cookie is active (crucial for iOS Safari PWA / Add-to-Home-Screen)
+    let isCancelled = false;
+    const timeout = setTimeout(() => {
+      if (!isCancelled) {
+        setAuthorized(false);
+        router.replace('/login');
+      }
+    }, 2000);
+
+    verifySessionWithServer()
+      .then((isAuthed) => {
+        clearTimeout(timeout);
+        if (isCancelled) return;
+        if (isAuthed) {
+          setAuthorized(true);
+        } else {
+          setAuthorized(false);
+          router.replace('/login');
+        }
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        if (!isCancelled) {
+          setAuthorized(false);
+          router.replace('/login');
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeout);
+    };
   }, [pathname, router]);
 
   if (!authorized && pathname !== '/login') {
@@ -36,7 +67,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         </div>
         <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mb-3" />
         <span className="text-xs text-surface-400 font-medium tracking-wide">
-          Verifying Showhouse Admin Access...
+          Loading Showhouse...
         </span>
       </div>
     );

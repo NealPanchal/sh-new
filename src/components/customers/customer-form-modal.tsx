@@ -210,23 +210,11 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
           </div>
 
           {/* Credit / No Credit Option */}
-          <div className="p-3 bg-surface-50 rounded-xl border border-surface-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
-                <CreditCard size={14} className={creditStatus === 'credit' ? 'text-emerald-600' : 'text-rose-600'} />
-                <span>Credit / Payment Terms</span>
-              </label>
-              <span
-                className={cn(
-                  'text-[10px] font-bold px-2 py-0.5 rounded-full border',
-                  creditStatus === 'credit'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                    : 'bg-rose-50 text-rose-700 border-rose-300'
-                )}
-              >
-                {creditStatus === 'credit' ? '✓ Credit Allowed' : '⛔ Strict No Credit'}
-              </span>
-            </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-surface-700 flex items-center gap-1.5">
+              <CreditCard size={14} className="text-surface-600" />
+              <span>Credit / Payment Terms</span>
+            </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -253,15 +241,6 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
                 <span>No Credit (Cash / Advance)</span>
               </button>
             </div>
-            {creditStatus === 'no_credit' ? (
-              <p className="text-[11px] text-rose-600 font-medium">
-                ⚠️ Material dispatch requires 100% advance or payment on delivery. Ledger credit is restricted.
-              </p>
-            ) : (
-              <p className="text-[11px] text-emerald-700 font-medium">
-                ✓ Party is eligible for regular credit challans &amp; billing.
-              </p>
-            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

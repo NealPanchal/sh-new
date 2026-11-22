@@ -18,6 +18,7 @@ export function PwaRegister() {
         navigator.serviceWorker
           .register('/sw.js')
           .then((registration) => {
+            registration.update();
             console.log('PWA ServiceWorker registered with scope:', registration.scope);
           })
           .catch((error) => {

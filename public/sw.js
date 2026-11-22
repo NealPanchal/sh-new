@@ -1,7 +1,6 @@
 // Showhouse Progressive Web App Service Worker
-const CACHE_NAME = 'showhouse-pwa-v2';
+const CACHE_NAME = 'showhouse-pwa-v3';
 const STATIC_ASSETS = [
-  '/',
   '/manifest.json',
   '/favicon.png',
   '/logo-emblem.png',
@@ -14,7 +13,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.warn('PWA: Failed to cache some static assets during install', err);
+        console.warn('PWA: Failed to cache static assets during install', err);
       });
     })
   );
@@ -37,7 +36,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: Network-first for dynamic routes & APIs, cache-first for static icons/assets
+// Fetch: Pass-through for APIs, cache for static icons/assets, network-first for pages
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -47,7 +46,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets (images, icons, fonts): Stale-while-revalidate / Cache-first
+  // Never intercept API routes or authentication flows
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // Static assets (images, icons, fonts): Cache-first
   if (
     url.pathname.startsWith('/icons/') ||
     url.pathname.endsWith('.png') ||
@@ -70,24 +74,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML Pages and API calls: Network-first with cache fallback
-  event.respondWith(
-    fetch(request)
-      .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200 && request.mode === 'navigate') {
-          const clone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return networkResponse;
+  // Navigation / HTML Pages: Pure network-first
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => {
+        return caches.match(request);
       })
-      .catch(() => {
-        return caches.match(request).then((cached) => {
-          if (cached) return cached;
-          if (request.mode === 'navigate') {
-            return caches.match('/');
-          }
-        });
-      })
-  );
+    );
+    return;
+  }
 });
 

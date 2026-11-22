@@ -316,8 +316,20 @@ export async function verifySessionWithServer(): Promise<boolean> {
       return false;
     }
     const data = await res.json();
-    if (data.authenticated && data.token && typeof window !== 'undefined') {
-      localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    if (data.authenticated && typeof window !== 'undefined') {
+      if (data.token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+      }
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          authenticated: true,
+          username: data.user?.username,
+          name: data.user?.name || data.user?.username,
+          role: data.user?.role || 'admin',
+          loggedInAt: new Date().toISOString(),
+        })
+      );
     }
     return Boolean(data.authenticated);
   } catch {

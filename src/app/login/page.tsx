@@ -25,7 +25,6 @@ import {
   verifyLoginTotp,
   isAdminAuthenticated,
 } from '@/lib/auth';
-import { Stealth404Decoy } from '@/components/auth/stealth-404-decoy';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,7 +37,6 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [isUnlocked, setIsUnlocked] = useState(false);
 
   // 2FA Challenge & Setup state
   const [challengeId, setChallengeId] = useState('');
@@ -60,10 +58,6 @@ export default function LoginPage() {
   useEffect(() => {
     setMounted(true);
 
-    if (typeof window !== 'undefined' && sessionStorage.getItem('sh_stealth_unlocked') === 'true') {
-      setIsUnlocked(true);
-    }
-
     if (isAdminAuthenticated()) {
       router.replace('/');
     }
@@ -71,29 +65,14 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (mounted) {
-      if (isUnlocked) {
-        document.title =
-          step === 'totp_setup'
-            ? 'Showhouse — Setup Authenticator'
-            : step === 'totp'
-            ? 'Showhouse — Two-Step Verification'
-            : 'Showhouse — Login';
-      } else {
-        document.title = '404 - Page Not Found';
-      }
+      document.title =
+        step === 'totp_setup'
+          ? 'Showhouse — Setup Authenticator'
+          : step === 'totp'
+          ? 'Showhouse — Two-Step Verification'
+          : 'Showhouse — Login';
     }
-  }, [isUnlocked, mounted, step]);
-
-  const handleUnlock = () => {
-    setIsUnlocked(true);
-  };
-
-  const handleLockBack = () => {
-    setIsUnlocked(false);
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('sh_stealth_unlocked');
-    }
-  };
+  }, [mounted, step]);
 
   // ----------------------------------------------------
   // Step 1: Submit Username & Password
@@ -299,11 +278,6 @@ export default function LoginPage() {
 
   if (!mounted) return null;
 
-  // By default, display realistic 404 Not Found error until user unlocks
-  if (!isUnlocked) {
-    return <Stealth404Decoy onUnlock={handleUnlock} />;
-  }
-
   return (
     <div className="min-h-screen bg-surface-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none animate-in fade-in duration-300">
       {/* Background Subtle Gradient Blobs */}
@@ -312,16 +286,6 @@ export default function LoginPage() {
 
       {/* Main Login / 2FA Card */}
       <div className="w-full max-w-sm sm:max-w-md bg-surface-900 border border-surface-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 text-white animate-in zoom-in-95 duration-200">
-        {/* Stealth Quick Lock / Hide button */}
-        <button
-          type="button"
-          onClick={handleLockBack}
-          className="absolute right-4 top-4 p-1.5 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-colors cursor-pointer"
-          title="Lock & Hide to 404"
-        >
-          <Lock size={15} />
-        </button>
-
         {/* Brand Logo & Header */}
         <div className="text-center mb-6">
           <div className="w-20 h-20 mx-auto rounded-2xl bg-white p-2.5 shadow-xl shadow-amber-500/10 border border-amber-200/40 mb-3.5 flex items-center justify-center">
