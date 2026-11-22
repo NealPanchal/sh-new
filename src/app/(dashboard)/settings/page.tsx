@@ -144,6 +144,10 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (mounted && !isEmployee) {
       const token = getClientAuthToken();
       fetch('/api/auth/change-password', {
