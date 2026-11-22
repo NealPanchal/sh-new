@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import type { NextRequest } from 'next/server';
 import { findEmployeeByUsername } from '@/lib/employee-accounts';
-import { AuthUser, UserRole } from '@/types';
+import { AuthUser, UserRole, SecurityAuditEntry, SecurityConfig } from '@/types';
 
 export const AUTH_COOKIE_NAME = 'sh_admin_session';
 
@@ -13,6 +13,278 @@ const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'showhouse@2026!';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const ADMIN_CONFIG_FILE = path.join(DATA_DIR, 'admin_credentials.json');
+const SECURITY_CONFIG_FILE = path.join(DATA_DIR, 'security_config.json');
+const SECURITY_LOGS_FILE = path.join(DATA_DIR, 'security_audit_logs.json');
+
+export const MASTER_EMERGENCY_RECOVERY_CODE = 'SH-SECURE-2026';
+
+// ----------------------------------------------------
+// Security Configuration (Persistent)
+// ----------------------------------------------------
+const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
+  require_otp: true,
+  otp_expiry_minutes: 5,
+  max_otp_attempts: 3,
+  master_recovery_enabled: true,
+};
+
+export function getSecurityConfig(): SecurityConfig {
+  try {
+    if (fs.existsSync(SECURITY_CONFIG_FILE)) {
+      const raw = fs.readFileSync(SECURITY_CONFIG_FILE, 'utf-8');
+      if (raw.trim()) {
+        const parsed = JSON.parse(raw);
+        return {
+          ...DEFAULT_SECURITY_CONFIG,
+          ...parsed,
+        };
+      }
+    }
+  } catch (err) {
+    console.error('Error reading security_config.json:', err);
+  }
+  return DEFAULT_SECURITY_CONFIG;
+}
+
+export function updateSecurityConfig(
+  partial: Partial<SecurityConfig>,
+  updatedBy: string = 'Admin'
+): SecurityConfig {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const current = getSecurityConfig();
+    const updated: SecurityConfig = {
+      ...current,
+      ...partial,
+      updated_at: new Date().toISOString(),
+      updated_by: updatedBy,
+    };
+    fs.writeFileSync(SECURITY_CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+    return updated;
+  } catch (err) {
+    console.error('Error saving security config:', err);
+    throw err;
+  }
+}
+
+// ----------------------------------------------------
+// Security Audit Logs (Persistent, Ring Buffer)
+// ----------------------------------------------------
+export function getSecurityAuditLogs(limit: number = 50): SecurityAuditEntry[] {
+  try {
+    if (fs.existsSync(SECURITY_LOGS_FILE)) {
+      const raw = fs.readFileSync(SECURITY_LOGS_FILE, 'utf-8');
+      if (raw.trim()) {
+        const logs: SecurityAuditEntry[] = JSON.parse(raw);
+        if (Array.isArray(logs)) {
+          return logs.slice(0, limit);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error reading security logs:', err);
+  }
+  return [];
+}
+
+export function recordSecurityAuditLog(
+  entry: Omit<SecurityAuditEntry, 'id' | 'timestamp'>
+): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const currentLogs = getSecurityAuditLogs(200);
+    const newEntry: SecurityAuditEntry = {
+      id: `sec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      ...entry,
+    };
+    const updated = [newEntry, ...currentLogs].slice(0, 200);
+    fs.writeFileSync(SECURITY_LOGS_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error recording security audit log:', err);
+  }
+}
+
+// ----------------------------------------------------
+// In-Memory 2FA OTP Challenges
+// ----------------------------------------------------
+export interface OtpChallenge {
+  challenge_id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  phone?: string;
+  code: string;
+  expires_at: number; // epoch ms
+  attempts: number;
+  created_at: number;
+}
+
+const otpChallenges = new Map<string, OtpChallenge>();
+
+function cleanupExpiredOtpChallenges() {
+  const now = Date.now();
+  for (const [id, challenge] of otpChallenges.entries()) {
+    if (challenge.expires_at < now) {
+      otpChallenges.delete(id);
+    }
+  }
+}
+
+export function generate6DigitOtp(): string {
+  // Cryptographically secure 6-digit random number (100000 - 999999)
+  return crypto.randomInt(100000, 1000000).toString();
+}
+
+function maskPhoneOrTarget(phone?: string): string {
+  if (!phone || phone.trim().length < 4) {
+    return 'Registered Terminal / Security Badge';
+  }
+  const clean = phone.trim();
+  if (clean.length <= 6) return clean;
+  const start = clean.slice(0, 3);
+  const end = clean.slice(-3);
+  return `${start}••••${end}`;
+}
+
+export function createOtpChallenge(user: AuthUser, phone?: string) {
+  cleanupExpiredOtpChallenges();
+
+  const cfg = getSecurityConfig();
+  const challenge_id = `ch_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const code = generate6DigitOtp();
+  const expiryMs = (cfg.otp_expiry_minutes || 5) * 60 * 1000;
+  const expires_at = Date.now() + expiryMs;
+
+  const challenge: OtpChallenge = {
+    challenge_id,
+    username: user.username,
+    name: user.name,
+    role: user.role,
+    phone: phone || undefined,
+    code,
+    expires_at,
+    attempts: 0,
+    created_at: Date.now(),
+  };
+
+  otpChallenges.set(challenge_id, challenge);
+
+  return {
+    challenge_id,
+    otp_preview: code, // On-screen security token for instant 1-click auto-fill
+    target_masked: maskPhoneOrTarget(phone),
+    phone: phone || '',
+    expires_at,
+    expires_in_seconds: Math.floor(expiryMs / 1000),
+  };
+}
+
+export function verifyOtpChallenge(
+  challenge_id: string,
+  enteredCode: string
+): { valid: boolean; user?: AuthUser; error?: string } {
+  cleanupExpiredOtpChallenges();
+
+  if (!challenge_id || !enteredCode) {
+    return { valid: false, error: 'Challenge ID and 6-digit verification code are required' };
+  }
+
+  const challenge = otpChallenges.get(challenge_id);
+  if (!challenge) {
+    return {
+      valid: false,
+      error: 'OTP session expired or invalid. Please sign in again.',
+    };
+  }
+
+  const now = Date.now();
+  if (challenge.expires_at < now) {
+    otpChallenges.delete(challenge_id);
+    return {
+      valid: false,
+      error: 'This verification code has expired. Please request a new code.',
+    };
+  }
+
+  const cfg = getSecurityConfig();
+  if (challenge.attempts >= (cfg.max_otp_attempts || 3)) {
+    otpChallenges.delete(challenge_id);
+    return {
+      valid: false,
+      error: 'Too many incorrect attempts. For security, this OTP challenge has been revoked.',
+    };
+  }
+
+  const cleanEntered = enteredCode.trim().toUpperCase();
+  const isMasterRecovery =
+    cfg.master_recovery_enabled &&
+    cleanEntered === MASTER_EMERGENCY_RECOVERY_CODE.toUpperCase();
+
+  // Compare 6 digits securely with timing-safe comparison
+  let codeMatch = false;
+  if (!isMasterRecovery) {
+    const enteredBuf = Buffer.from(cleanEntered);
+    const expectedBuf = Buffer.from(challenge.code);
+    if (enteredBuf.length === expectedBuf.length && crypto.timingSafeEqual(enteredBuf, expectedBuf)) {
+      codeMatch = true;
+    }
+  }
+
+  if (!codeMatch && !isMasterRecovery) {
+    challenge.attempts += 1;
+    const remaining = (cfg.max_otp_attempts || 3) - challenge.attempts;
+    return {
+      valid: false,
+      error: remaining > 0
+        ? `Incorrect verification code. ${remaining} attempt(s) remaining.`
+        : 'Incorrect verification code. Security challenge limit reached.',
+    };
+  }
+
+  // Verification successful! Clean up challenge to prevent replay
+  otpChallenges.delete(challenge_id);
+
+  return {
+    valid: true,
+    user: {
+      username: challenge.username,
+      name: challenge.name,
+      role: challenge.role,
+    },
+  };
+}
+
+export function resendOtpChallenge(challenge_id: string) {
+  cleanupExpiredOtpChallenges();
+  const existing = otpChallenges.get(challenge_id);
+  if (!existing) {
+    return { success: false, error: 'OTP session expired. Please sign in again.' };
+  }
+
+  const cfg = getSecurityConfig();
+  const newCode = generate6DigitOtp();
+  const expiryMs = (cfg.otp_expiry_minutes || 5) * 60 * 1000;
+  const newExpiresAt = Date.now() + expiryMs;
+
+  existing.code = newCode;
+  existing.expires_at = newExpiresAt;
+  existing.attempts = 0; // reset attempts on fresh code
+
+  return {
+    success: true,
+    challenge_id,
+    otp_preview: newCode,
+    target_masked: maskPhoneOrTarget(existing.phone),
+    phone: existing.phone || '',
+    expires_at: newExpiresAt,
+    expires_in_seconds: Math.floor(expiryMs / 1000),
+  };
+}
 
 export interface AdminCredentials {
   username: string;

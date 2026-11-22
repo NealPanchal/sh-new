@@ -1,0 +1,13 @@
+[
+  {
+    "id": "sec_1795328200483_wry4t",
+    "timestamp": "2026-11-22T06:16:40.483Z",
+    "username": "test_admin",
+    "name": "Test Administrator",
+    "role": "admin",
+    "ip": "127.0.0.1",
+    "user_agent": "Node-Test/1.0",
+    "status": "success",
+    "note": "Automated test audit log entry"
+  }
+]

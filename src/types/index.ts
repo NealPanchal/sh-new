@@ -74,6 +74,27 @@ export interface AuthUser {
   role: UserRole;
 }
 
+export interface SecurityAuditEntry {
+  id: string;
+  timestamp: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  ip: string;
+  user_agent?: string;
+  status: 'success' | 'failed' | 'otp_challenge_issued' | 'otp_failed' | 'rate_limited' | 'banned_attempt';
+  note?: string;
+}
+
+export interface SecurityConfig {
+  require_otp: boolean;
+  otp_expiry_minutes: number;
+  max_otp_attempts: number;
+  master_recovery_enabled: boolean;
+  updated_at?: string;
+  updated_by?: string;
+}
+
 export interface EmployeeAccount {
   id: string;
   username: string;

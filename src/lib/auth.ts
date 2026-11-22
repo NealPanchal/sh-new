@@ -10,6 +10,14 @@ const AUTH_TOKEN_KEY = 'showhouse_admin_token';
 
 export interface LoginResult {
   success: boolean;
+  requires_otp?: boolean;
+  challenge_id?: string;
+  target_masked?: string;
+  phone?: string;
+  otp_preview?: string;
+  expires_at?: number;
+  expires_in_seconds?: number;
+  token?: string;
   error?: string;
   user?: {
     username: string;
@@ -38,6 +46,22 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
       };
     }
 
+    // If 2FA OTP verification is required
+    if (data.requires_otp) {
+      return {
+        success: true,
+        requires_otp: true,
+        challenge_id: data.challenge_id,
+        target_masked: data.target_masked,
+        phone: data.phone,
+        otp_preview: data.otp_preview,
+        expires_at: data.expires_at,
+        expires_in_seconds: data.expires_in_seconds,
+        user: data.user,
+      };
+    }
+
+    // Direct Login (when OTP disabled in settings)
     if (typeof window !== 'undefined') {
       if (data.token) {
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
@@ -57,11 +81,107 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
     return {
       success: true,
       user: data.user,
+      token: data.token,
     };
   } catch (err: any) {
     return {
       success: false,
       error: 'Network connection failed. Please check your internet or server.',
+    };
+  }
+}
+
+/**
+ * Verify 2FA OTP Challenge
+ */
+export async function verifyLoginOtp(challenge_id: string, otp_code: string): Promise<LoginResult> {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge_id, otp_code }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || 'Invalid verification code. Please try again.',
+      };
+    }
+
+    if (typeof window !== 'undefined') {
+      if (data.token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+      }
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          authenticated: true,
+          username: data.user?.username,
+          name: data.user?.name || data.user?.username,
+          role: data.user?.role || 'admin',
+          loggedInAt: new Date().toISOString(),
+        })
+      );
+    }
+
+    return {
+      success: true,
+      user: data.user,
+      token: data.token,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: 'Network connection failed. Please check your internet or server.',
+    };
+  }
+}
+
+/**
+ * Resend 2FA OTP Code
+ */
+export async function resendLoginOtp(challenge_id: string): Promise<{
+  success: boolean;
+  challenge_id?: string;
+  otp_preview?: string;
+  target_masked?: string;
+  phone?: string;
+  expires_at?: number;
+  expires_in_seconds?: number;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resend_otp', challenge_id }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || 'Failed to resend verification code',
+      };
+    }
+
+    return {
+      success: true,
+      challenge_id: data.challenge_id,
+      otp_preview: data.otp_preview,
+      target_masked: data.target_masked,
+      phone: data.phone,
+      expires_at: data.expires_at,
+      expires_in_seconds: data.expires_in_seconds,
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Network error while requesting new verification code',
     };
   }
 }

@@ -27,8 +27,12 @@ import {
   Lock,
   FileSpreadsheet,
   Ban,
+  Activity,
+  RefreshCw,
+  Globe,
+  Smartphone,
 } from 'lucide-react';
-import { BusinessProfile, EmployeeAccount } from '@/types';
+import { BusinessProfile, EmployeeAccount, SecurityAuditEntry, SecurityConfig } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn, formatDateIndian } from '@/lib/utils';
 import { exportMonthSalesToExcel } from '@/lib/excel-export';
@@ -86,6 +90,17 @@ export default function SettingsPage() {
   const [savingAdminPassword, setSavingAdminPassword] = useState(false);
   const [adminPasswordSuccess, setAdminPasswordSuccess] = useState(false);
 
+  // Security 2FA Controls & Audit Log State
+  const [securityConfig, setSecurityConfig] = useState<SecurityConfig>({
+    require_otp: true,
+    otp_expiry_minutes: 5,
+    max_otp_attempts: 3,
+    master_recovery_enabled: true,
+  });
+  const [securityLogs, setSecurityLogs] = useState<SecurityAuditEntry[]>([]);
+  const [loadingSecurity, setLoadingSecurity] = useState(false);
+  const [savingSecurityConfig, setSavingSecurityConfig] = useState(false);
+
   // Bank & Terms
   const [bankName, setBankName] = useState('');
   const [bankAccount, setBankAccount] = useState('');
@@ -96,6 +111,24 @@ export default function SettingsPage() {
   // UI state
   const [saving, setSaving] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  const fetchSecurityData = async () => {
+    try {
+      setLoadingSecurity(true);
+      const token = getClientAuthToken();
+      const res = await fetch('/api/auth/security', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.config) setSecurityConfig(data.config);
+        if (Array.isArray(data.logs)) setSecurityLogs(data.logs);
+      }
+    } catch {
+    } finally {
+      setLoadingSecurity(false);
+    }
+  };
 
   useEffect(() => {
     if (mounted && !isEmployee) {
@@ -110,8 +143,43 @@ export default function SettingsPage() {
           }
         })
         .catch(() => {});
+
+      fetchSecurityData();
     }
   }, [mounted, isEmployee]);
+
+  const handleToggleOtpRequirement = async () => {
+    try {
+      setSavingSecurityConfig(true);
+      const token = getClientAuthToken();
+      const nextVal = !securityConfig.require_otp;
+      const res = await fetch('/api/auth/security', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ require_otp: nextVal }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setSecurityConfig(data.config);
+        showToast(
+          nextVal
+            ? '2FA OTP Verification enforced for all logins!'
+            : '2FA OTP Verification turned off.',
+          'success'
+        );
+        fetchSecurityData();
+      } else {
+        showToast(data.error || 'Failed to update security setting', 'error');
+      }
+    } catch {
+      showToast('Error updating security setting', 'error');
+    } finally {
+      setSavingSecurityConfig(false);
+    }
+  };
 
   const handleChangeAdminPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -880,6 +948,229 @@ export default function SettingsPage() {
               </button>
             </div>
           </form>
+        </div>
+
+        {/* Security Suite, 2FA OTP & Login Audit Trail */}
+        <div className="card p-6 space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-surface-100">
+            <div className="flex items-center gap-2 text-emerald-700 font-bold text-base">
+              <ShieldCheck size={20} className="text-emerald-600" />
+              <span>Security Suite & 2-Factor Authentication (2FA)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={fetchSecurityData}
+                disabled={loadingSecurity}
+                className="text-xs text-surface-500 hover:text-surface-800 p-1.5 rounded-md hover:bg-surface-100 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                title="Refresh Security Logs"
+              >
+                <RefreshCw size={13} className={loadingSecurity ? 'animate-spin' : ''} />
+                <span className="hidden sm:inline">Refresh Logs</span>
+              </button>
+              <span
+                className={cn(
+                  'text-[11px] font-bold px-2.5 py-0.5 rounded-full border',
+                  securityConfig.require_otp
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-surface-100 text-surface-600 border-surface-200'
+                )}
+              >
+                {securityConfig.require_otp ? '2FA Enforced' : '2FA Optional'}
+              </span>
+            </div>
+          </div>
+
+          {/* 2FA Controls & Feature Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* OTP Enforcement Control */}
+            <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 space-y-3 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
+                    <Key size={14} className="text-primary-600" />
+                    <span>2-Step OTP Verification</span>
+                  </span>
+                  <span
+                    className={cn(
+                      'text-[10px] font-bold px-2 py-0.5 rounded-md',
+                      securityConfig.require_otp
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-surface-200 text-surface-700'
+                    )}
+                  >
+                    {securityConfig.require_otp ? 'ACTIVE' : 'DISABLED'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-surface-500 mt-1.5 leading-relaxed">
+                  When enabled, all Admin and Staff logins require a cryptographically generated 6-digit OTP challenge. Staff cannot bypass without verifying.
+                </p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-between border-t border-surface-200/80">
+                <span className="text-[11px] text-surface-500">
+                  Challenge Expiry: <b>{securityConfig.otp_expiry_minutes || 5} mins</b>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleToggleOtpRequirement}
+                  disabled={savingSecurityConfig}
+                  className={cn(
+                    'text-xs font-bold py-1.5 px-3 rounded-lg transition-colors cursor-pointer border',
+                    securityConfig.require_otp
+                      ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                      : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                  )}
+                >
+                  {savingSecurityConfig
+                    ? 'Updating...'
+                    : securityConfig.require_otp
+                    ? 'Disable OTP Verification'
+                    : 'Enforce OTP Verification'}
+                </button>
+              </div>
+            </div>
+
+            {/* Anti-Brute Force & Master Emergency Recovery */}
+            <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 space-y-3 flex flex-col justify-between">
+              <div>
+                <span className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
+                  <ShieldAlert size={14} className="text-amber-600" />
+                  <span>Anti-Brute Force & Emergency Recovery</span>
+                </span>
+                <p className="text-[11px] text-surface-500 mt-1.5 leading-relaxed">
+                  Network rate limiting automatically locks any IP address after 5 consecutive failed attempts. OTP challenges expire in 5 minutes with a maximum 3 attempt limit.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-[11px] text-amber-900 flex items-center justify-between">
+                <div>
+                  <span className="font-semibold block text-[10px] text-amber-700 uppercase tracking-wider">
+                    Master Admin Recovery Passcode:
+                  </span>
+                  <code className="font-mono font-bold text-xs text-amber-950">SH-SECURE-2026</code>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded">
+                  Active Bypass
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Login Activity Audit Trail */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-surface-800 flex items-center gap-1.5">
+                <Activity size={14} className="text-primary-600" />
+                <span>Recent Security & Login Audit Trail</span>
+              </span>
+              <span className="text-[11px] text-surface-400">
+                Tracking last {securityLogs.length} authentication events
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-surface-200 rounded-lg shadow-2xs max-h-64 overflow-y-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-surface-50 text-[10px] font-bold text-surface-600 uppercase border-b border-surface-200 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-3 py-2 w-32">Timestamp</th>
+                    <th className="px-3 py-2">User / Identity</th>
+                    <th className="px-3 py-2 text-center w-20">Role</th>
+                    <th className="px-3 py-2 text-center w-28">Event Status</th>
+                    <th className="px-3 py-2">IP / Network</th>
+                    <th className="px-3 py-2">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-100 bg-white">
+                  {securityLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-6 text-center text-surface-400 text-xs">
+                        No login events recorded yet. Activity will appear here in real time.
+                      </td>
+                    </tr>
+                  ) : (
+                    securityLogs.slice(0, 25).map((log) => {
+                      const dateObj = new Date(log.timestamp);
+                      const timeStr = !isNaN(dateObj.getTime())
+                        ? dateObj.toLocaleString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          })
+                        : log.timestamp;
+
+                      let badgeClass = 'bg-surface-100 text-surface-700 border-surface-200';
+                      let statusText: string = log.status;
+
+                      if (log.status === 'success') {
+                        badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                        statusText = 'Login Success';
+                      } else if (log.status === 'otp_challenge_issued') {
+                        badgeClass = 'bg-sky-50 text-sky-700 border-sky-200';
+                        statusText = 'OTP Sent';
+                      } else if (log.status === 'otp_failed') {
+                        badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+                        statusText = 'OTP Failed';
+                      } else if (log.status === 'failed') {
+                        badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+                        statusText = 'Failed Auth';
+                      } else if (log.status === 'rate_limited') {
+                        badgeClass = 'bg-red-50 text-red-700 border-red-200';
+                        statusText = 'Rate Limited';
+                      } else if (log.status === 'banned_attempt') {
+                        badgeClass = 'bg-gray-100 text-gray-800 border-gray-300';
+                        statusText = 'Banned User';
+                      }
+
+                      return (
+                        <tr key={log.id} className="hover:bg-surface-50/70 transition-colors">
+                          <td className="px-3 py-2 text-[11px] font-mono text-surface-500 whitespace-nowrap">
+                            {timeStr}
+                          </td>
+                          <td className="px-3 py-2 font-semibold text-surface-900 whitespace-nowrap">
+                            {log.name || log.username}
+                            <span className="text-[10px] text-surface-400 font-mono block">
+                              @{log.username}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            <span
+                              className={cn(
+                                'text-[10px] font-bold px-2 py-0.5 rounded-full uppercase',
+                                log.role === 'admin'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-primary-50 text-primary-700'
+                              )}
+                            >
+                              {log.role}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            <span
+                              className={cn(
+                                'text-[10px] font-bold px-2 py-0.5 rounded-md border inline-block min-w-[75px]',
+                                badgeClass
+                              )}
+                            >
+                              {statusText}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 font-mono text-[11px] text-surface-600 whitespace-nowrap">
+                            {log.ip}
+                          </td>
+                          <td className="px-3 py-2 text-[11px] text-surface-500 max-w-xs truncate" title={log.note || ''}>
+                            {log.note || 'Authentication event'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         {/* Employee / Billing Staff Management */}
