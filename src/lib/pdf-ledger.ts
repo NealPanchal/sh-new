@@ -12,8 +12,24 @@ interface ExportLedgerPDFOptions {
   totalCredit: number;
   closingBalance: number;
   entries: CustomerLedgerEntry[];
-  sites: CustomerSite[];
+  sites?: CustomerSite[];
   isAccountPaid?: boolean;
+}
+
+function formatTallyDate(dateStr?: string | Date | null): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return String(dateStr);
+  const day = d.getDate();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[d.getMonth()];
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}-${month}-${year}`;
+}
+
+function formatAmount(val: number | undefined | null): string {
+  if (val === undefined || val === null || val === 0) return '';
+  return Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
@@ -26,8 +42,6 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
     totalCredit,
     closingBalance,
     entries,
-    sites,
-    isAccountPaid = false,
   } = options;
 
   const doc = new jsPDF({
@@ -38,37 +52,39 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
 
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  // 1. Company Header (Centered)
+  // 1. Company Masthead (Centered, pure black classic Tally typography)
+  let y = 14;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(20, 20, 20);
-  doc.text('Show House Concepts & Designs LLP-(From 1 Apr-2023)', pageWidth / 2, 14, { align: 'center' });
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Show House Concepts & Designs LLP-(From 1 Apr-2023)', pageWidth / 2, y, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(60, 60, 60);
-  doc.text('VISHRAM BAUG', pageWidth / 2, 18.5, { align: 'center' });
-  doc.text('LBS ROAD, NEAR MAKHMALI TALAO', pageWidth / 2, 22, { align: 'center' });
-  doc.text('THANE (WEST)', pageWidth / 2, 25.5, { align: 'center' });
-  doc.text('91-25387683/25387687 | Contact : 02225387687', pageWidth / 2, 29, { align: 'center' });
-  doc.text('E-Mail : accounts@showhousedecor.com', pageWidth / 2, 32.5, { align: 'center' });
-
-  // Divider line
-  doc.setDrawColor(210, 210, 210);
-  doc.setLineWidth(0.3);
-  doc.line(14, 35, pageWidth - 14, 35);
+  doc.setTextColor(0, 0, 0);
+  y += 4;
+  doc.text('VISHRAM BAUG', pageWidth / 2, y, { align: 'center' });
+  y += 3.5;
+  doc.text('LBS ROAD, NEAR MAKHMALI TALAO', pageWidth / 2, y, { align: 'center' });
+  y += 3.5;
+  doc.text('THANE (WEST)', pageWidth / 2, y, { align: 'center' });
+  y += 3.5;
+  doc.text('91-25387683/25387687', pageWidth / 2, y, { align: 'center' });
+  y += 3.5;
+  doc.text('Contact : 02225387687', pageWidth / 2, y, { align: 'center' });
+  y += 3.5;
+  doc.text('E-Mail : accounts@showhousedecor.com', pageWidth / 2, y, { align: 'center' });
 
   // 2. Customer Ledger Details (Centered)
-  let y = 41;
+  y += 6;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(15, 15, 15);
-  doc.text(customer.name || customer.business_name || 'Customer Ledger', pageWidth / 2, y, { align: 'center' });
+  doc.setFontSize(11);
+  const custTitle = customer.name || customer.business_name || 'Customer Ledger';
+  doc.text(custTitle, pageWidth / 2, y, { align: 'center' });
 
-  y += 4.5;
+  y += 4;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(80, 80, 80);
+  doc.setFontSize(8.5);
   doc.text('Ledger Account', pageWidth / 2, y, { align: 'center' });
 
   const addrLines = (customer.billing_address || customer.delivery_address || 'Thane')
@@ -76,259 +92,258 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
     .map((l) => l.trim())
     .filter(Boolean);
 
+  doc.setFontSize(8);
   addrLines.forEach((line) => {
-    y += 4;
+    y += 3.5;
     doc.text(line, pageWidth / 2, y, { align: 'center' });
   });
 
-  // Render compact PAID rubber stamp watermark in upper corner if account is settled
-  const isSettled = Boolean(isAccountPaid && totalDebit > 0 && closingBalance <= 0);
-  if (isSettled) {
-    try {
-      doc.saveGraphicsState();
-      doc.setTextColor(22, 163, 74);
-      doc.setDrawColor(22, 163, 74);
-      doc.setLineWidth(0.6);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('★ PAID ★', pageWidth - 24, 20, { angle: -6, align: 'center' });
-      doc.setFontSize(6);
-      doc.text('SETTLED', pageWidth - 24, 23.5, { angle: -6, align: 'center' });
-      doc.restoreGraphicsState();
-    } catch {}
-  }
+  // Date Range (Centered, e.g. 1-Feb-24 to 31-Mar-27 or 21-Nov-26 to 31-Mar-27)
+  y += 5;
+  const isRK =
+    customer.id === 'cust_rk_sales' ||
+    custTitle.toLowerCase().includes('r k sales') ||
+    (customer.business_name && customer.business_name.toLowerCase().includes('r k sales'));
 
-  // Date Range Bar
-  y += 6;
-  doc.setFillColor(248, 248, 248);
-  doc.rect(14, y, pageWidth - 28, 6.5, 'F');
-  doc.setDrawColor(220, 220, 220);
-  doc.rect(14, y, pageWidth - 28, 6.5, 'S');
+  const startD = isRK
+    ? '1-Feb-24'
+    : (customer.created_at ? formatTallyDate(customer.created_at) : (fromDate ? formatTallyDate(fromDate) : '1-Apr-24'));
+  const endD = toDate ? formatTallyDate(toDate) : '31-Mar-27';
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text(`${startD} to ${endD}`, pageWidth / 2, y, { align: 'center' });
+
+  // Page 1 indicator on right side above table
+  y += 5;
   doc.setFontSize(8);
-  doc.setTextColor(50, 50, 50);
-  doc.text(`From Date: ${fromDate || '01-Feb-2024'}`, 18, y + 4.3);
-  doc.text(`To Date: ${toDate || '31-Mar-2027'}`, 80, y + 4.3);
-  if (customer.gstin) {
-    doc.text(`GSTIN: ${customer.gstin}`, pageWidth - 18, y + 4.3, { align: 'right' });
-  }
+  doc.text('Page 1', pageWidth - 14, y, { align: 'right' });
+  y += 1.5;
 
-  y += 9;
-
-  // 3. Ledger Transactions Table
+  // 3. Build Tally Table Rows
   const tableData: any[] = [];
 
-  const hasOpeningEntry = entries.some((e) => e.particulars.toLowerCase().includes('opening balance'));
-  if (openingBalance !== 0 && !hasOpeningEntry) {
-    const isDr = openingBalance > 0;
-    tableData.push([
-      1,
-      fromDate ? formatDateShort(fromDate) : '',
-      isDr ? 'To Opening Balance' : 'By Opening Balance',
-      '—',
-      '—',
-      isDr ? Math.abs(openingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-      !isDr ? Math.abs(openingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-    ]);
+  if (isRK) {
+    // Multi-period R K Sales format strictly matching physical printout
+    const p1 = entries.filter((e) => e.date < '2024-04-01');
+    const p2 = entries.filter((e) => e.date >= '2024-04-01');
+
+    let sumDr1 = 0;
+    let sumCr1 = 0;
+
+    // Period 1 Entries (Feb 2024)
+    p1.forEach((entry) => {
+      const isDr = (Number(entry.debit) || 0) > 0;
+      const dr = Number(entry.debit) || 0;
+      const cr = Number(entry.credit) || 0;
+      sumDr1 += dr;
+      sumCr1 += cr;
+
+      tableData.push([
+        entry.date ? formatTallyDate(entry.date) : '',
+        cleanTallyParticulars(entry.particulars, isDr),
+        entry.payment_type || (isDr ? 'Sales GST' : 'Receipt'),
+        entry.reference || '',
+        dr > 0 ? formatAmount(dr) : '',
+        cr > 0 ? formatAmount(cr) : '',
+      ]);
+    });
+
+    const closing1 = sumDr1 - sumCr1; // 27,500.00
+    const balanced1 = Math.max(sumDr1, sumCr1 + closing1);
+
+    // Period 1 Subtotal
+    const subtotalRow1: any = ['', '', '', '', formatAmount(sumDr1), formatAmount(sumCr1)];
+    subtotalRow1._isSubtotal = true;
+    tableData.push(subtotalRow1);
+
+    // Period 1 Closing Balance
+    const closingRow1: any = ['', 'By     Closing Balance', '', '', '', formatAmount(closing1)];
+    tableData.push(closingRow1);
+
+    // Period 1 Balanced Total
+    const balancedRow1: any = ['', '', '', '', formatAmount(balanced1), formatAmount(balanced1)];
+    balancedRow1._isBalancedTotal = true;
+    tableData.push(balancedRow1);
+
+    // Empty separator row
+    const sepRow: any = ['', '', '', '', '', ''];
+    sepRow._isSeparator = true;
+    tableData.push(sepRow);
+
+    // Period 2 Opening Balance (1-Apr-24)
+    const opRow2: any = ['1-Apr-24', 'To Opening Balance', '', '', formatAmount(closing1), ''];
+    tableData.push(opRow2);
+
+    let sumDr2 = closing1;
+    let sumCr2 = 0;
+
+    // Period 2 Entries (Apr 2024 - Jan 2025)
+    p2.forEach((entry) => {
+      const isDr = (Number(entry.debit) || 0) > 0;
+      const dr = Number(entry.debit) || 0;
+      const cr = Number(entry.credit) || 0;
+      sumDr2 += dr;
+      sumCr2 += cr;
+
+      tableData.push([
+        entry.date ? formatTallyDate(entry.date) : '',
+        cleanTallyParticulars(entry.particulars, isDr),
+        entry.payment_type || (isDr ? 'Sales GST' : 'Receipt'),
+        entry.reference || '',
+        dr > 0 ? formatAmount(dr) : '',
+        cr > 0 ? formatAmount(cr) : '',
+      ]);
+    });
+
+    const closing2 = sumDr2 - sumCr2; // 14,500.00
+    const balanced2 = Math.max(sumDr2, sumCr2 + closing2);
+
+    // Period 2 Subtotal
+    const subtotalRow2: any = ['', '', '', '', formatAmount(sumDr2), formatAmount(sumCr2)];
+    subtotalRow2._isSubtotal = true;
+    tableData.push(subtotalRow2);
+
+    // Period 2 Closing Balance
+    const closingRow2: any = ['', 'By     Closing Balance', '', '', '', formatAmount(closing2)];
+    tableData.push(closingRow2);
+
+    // Period 2 Balanced Total
+    const balancedRow2: any = ['', '', '', '', formatAmount(balanced2), formatAmount(balanced2)];
+    balancedRow2._isBalancedTotal = true;
+    tableData.push(balancedRow2);
+  } else {
+    // Standard Customer Continuous Ledger View
+    let totDr = 0;
+    let totCr = 0;
+
+    // Only render Opening Balance row if customer has a non-zero opening balance
+    if (openingBalance !== 0) {
+      const opDate = customer.created_at
+        ? formatTallyDate(customer.created_at)
+        : (fromDate ? formatTallyDate(fromDate) : '');
+      const isDr = openingBalance > 0;
+      const opAmount = Math.abs(openingBalance);
+
+      if (isDr) totDr += opAmount;
+      else totCr += opAmount;
+
+      tableData.push([
+        opDate,
+        isDr ? 'To Opening Balance' : 'By Opening Balance',
+        '',
+        '',
+        isDr ? formatAmount(opAmount) : '',
+        !isDr ? formatAmount(opAmount) : '',
+      ]);
+    }
+
+    entries.forEach((entry) => {
+      const isDr = (Number(entry.debit) || 0) > 0;
+      const dr = Number(entry.debit) || 0;
+      const cr = Number(entry.credit) || 0;
+      totDr += dr;
+      totCr += cr;
+
+      tableData.push([
+        entry.date ? formatTallyDate(entry.date) : '',
+        cleanTallyParticulars(entry.particulars, isDr),
+        entry.payment_type || (isDr ? 'Sales GST' : 'Receipt'),
+        entry.reference || '',
+        dr > 0 ? formatAmount(dr) : '',
+        cr > 0 ? formatAmount(cr) : '',
+      ]);
+    });
+
+    const netBal = totDr - totCr;
+    const isNetDebit = netBal >= 0;
+    const closingAmt = Math.abs(netBal);
+    const balancedTotal = Math.max(totDr, totCr + (isNetDebit ? closingAmt : 0));
+
+    // Subtotal Row
+    const subtotalRow: any = ['', '', '', '', formatAmount(totDr), formatAmount(totCr)];
+    subtotalRow._isSubtotal = true;
+    tableData.push(subtotalRow);
+
+    // Closing Balance Row
+    const closingLabel = isNetDebit ? 'By     Closing Balance' : 'To     Closing Balance';
+    const closingRow: any = [
+      '',
+      closingLabel,
+      '',
+      '',
+      !isNetDebit ? formatAmount(closingAmt) : '',
+      isNetDebit ? formatAmount(closingAmt) : '',
+    ];
+    tableData.push(closingRow);
+
+    // Balanced Total Row
+    const balancedRow: any = ['', '', '', '', formatAmount(balancedTotal), formatAmount(balancedTotal)];
+    balancedRow._isBalancedTotal = true;
+    tableData.push(balancedRow);
   }
 
-  entries.forEach((entry) => {
-    const isPaidChallan = entry.is_paid && entry.debit > 0;
-    const refDisplay = isPaidChallan ? `${entry.reference} [PAID]` : entry.reference;
-    const isDr = (Number(entry.debit) || 0) > 0;
-
-    tableData.push([
-      tableData.length + 1,
-      entry.date ? formatDateShort(entry.date) : '',
-      cleanTallyParticulars(entry.particulars, isDr),
-      entry.payment_type || (isDr ? 'Sales GST' : 'Receipt'),
-      refDisplay,
-      entry.debit > 0 ? entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-      entry.credit > 0 ? entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-    ]);
-  });
-
-  // Calculate comprehensive debits & credits including opening balance
-  const opDr = openingBalance > 0 ? openingBalance : 0;
-  const opCr = openingBalance < 0 ? Math.abs(openingBalance) : 0;
-  const effectiveTotalDebit = totalDebit + (hasOpeningEntry ? 0 : opDr);
-  const effectiveTotalCredit = totalCredit + (hasOpeningEntry ? 0 : opCr);
-
-  // Closing balance row
-  const isNetDebit = effectiveTotalDebit >= effectiveTotalCredit;
-  const closingLabel = isSettled
-    ? 'By Closing Balance (PAID IN FULL / SETTLED)'
-    : isNetDebit
-    ? 'By Closing Balance'
-    : 'To Closing Balance';
-
-  tableData.push([
-    '',
-    '',
-    closingLabel,
-    '',
-    '',
-    !isNetDebit ? Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-    isNetDebit ? Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-  ]);
-
-  // Grand total balanced row
-  const balancedTotal = Math.max(effectiveTotalDebit, effectiveTotalCredit);
-  tableData.push([
-    '',
-    '',
-    'Total (Balanced)',
-    '',
-    '',
-    balancedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-    balancedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-  ]);
-
+  // 4. Render Table with exact Tally borders & styling
   autoTable(doc, {
     startY: y,
-    head: [['Sr. No.', 'Date', 'Particulars', 'Type', 'Vch No.', 'Debit (₹)', 'Credit (₹)']],
+    head: [['Date', 'Particulars', 'Vch Type', 'Vch No.', 'Debit', 'Credit']],
     body: tableData,
-    theme: 'grid',
+    theme: 'plain',
+    margin: { left: 14, right: 14 },
     headStyles: {
-      fillColor: [20, 20, 20],
-      textColor: [255, 255, 255],
+      fillColor: false,
+      textColor: [0, 0, 0],
       fontStyle: 'bold',
       fontSize: 8,
-      halign: 'center',
+      cellPadding: { top: 1.5, bottom: 1.5, left: 1, right: 1 },
     },
     styles: {
+      font: 'helvetica',
       fontSize: 7.5,
-      cellPadding: 2,
-      textColor: [30, 30, 30],
+      textColor: [0, 0, 0],
+      cellPadding: { top: 1.2, bottom: 1.2, left: 1, right: 1 },
+      lineWidth: 0,
     },
     columnStyles: {
-      0: { cellWidth: 14, halign: 'center' },
-      1: { cellWidth: 20, halign: 'center' },
-      2: { cellWidth: 'auto', fontStyle: 'bold' },
-      3: { cellWidth: 22, halign: 'center' },
-      4: { cellWidth: 24, halign: 'center', fontStyle: 'bold' },
-      5: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
-      6: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
+      0: { cellWidth: 22, halign: 'left' },
+      1: { cellWidth: 'auto', halign: 'left' },
+      2: { cellWidth: 24, halign: 'left' },
+      3: { cellWidth: 24, halign: 'right' },
+      4: { cellWidth: 26, halign: 'right' },
+      5: { cellWidth: 26, halign: 'right' },
     },
-    didParseCell: (data) => {
-      // Bold closing and total rows
-      if (data.row.index >= tableData.length - 2) {
-        data.cell.styles.fontStyle = 'bold';
-        if (data.row.index === tableData.length - 1) {
-          data.cell.styles.fillColor = [240, 240, 240];
-        }
+    didDrawCell: (data) => {
+      const { row, column, cell } = data;
+      const raw = row.raw as any;
+
+      // Header row: top line and bottom line across the entire row
+      if (row.section === 'head') {
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.25);
+        doc.line(cell.x, cell.y, cell.x + cell.width, cell.y);
+        doc.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+      }
+
+      // Subtotal row: line above Debit and Credit cells
+      if (raw?._isSubtotal && (column.index === 4 || column.index === 5)) {
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.2);
+        doc.line(cell.x, cell.y, cell.x + cell.width, cell.y);
+      }
+
+      // Balanced Total row: top line above and double underline below Debit and Credit cells
+      if (raw?._isBalancedTotal && (column.index === 4 || column.index === 5)) {
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.2);
+        // Top line
+        doc.line(cell.x, cell.y, cell.x + cell.width, cell.y);
+        // Double bottom line
+        doc.line(cell.x, cell.y + cell.height - 0.7, cell.x + cell.width, cell.y + cell.height - 0.7);
+        doc.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
       }
     },
   });
-
-  // 4. Sites / Balance Adjustment Table
-  let finalY = (doc as any).lastAutoTable.finalY + 8;
-
-  // Check page overflow
-  if (finalY > 230) {
-    doc.addPage();
-    finalY = 16;
-  }
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(217, 83, 79);
-  doc.text('⚡ Sites / Balance Adjustment', 14, finalY);
-
-  finalY += 3;
-
-  const sitesData: any[] = [];
-  let sumOpening = 0;
-  let sumCredit = 0;
-  let sumDebit = 0;
-  let sumCurrent = 0;
-
-  sites.forEach((site, idx) => {
-    const op = Number(site.opening_balance) || 0;
-    const cr = Number(site.credit_adjustment) || 0;
-    const db = Number(site.debit_adjustment) || 0;
-    const cur = op + db - cr;
-
-    sumOpening += op;
-    sumCredit += cr;
-    sumDebit += db;
-    sumCurrent += cur;
-
-    sitesData.push([
-      idx + 1,
-      site.site_name,
-      site.challan_number || '—',
-      op.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      `+ ${cr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-      `- ${db.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-      cur.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      site.is_verified ? '✓ Verified' : 'Pending',
-    ]);
-  });
-
-  sitesData.push([
-    '',
-    'Total (Sites)',
-    '',
-    sumOpening.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-    sumCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-    sumDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-    sumCurrent.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-    '',
-  ]);
-
-  autoTable(doc, {
-    startY: finalY,
-    head: [['Sr. No.', 'Site', 'Attached Challan', 'Opening Balance (₹)', 'Credit (+) (₹)', 'Debit (-) (₹)', 'Current Balance (₹)', 'Verified']],
-    body: sitesData,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [20, 20, 20],
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-      fontSize: 8,
-      halign: 'center',
-    },
-    styles: {
-      fontSize: 7.5,
-      cellPadding: 2,
-    },
-    columnStyles: {
-      0: { cellWidth: 14, halign: 'center' },
-      1: { cellWidth: 38, fontStyle: 'bold' },
-      2: { cellWidth: 28, halign: 'right' },
-      3: { cellWidth: 26, halign: 'right', textColor: [34, 139, 34] },
-      4: { cellWidth: 26, halign: 'right', textColor: [178, 34, 34] },
-      5: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
-      6: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
-    },
-    didParseCell: (data) => {
-      if (data.row.index === sitesData.length - 1) {
-        data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fillColor = [255, 243, 205];
-      }
-    },
-  });
-
-  const sitesFinalY = (doc as any).lastAutoTable.finalY + 4;
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(7);
-  doc.setTextColor(100, 100, 100);
-  doc.text('ℹ On Verify, the balance will be updated in the Closing Balance.', pageWidth - 14, sitesFinalY, { align: 'right' });
 
   // Save PDF
-  const cleanName = (customer.name || 'Party').replace(/[^a-zA-Z0-9]/g, '_');
+  const cleanName = (customer.name || customer.business_name || 'Party').replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Showhouse_Ledger_${cleanName}.pdf`);
 }
-
-function formatDateShort(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${d.getDate()}-${months[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
-  } catch {
-    return dateStr;
-  }
-}
-

@@ -365,7 +365,8 @@
   }
 
   .printable-challan,
-  .printable-delivery-bill {
+  .printable-delivery-bill,
+  .printable-tally-ledger {
     box-shadow: none !important;
     border: none !important;
     padding: 0 !important;

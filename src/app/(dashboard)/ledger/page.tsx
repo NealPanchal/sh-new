@@ -229,7 +229,7 @@ function MasterPartyLedgerContent() {
   const [isDeletingEntireLedger, setIsDeletingEntireLedger] = useState(false);
 
   // Filter toolbar
-  const [fromDate, setFromDate] = useState('2024-02-01');
+  const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('2027-03-31');
   const [typeFilter, setTypeFilter] = useState('all');
   const [siteFilter, setSiteFilter] = useState('all');
@@ -249,7 +249,7 @@ function MasterPartyLedgerContent() {
     entries: CustomerLedgerEntry[];
     sites: CustomerSite[];
   }>({
-    openingBalance: 27500,
+    openingBalance: 0,
     totalDebit: 0,
     totalCredit: 0,
     closingBalance: 0,
@@ -1073,6 +1073,22 @@ function MasterPartyLedgerContent() {
   const isRKSales =
     selectedCustomer.name?.toLowerCase().includes('r k sales') ||
     selectedCustomer.id === 'cust_rk_sales';
+
+  // Synchronize fromDate to customer creation date (or 2024-02-01 for R K Sales)
+  useEffect(() => {
+    if (!selectedCustomer || !selectedCustomer.id) return;
+    const isRK =
+      selectedCustomer.id === 'cust_rk_sales' ||
+      selectedCustomer.name?.toLowerCase().includes('r k sales') ||
+      (selectedCustomer.business_name && selectedCustomer.business_name.toLowerCase().includes('r k sales'));
+    if (isRK) {
+      setFromDate('2024-02-01');
+    } else if (selectedCustomer.created_at) {
+      setFromDate(toInputDateFormat(selectedCustomer.created_at));
+    } else {
+      setFromDate(toInputDateFormat(new Date()));
+    }
+  }, [selectedCustomer?.id, selectedCustomer?.created_at, selectedCustomer?.name, selectedCustomer?.business_name]);
 
   const { period1Entries, period2Entries, period1TotalDebit, period1TotalCredit, period1Closing } =
     useMemo(() => {
@@ -2167,11 +2183,11 @@ function MasterPartyLedgerContent() {
       customer: selectedCustomer,
       fromDate,
       toDate,
-      openingBalance: isRKSales ? 27500 : ledgerData.openingBalance,
+      openingBalance: isRKSales ? 27500 : (Number(ledgerData.openingBalance) || 0),
       totalDebit: isRKSales ? period2Calculations.totalDebits : ledgerData.totalDebit,
       totalCredit: isRKSales ? period2Calculations.totalCredits : ledgerData.totalCredit,
       closingBalance: effectiveClosingBalance,
-      entries: isRKSales ? period2Entries : displayEntries,
+      entries: displayEntries,
       sites: reconciledSites.map((s) => ({
         ...s,
         challan_number: s.attached_challans?.map((c) => c.challan_number).join(', ') || s.challan_number || '',
@@ -2230,7 +2246,238 @@ function MasterPartyLedgerContent() {
   const isEmployee = currentUser?.role === 'employee';
 
   return (
-    <div className="space-y-5 pb-20 max-w-7xl mx-auto select-none print:p-0 print:m-0 print:max-w-none">
+    <div className="pb-20 max-w-7xl mx-auto select-none print:p-0 print:m-0 print:max-w-none">
+      {/* ============================================================ */}
+      {/* AUTHENTIC TALLY PRINT CONTAINER (VISIBLE ONLY ON PRINT)      */}
+      {/* EXACT MATCH TO USER PHOTO (media_1795379011933_1d73ba0d.jpg)*/}
+      {/* ============================================================ */}
+      <div className="hidden print:block printable-tally-ledger text-black bg-white w-full max-w-[190mm] mx-auto text-[11px] leading-tight font-sans">
+        {/* 1. Centered Company Masthead */}
+        <div className="text-center pt-2 pb-2 space-y-0.5">
+          <div className="font-bold text-[13px] tracking-tight">Show House Concepts &amp; Designs LLP-(From 1 Apr-2023)</div>
+          <div className="text-[10.5px]">VISHRAM BAUG</div>
+          <div className="text-[10.5px]">LBS ROAD, NEAR MAKHMALI TALAO</div>
+          <div className="text-[10.5px]">THANE (WEST)</div>
+          <div className="text-[10.5px]">91-25387683/25387687</div>
+          <div className="text-[10.5px]">Contact : 02225387687</div>
+          <div className="text-[10.5px]">E-Mail : accounts@showhousedecor.com</div>
+        </div>
+
+        {/* 2. Centered Customer Details */}
+        <div className="text-center pt-2 pb-2 space-y-0.5">
+          <div className="font-bold text-[13.5px]">
+            {(selectedCustomer.name || '').trim() ||
+              (selectedCustomer.business_name || '').trim() ||
+              'Customer Ledger'}
+          </div>
+          <div className="text-[11px]">Ledger Account</div>
+          {(selectedCustomer.billing_address || selectedCustomer.delivery_address || 'Thane')
+            .split('\n')
+            .map((l: string) => l.trim())
+            .filter(Boolean)
+            .map((line: string, i: number) => (
+              <div key={i} className="text-[10.5px] leading-tight">{line}</div>
+            ))}
+          <div className="pt-2 text-[11px]">
+            {isRKSales
+              ? '1-Feb-24'
+              : (selectedCustomer?.created_at
+                  ? formatDateDisplay(selectedCustomer.created_at)
+                  : (fromDate ? formatDateDisplay(fromDate) : '1-Apr-24'))
+            } to {toDate ? formatDateDisplay(toDate) : '31-Mar-27'}
+          </div>
+        </div>
+
+        {/* 3. Page 1 right-aligned */}
+        <div className="text-right text-[10px] pr-1 pb-1">Page 1</div>
+
+        {/* 4. Table */}
+        <table className="w-full border-collapse text-[10.5px]">
+          <thead>
+            <tr className="border-t border-b border-black font-bold">
+              <th className="py-1 px-1.5 text-left font-bold w-[75px]">Date</th>
+              <th className="py-1 px-1.5 text-left font-bold">Particulars</th>
+              <th className="py-1 px-1.5 text-left font-bold w-[80px]">Vch Type</th>
+              <th className="py-1 px-1.5 text-center font-bold w-[75px]">Vch No.</th>
+              <th className="py-1 px-1.5 text-right font-bold w-[80px]">Debit</th>
+              <th className="py-1 px-1.5 text-right font-bold w-[80px]">Credit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isRKSales ? (
+              <>
+                {/* Period 1 Entries */}
+                {period1Entries.map((e) => {
+                  const isDr = (Number(e.debit) || 0) > 0;
+                  return (
+                    <tr key={e.id} className="leading-snug">
+                      <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.date ? formatDateDisplay(e.date) : ''}</td>
+                      <td className="py-0.5 px-1.5 text-left">{cleanTallyParticulars(e.particulars, isDr)}</td>
+                      <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.payment_type || (isDr ? 'Sales GST' : 'Receipt')}</td>
+                      <td className="py-0.5 px-1.5 text-center">{e.reference || ''}</td>
+                      <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.debit) > 0 ? formatAmountDisplay(e.debit) : ''}</td>
+                      <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.credit) > 0 ? formatAmountDisplay(e.credit) : ''}</td>
+                    </tr>
+                  );
+                })}
+                {/* Period 1 Subtotal */}
+                <tr className="leading-snug">
+                  <td colSpan={4}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black">{formatAmountDisplay(period1TotalDebit)}</td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black">{formatAmountDisplay(period1TotalCredit)}</td>
+                </tr>
+                {/* Period 1 Closing Balance */}
+                <tr className="leading-snug">
+                  <td></td>
+                  <td className="py-0.5 px-1.5 text-left">By &nbsp;&nbsp;&nbsp;&nbsp; Closing Balance</td>
+                  <td colSpan={3}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono">{formatAmountDisplay(period1Closing)}</td>
+                </tr>
+                {/* Period 1 Balanced Total */}
+                <tr className="leading-snug">
+                  <td colSpan={4}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black border-b-4 border-double border-black">
+                    {formatAmountDisplay(period1TotalDebit)}
+                  </td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black border-b-4 border-double border-black">
+                    {formatAmountDisplay(period1TotalDebit)}
+                  </td>
+                </tr>
+                {/* Empty Separator */}
+                <tr><td colSpan={6} className="h-4"></td></tr>
+                {/* Period 2 Opening Balance */}
+                <tr className="leading-snug">
+                  <td className="py-0.5 px-1.5 text-left whitespace-nowrap">1-Apr-24</td>
+                  <td className="py-0.5 px-1.5 text-left">To Opening Balance</td>
+                  <td colSpan={2}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono">{formatAmountDisplay(period1Closing)}</td>
+                  <td></td>
+                </tr>
+                {/* Period 2 Entries */}
+                {period2Entries.map((e) => {
+                  const isDr = (Number(e.debit) || 0) > 0;
+                  return (
+                    <tr key={e.id} className="leading-snug">
+                      <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.date ? formatDateDisplay(e.date) : ''}</td>
+                      <td className="py-0.5 px-1.5 text-left">{cleanTallyParticulars(e.particulars, isDr)}</td>
+                      <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.payment_type || (isDr ? 'Sales GST' : 'Receipt')}</td>
+                      <td className="py-0.5 px-1.5 text-center">{e.reference || ''}</td>
+                      <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.debit) > 0 ? formatAmountDisplay(e.debit) : ''}</td>
+                      <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.credit) > 0 ? formatAmountDisplay(e.credit) : ''}</td>
+                    </tr>
+                  );
+                })}
+                {/* Period 2 Subtotal */}
+                <tr className="leading-snug">
+                  <td colSpan={4}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black">{formatAmountDisplay(period2Calculations.totalDebits)}</td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black">{formatAmountDisplay(period2Calculations.totalCredits)}</td>
+                </tr>
+                {/* Period 2 Closing Balance */}
+                <tr className="leading-snug">
+                  <td></td>
+                  <td className="py-0.5 px-1.5 text-left">By &nbsp;&nbsp;&nbsp;&nbsp; Closing Balance</td>
+                  <td colSpan={3}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono">{formatAmountDisplay(period2Calculations.finalClosing)}</td>
+                </tr>
+                {/* Period 2 Balanced Total */}
+                <tr className="leading-snug">
+                  <td colSpan={4}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black border-b-4 border-double border-black">
+                    {formatAmountDisplay(period2Calculations.balancedTotal)}
+                  </td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black border-b-4 border-double border-black">
+                    {formatAmountDisplay(period2Calculations.balancedTotal)}
+                  </td>
+                </tr>
+              </>
+            ) : (
+              <>
+                {/* Standard Customer Continuous View */}
+                {Number(ledgerData.openingBalance) !== 0 && (
+                  <tr className="leading-snug">
+                    <td className="py-0.5 px-1.5 text-left whitespace-nowrap">
+                      {selectedCustomer?.created_at ? formatDateDisplay(selectedCustomer.created_at) : (fromDate ? formatDateDisplay(fromDate) : '')}
+                    </td>
+                    <td className="py-0.5 px-1.5 text-left">
+                      {Number(ledgerData.openingBalance) >= 0 ? 'To Opening Balance' : 'By Opening Balance'}
+                    </td>
+                    <td colSpan={2}></td>
+                    <td className="py-0.5 px-1.5 text-right font-mono">
+                      {Number(ledgerData.openingBalance) >= 0 ? formatAmountDisplay(ledgerData.openingBalance) : ''}
+                    </td>
+                    <td className="py-0.5 px-1.5 text-right font-mono">
+                      {Number(ledgerData.openingBalance) < 0 ? formatAmountDisplay(Math.abs(ledgerData.openingBalance)) : ''}
+                    </td>
+                  </tr>
+                )}
+                {displayEntries.map((e) => {
+                  const isDr = (Number(e.debit) || 0) > 0;
+                  return (
+                    <tr key={e.id} className="leading-snug">
+                      <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.date ? formatDateDisplay(e.date) : ''}</td>
+                      <td className="py-0.5 px-1.5 text-left">{cleanTallyParticulars(e.particulars, isDr)}</td>
+                      <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.payment_type || (isDr ? 'Sales GST' : 'Receipt')}</td>
+                      <td className="py-0.5 px-1.5 text-center">{e.reference || ''}</td>
+                      <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.debit) > 0 ? formatAmountDisplay(e.debit) : ''}</td>
+                      <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.credit) > 0 ? formatAmountDisplay(e.credit) : ''}</td>
+                    </tr>
+                  );
+                })}
+                {/* Subtotal */}
+                <tr className="leading-snug">
+                  <td colSpan={4}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black">
+                    {formatAmountDisplay(
+                      (Number(ledgerData.openingBalance) > 0 ? Number(ledgerData.openingBalance) : 0) + ledgerData.totalDebit
+                    )}
+                  </td>
+                  <td className="py-0.5 px-1.5 text-right font-mono border-t border-black">
+                    {formatAmountDisplay(
+                      (Number(ledgerData.openingBalance) < 0 ? Math.abs(Number(ledgerData.openingBalance)) : 0) + ledgerData.totalCredit
+                    )}
+                  </td>
+                </tr>
+                {/* Closing Balance & Balanced Total */}
+                {(() => {
+                  const totalDr = (Number(ledgerData.openingBalance) > 0 ? Number(ledgerData.openingBalance) : 0) + ledgerData.totalDebit;
+                  const totalCr = (Number(ledgerData.openingBalance) < 0 ? Math.abs(Number(ledgerData.openingBalance)) : 0) + ledgerData.totalCredit;
+                  const netBal = totalDr - totalCr;
+                  const isNetDr = netBal >= 0;
+                  const closingAmt = Math.abs(netBal);
+                  const balancedAmt = Math.max(totalDr, totalCr + (isNetDr ? closingAmt : 0));
+                  return (
+                    <>
+                      <tr className="leading-snug">
+                        <td></td>
+                        <td className="py-0.5 px-1.5 text-left">
+                          {isNetDr ? 'By      Closing Balance' : 'To      Closing Balance'}
+                        </td>
+                        <td colSpan={3}></td>
+                        <td className="py-0.5 px-1.5 text-right font-mono">
+                          {isNetDr && closingAmt > 0 ? formatAmountDisplay(closingAmt) : ''}
+                        </td>
+                      </tr>
+                      <tr className="leading-snug">
+                        <td colSpan={4}></td>
+                        <td className="py-0.5 px-1.5 text-right font-mono border-t border-black border-b-4 border-double border-black">
+                          {formatAmountDisplay(balancedAmt)}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-right font-mono border-t border-black border-b-4 border-double border-black">
+                          {formatAmountDisplay(balancedAmt)}
+                        </td>
+                      </tr>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Screen Interactive Layout (Hidden on Print) */}
+      <div className="print:hidden space-y-5">
       {/* Staff View (Read-Only Mode) Notice Banner */}
       {isEmployee && (
         <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900 font-medium print:hidden">
@@ -2506,6 +2753,14 @@ function MasterPartyLedgerContent() {
                 {selectedCustomer.billing_address ||
                   selectedCustomer.delivery_address ||
                   'LBS marg Nr. Makhmali Talao Thane'}
+              </div>
+              <div className="pt-1.5 text-xs font-bold text-surface-800">
+                {isRKSales
+                  ? '1-Feb-24'
+                  : (selectedCustomer?.created_at
+                      ? formatDateDisplay(selectedCustomer.created_at)
+                      : (fromDate ? formatDateDisplay(fromDate) : '1-Apr-24'))
+                } to {toDate ? formatDateDisplay(toDate) : '31-Mar-27'}
               </div>
             </div>
 
@@ -2976,24 +3231,30 @@ function MasterPartyLedgerContent() {
                   ) : (
                     /* Standard Customer Continuous Ledger View */
                     <>
-                      {/* Opening Balance Row */}
-                      <tr className="bg-surface-50 font-bold">
-                        <td className="py-2 px-3 text-center font-bold text-surface-400 border border-surface-200">1</td>
-                        <td className="py-2 px-3 text-center text-surface-600 whitespace-nowrap border border-surface-200">
-                          {fromDate ? formatDateDisplay(fromDate) : '—'}
-                        </td>
-                        <td className="py-2 px-3 text-surface-950 font-bold border border-surface-200">
-                          <span className="mr-6">To</span>
-                          <span>Opening Balance</span>
-                        </td>
-                        <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
-                        <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
-                          {formatAmountDisplay(ledgerData.openingBalance)}
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono text-surface-400 border border-surface-200"></td>
-                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
-                      </tr>
+                      {/* Opening Balance Row: Only show if customer has non-zero opening balance */}
+                      {Number(ledgerData.openingBalance) !== 0 && (
+                        <tr className="bg-surface-50 font-bold">
+                          <td className="py-2 px-3 text-center font-bold text-surface-400 border border-surface-200">1</td>
+                          <td className="py-2 px-3 text-center text-surface-600 whitespace-nowrap border border-surface-200">
+                            {selectedCustomer?.created_at
+                              ? formatDateDisplay(selectedCustomer.created_at)
+                              : (fromDate ? formatDateDisplay(fromDate) : '—')}
+                          </td>
+                          <td className="py-2 px-3 text-surface-950 font-bold border border-surface-200">
+                            <span className="mr-6">{Number(ledgerData.openingBalance) >= 0 ? 'To' : 'By'}</span>
+                            <span>Opening Balance</span>
+                          </td>
+                          <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
+                          <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
+                            {Number(ledgerData.openingBalance) >= 0 ? formatAmountDisplay(ledgerData.openingBalance) : ''}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-surface-900 border border-surface-200">
+                            {Number(ledgerData.openingBalance) < 0 ? formatAmountDisplay(Math.abs(ledgerData.openingBalance)) : ''}
+                          </td>
+                          <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
+                        </tr>
+                      )}
 
                       {/* Transaction Rows */}
                       {displayEntries.length === 0 ? (
@@ -3006,7 +3267,7 @@ function MasterPartyLedgerContent() {
                         displayEntries.map((e, idx) => (
                           <tr key={e.id} className="hover:bg-surface-50/80 transition-colors">
                             <td className="py-2 px-3 text-center font-bold text-surface-500 border border-surface-200">
-                              {idx + 2}
+                              {(Number(ledgerData.openingBalance) !== 0 ? 1 : 0) + idx + 1}
                             </td>
                             <td className="py-2 px-3 text-center text-surface-600 whitespace-nowrap border border-surface-200">
                               {formatDateDisplay(e.date)}
@@ -4855,6 +5116,7 @@ function MasterPartyLedgerContent() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
