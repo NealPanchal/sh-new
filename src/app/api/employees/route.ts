@@ -9,6 +9,7 @@ import {
   updateEmployeePasswordAsync,
 } from '@/lib/employee-accounts';
 import { invalidateDataCache } from '@/lib/server-storage';
+import { deleteDocFromFirestoreRest } from '@/lib/server-firestore';
 import { EmployeeAccount } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -186,6 +187,20 @@ export async function POST(req: NextRequest) {
     const saved = await saveEmployeeAccountsAsync(updated);
     if (!saved) {
       return NextResponse.json({ success: false, error: 'Failed to write employees file' }, { status: 500 });
+    }
+
+    // Clean up deleted employee documents from Cloud Firestore
+    const updatedUsernames = new Set(updated.map((u) => u.username.toLowerCase()));
+    const removedEmployees = current.filter(
+      (c) => !updatedUsernames.has(c.username.toLowerCase()) && c.username !== 'adminsh' && c.username !== 'admin'
+    );
+    if (removedEmployees.length > 0) {
+      await Promise.allSettled(
+        removedEmployees.flatMap((rem) => [
+          deleteDocFromFirestoreRest('employees', rem.username.toLowerCase()),
+          rem.id ? deleteDocFromFirestoreRest('employees', rem.id.toLowerCase()) : Promise.resolve(),
+        ])
+      );
     }
 
     invalidateDataCache('employees.json');

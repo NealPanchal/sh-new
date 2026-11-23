@@ -288,6 +288,10 @@ export interface AdminCredentials {
 
 let cachedAdminCreds: AdminCredentials | null = null;
 
+export function clearCachedAdminCreds(): void {
+  cachedAdminCreds = null;
+}
+
 export function getAdminCredentials(): AdminCredentials {
   if (cachedAdminCreds) {
     return cachedAdminCreds;
@@ -314,6 +318,31 @@ export async function getAdminCredentialsAsync(): Promise<AdminCredentials> {
     phone: DEFAULT_ADMIN_PHONE,
   };
 
+  // If we have a valid in-process cache, use it (set by setAdminCredentialsAsync on same Lambda)
+  if (cachedAdminCreds && cachedAdminCreds.username && cachedAdminCreds.password) {
+    return cachedAdminCreds;
+  }
+
+  // Always do a direct Firestore fetch on cold start (cachedAdminCreds is null)
+  // This ensures changed passwords are always read from the source of truth
+  try {
+    const remote = await fetchDocFromFirestoreRest('auth_config', 'admin_credentials');
+    if (remote && remote.username && remote.password) {
+      cachedAdminCreds = {
+        username: (remote.username || DEFAULT_ADMIN_USERNAME).trim().toLowerCase(),
+        password: remote.password || DEFAULT_ADMIN_PASSWORD,
+        phone: (remote.phone || DEFAULT_ADMIN_PHONE).trim(),
+        updated_at: remote.updated_at,
+      };
+      // Also populate storage cache so reads from safeReadDataFile are consistent
+      safeWriteDataFile('admin_credentials.json', cachedAdminCreds);
+      return cachedAdminCreds;
+    }
+  } catch (err) {
+    console.warn('[server-auth] Direct Firestore fetch for admin_credentials failed:', err);
+  }
+
+  // Fallback: try syncFromFirestoreIfCold (reads /tmp or data/ file)
   try {
     const data = await syncFromFirestoreIfCold<AdminCredentials>('admin_credentials.json', fallback);
     if (data && data.username && data.password) {
@@ -451,10 +480,8 @@ export function verifyServerCredentials(
   if (cleanUser === 'neal') {
     const nealEmp = findEmployeeByUsername('neal');
     if (
-      cleanPass === (nealEmp?.password || '') ||
-      cleanPass === adminCreds.password ||
-      cleanPass === 'showhouse@2026!' ||
-      cleanPass === 'neal@sh26'
+      (nealEmp?.password && cleanPass === nealEmp.password) ||
+      cleanPass === adminCreds.password
     ) {
       return {
         valid: true,
@@ -522,10 +549,8 @@ export async function verifyServerCredentialsAsync(
   if (cleanUser === 'neal') {
     const nealEmp = await findEmployeeByUsernameAsync('neal');
     if (
-      cleanPass === (nealEmp?.password || '') ||
-      cleanPass === adminCreds.password ||
-      cleanPass === 'showhouse@2026!' ||
-      cleanPass === 'neal@sh26'
+      (nealEmp?.password && cleanPass === nealEmp.password) ||
+      cleanPass === adminCreds.password
     ) {
       return {
         valid: true,
@@ -560,8 +585,7 @@ export async function verifyServerCredentialsAsync(
     }
   }
 
-  // 4. Fallback to synchronous cached check
-  return verifyServerCredentials(username, pass);
+  return { valid: false };
 }
 
 // ----------------------------------------------------

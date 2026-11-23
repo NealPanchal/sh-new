@@ -277,18 +277,38 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
   }
 
   try {
-    // 1. If mapping saves individual items to a collection, query the individual collection documents first
+    // 1. If mapping saves individual items to a collection
     if (mapping.saveIndividualToCollection) {
-      const [colDocs, remoteBundle] = await Promise.all([
-        fetchCollectionDocsFromFirestoreRest(mapping.saveIndividualToCollection).catch(() => []),
-        fetchDocFromFirestoreRest(mapping.collection, mapping.docId).catch(() => null),
-      ]);
+      // First try fetching the primary bundle doc (single fast read, always reflects exact saved state)
+      const remoteBundle = await fetchDocFromFirestoreRest(mapping.collection, mapping.docId).catch(() => null);
 
-      const keyField = mapping.idField || 'id';
-      const mergedMap = new Map<string, any>();
+      const bundleList = mapping.wrapAs && Array.isArray(remoteBundle?.[mapping.wrapAs])
+        ? remoteBundle[mapping.wrapAs]
+        : Array.isArray(remoteBundle)
+        ? remoteBundle
+        : null;
 
-      // A. Populate from individual docs (excluding meta documents like all_customers, all_entries)
-      if (Array.isArray(colDocs)) {
+      if (bundleList && Array.isArray(bundleList) && bundleList.length > 0) {
+        inMemoryCache.set(filename, bundleList);
+        firestoreHydrated.add(filename);
+        try {
+          ensureDirSafe(TMP_DATA_DIR);
+          const tmpPath = path.join(TMP_DATA_DIR, filename);
+          fs.writeFileSync(tmpPath, JSON.stringify(bundleList, null, 2), 'utf-8');
+        } catch {}
+        try {
+          ensureDirSafe(DATA_DIR);
+          const primaryPath = path.join(DATA_DIR, filename);
+          fs.writeFileSync(primaryPath, JSON.stringify(bundleList, null, 2), 'utf-8');
+        } catch {}
+        return bundleList as T;
+      }
+
+      // Fallback: only if bundle doc does not exist, query individual collection documents
+      const colDocs = await fetchCollectionDocsFromFirestoreRest(mapping.saveIndividualToCollection).catch(() => []);
+      if (Array.isArray(colDocs) && colDocs.length > 0) {
+        const keyField = mapping.idField || 'id';
+        const mergedMap = new Map<string, any>();
         colDocs.forEach((doc) => {
           if (!doc || typeof doc !== 'object') return;
           const docId = String(doc.id || '').trim();
@@ -296,40 +316,23 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
           const k = String(doc[keyField] || doc.id || '').trim().toLowerCase();
           if (k) mergedMap.set(k, doc);
         });
-      }
 
-      // B. Supplement from bundle doc if any items were not individually listed
-      if (remoteBundle) {
-        const bundleList = mapping.wrapAs && Array.isArray(remoteBundle[mapping.wrapAs])
-          ? remoteBundle[mapping.wrapAs]
-          : Array.isArray(remoteBundle)
-          ? remoteBundle
-          : [];
-
-        bundleList.forEach((item: any) => {
-          if (!item || typeof item !== 'object') return;
-          const k = String(item[keyField] || item.id || item.username || '').trim().toLowerCase();
-          if (k && !mergedMap.has(k)) {
-            mergedMap.set(k, item);
-          }
-        });
-      }
-
-      if (mergedMap.size > 0) {
-        const consolidated = Array.from(mergedMap.values());
-        inMemoryCache.set(filename, consolidated);
-        firestoreHydrated.add(filename);
-        try {
-          ensureDirSafe(TMP_DATA_DIR);
-          const tmpPath = path.join(TMP_DATA_DIR, filename);
-          fs.writeFileSync(tmpPath, JSON.stringify(consolidated, null, 2), 'utf-8');
-        } catch {}
-        try {
-          ensureDirSafe(DATA_DIR);
-          const primaryPath = path.join(DATA_DIR, filename);
-          fs.writeFileSync(primaryPath, JSON.stringify(consolidated, null, 2), 'utf-8');
-        } catch {}
-        return consolidated as T;
+        if (mergedMap.size > 0) {
+          const consolidated = Array.from(mergedMap.values());
+          inMemoryCache.set(filename, consolidated);
+          firestoreHydrated.add(filename);
+          try {
+            ensureDirSafe(TMP_DATA_DIR);
+            const tmpPath = path.join(TMP_DATA_DIR, filename);
+            fs.writeFileSync(tmpPath, JSON.stringify(consolidated, null, 2), 'utf-8');
+          } catch {}
+          try {
+            ensureDirSafe(DATA_DIR);
+            const primaryPath = path.join(DATA_DIR, filename);
+            fs.writeFileSync(primaryPath, JSON.stringify(consolidated, null, 2), 'utf-8');
+          } catch {}
+          return consolidated as T;
+        }
       }
     } else {
       // 2. Single document mapping (e.g. settings/business_profile, auth_config/admin_credentials)

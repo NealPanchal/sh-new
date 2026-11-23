@@ -6,6 +6,7 @@ import {
   getAdminCredentialsAsync,
   setAdminCredentials,
   setAdminCredentialsAsync,
+  clearCachedAdminCreds,
   createSignedSessionToken,
   AUTH_COOKIE_NAME,
   recordSecurityAuditLog,
@@ -194,6 +195,7 @@ export async function POST(req: NextRequest) {
         : (adminCreds.phone || '+91 79773 95952');
 
       await setAdminCredentialsAsync(targetUsername, adminCreds.password, targetPhone);
+      clearCachedAdminCreds();
       invalidateDataCache('admin_credentials.json');
 
       const newToken = createSignedSessionToken({
@@ -262,6 +264,7 @@ export async function POST(req: NextRequest) {
 
     // Save updated credentials to persistent data storage (with awaited Firestore sync)
     await setAdminCredentialsAsync(targetUsername, newPassword.trim(), targetPhone);
+    clearCachedAdminCreds();
     invalidateDataCache('admin_credentials.json');
 
     // Generate fresh session token with updated credentials
@@ -326,6 +329,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Force fresh pull from Cloud Firestore on admin credentials fetch
+  clearCachedAdminCreds();
   invalidateDataCache('admin_credentials.json');
   const adminCreds = await getAdminCredentialsAsync();
   return NextResponse.json(
