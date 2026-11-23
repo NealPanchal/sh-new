@@ -5,6 +5,12 @@ import {
   fetchDocFromFirestoreRest,
   fetchCollectionDocsFromFirestoreRest,
 } from './server-firestore';
+import {
+  saveDocToSupabase,
+  fetchDocFromSupabase,
+  fetchCollectionDocsFromSupabase,
+  deleteDocFromSupabase,
+} from './server-supabase';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const TMP_DATA_DIR = path.join('/tmp', 'showhouse_data');
@@ -129,6 +135,9 @@ export function safeWriteDataFile<T = any>(filename: string, data: T): boolean {
       console.warn(`[server-storage] Firestore REST sync warning for ${filename}:`, syncErr);
     });
 
+    // Background sync to Supabase PostgreSQL (Unlimited Free)
+    saveDocToSupabase(mapping.collection, mapping.docId, payload).catch(() => {});
+
     // Save individual documents in top-level collection so they are visible in Firebase Console
     if (mapping.saveIndividualToCollection && Array.isArray(data)) {
       data.forEach((item: any) => {
@@ -194,6 +203,13 @@ export async function safeWriteDataFileAsync<T = any>(filename: string, data: T)
       await saveDocToFirestoreRest(mapping.collection, mapping.docId, payload);
     } catch (syncErr) {
       console.warn(`[server-storage] Firestore REST sync warning for ${filename}:`, syncErr);
+    }
+
+    // Awaited sync to Supabase PostgreSQL (Unlimited Free storage)
+    try {
+      await saveDocToSupabase(mapping.collection, mapping.docId, payload);
+    } catch (supaErr) {
+      console.warn(`[server-storage] Supabase sync note for ${filename}:`, supaErr);
     }
 
     // Save individual documents in top-level collection so they are visible in Firebase Console
@@ -271,12 +287,37 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
   const mapping = FIRESTORE_SYNC_MAP[filename];
   if (!mapping) return safeReadDataFile(filename, fallback);
 
-  // If already hydrated from Firestore during this process life, return memory cache
+  // If already hydrated from Firestore/Supabase during this process life, return memory cache
   if (firestoreHydrated.has(filename) && inMemoryCache.has(filename)) {
     return inMemoryCache.get(filename);
   }
 
   try {
+    // 0. Primary Check: Supabase PostgreSQL (Immediate, high-speed, unlimited free storage)
+    try {
+      const supaDoc = await fetchDocFromSupabase(mapping.collection, mapping.docId);
+      if (supaDoc) {
+        const supaData =
+          mapping.wrapAs && Array.isArray(supaDoc[mapping.wrapAs])
+            ? supaDoc[mapping.wrapAs]
+            : supaDoc;
+
+        inMemoryCache.set(filename, supaData);
+        firestoreHydrated.add(filename);
+        try {
+          ensureDirSafe(TMP_DATA_DIR);
+          const tmpPath = path.join(TMP_DATA_DIR, filename);
+          fs.writeFileSync(tmpPath, JSON.stringify(supaData, null, 2), 'utf-8');
+        } catch {}
+        try {
+          ensureDirSafe(DATA_DIR);
+          const primaryPath = path.join(DATA_DIR, filename);
+          fs.writeFileSync(primaryPath, JSON.stringify(supaData, null, 2), 'utf-8');
+        } catch {}
+        return supaData as T;
+      }
+    } catch {}
+
     // 1. If mapping saves individual items to a collection
     if (mapping.saveIndividualToCollection) {
       // First try fetching the primary bundle doc (single fast read, always reflects exact saved state)
