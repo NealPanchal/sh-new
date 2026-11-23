@@ -70,7 +70,7 @@ async function verifySessionToken(token: string | null | undefined): Promise<boo
   }
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // 1. Bypass public static assets and system routes
@@ -134,11 +134,10 @@ export async function middleware(req: NextRequest) {
 
   // 5. Protect all application dashboard pages (/, /challans, /bills, /customers, /products, /settings, etc.)
   if (!isAuthenticated) {
-    if (pathname === '/') {
-      return NextResponse.rewrite(new URL('/login', req.url));
-    }
     const loginUrl = new URL('/login', req.url);
-    loginUrl.searchParams.set('from', pathname);
+    if (pathname !== '/') {
+      loginUrl.searchParams.set('from', pathname);
+    }
     return NextResponse.redirect(loginUrl);
   }
 
