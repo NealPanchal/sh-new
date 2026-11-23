@@ -22,27 +22,83 @@ export interface PDFOptions {
 }
 
 /**
+ * Known staff phone directory fallback
+ */
+const STAFF_PHONE_DIRECTORY: Record<string, string> = {
+  vrushank: '+91 81692 14522',
+  bhavin: '+91 98203 31717',
+  neal: '+91 79773 95952',
+  umang: '+91 84510 78170',
+  rishi: '+91 77000 03183',
+  ronak: '+91 99202 91446',
+  ronaksir: '+91 99202 91446',
+  divya: '+91 91674 03210',
+  deepak: '+91 93248 69306',
+  ketan: '+91 93248 69306',
+  kenil: '+91 93248 69306',
+  jignesh: '+91 93248 69306',
+};
+
+export function cleanStaffKey(str: string): string {
+  return (str || '')
+    .replace(/\s*\(.*?\)/g, '') // remove parenthetical suffixes like (PO VS)
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toLowerCase();
+}
+
+export function formatStaffPhone(phone?: string | null): string {
+  if (!phone) return '';
+  const digits = String(phone).replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    const ten = digits.slice(2);
+    return `+91 ${ten.slice(0, 5)} ${ten.slice(5)}`;
+  }
+  return String(phone).replace(/[^\x20-\x7E]/g, '').trim();
+}
+
+/**
  * Dynamically look up employee contact number from cache or profile
  */
-function lookupStaffPhone(staffName?: string | null): string | undefined {
-  if (!staffName || typeof window === 'undefined') return undefined;
-  try {
-    const raw = localStorage.getItem('showhouse_employee_cache');
-    if (raw) {
-      const list = JSON.parse(raw);
-      if (Array.isArray(list)) {
-        const clean = staffName.trim().toLowerCase();
-        const found = list.find(
-          (e: any) =>
-            (e.name && e.name.trim().toLowerCase() === clean) ||
-            (e.username && e.username.trim().toLowerCase() === clean)
-        );
-        if (found?.phone && found.phone.trim()) {
-          return found.phone.trim();
+export function lookupStaffPhone(staffName?: string | null): string | undefined {
+  if (!staffName) return undefined;
+  const key = cleanStaffKey(staffName);
+  if (!key) return undefined;
+
+  // 1. Try to read from localStorage cache (populated by Settings / API)
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('showhouse_employee_cache');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const found = list.find((e: any) => {
+            const eNameKey = cleanStaffKey(e.name || '');
+            const eUserKey = cleanStaffKey(e.username || '');
+            return (
+              (eNameKey && (eNameKey === key || key.includes(eNameKey) || eNameKey.includes(key))) ||
+              (eUserKey && (eUserKey === key || key.includes(eUserKey) || eUserKey.includes(key)))
+            );
+          });
+          if (found?.phone && String(found.phone).trim()) {
+            const formatted = formatStaffPhone(found.phone);
+            if (formatted) return formatted;
+          }
         }
       }
+    } catch {}
+  }
+
+  // 2. Check built-in fallback directory
+  for (const [k, ph] of Object.entries(STAFF_PHONE_DIRECTORY)) {
+    if (key === k || key.includes(k) || k.includes(key)) {
+      return ph;
     }
-  } catch {}
+  }
+
   return undefined;
 }
 
@@ -545,11 +601,11 @@ export function generateChallanPDF({
 
     // Staff Prepared By & Mobile
     bankY = prepDividerY + (isA4 ? 3.2 : 2.8);
-    const creator = challan.created_by || challan.prepared_by || 'VRUSHANK';
+    const creator = (challan.prepared_by || challan.created_by || 'VRUSHANK').trim();
     const staffPhone = employeePhone || lookupStaffPhone(creator);
     const mobileText =
-      staffPhone && staffPhone.trim() && staffPhone !== '+91 93248 69306'
-        ? `+91 93248 69306 / ${staffPhone.trim()}`
+      staffPhone && staffPhone.trim() && staffPhone.trim() !== '+91 93248 69306'
+        ? `${staffPhone.trim()} / +91 93248 69306`
         : `+91 93248 69306`;
 
     doc.setFont('helvetica', 'bold');
@@ -568,19 +624,21 @@ export function generateChallanPDF({
     doc.setLineWidth(0.2);
     doc.line(leftX, termsDividerY, margin + leftColWidth - 2, termsDividerY);
 
-    let termsY = termsDividerY + (isA4 ? 3.4 : 3.0);
+    let termsY = termsDividerY + (isA4 ? 3.2 : 2.8);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isA4 ? 6.8 : 5.7);
     doc.setTextColor(...blackColor);
     doc.text('TERMS & CONDITIONS :', leftX, termsY);
-    termsY += isA4 ? 3.2 : 2.8;
+    termsY += isA4 ? 3.0 : 2.6;
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(isA4 ? 6.0 : 5.0);
+    doc.setFontSize(isA4 ? 5.8 : 4.8);
     doc.setTextColor(50, 50, 50);
-    doc.text('• Validity: 1 Week | Wallpaper & Laminate rates include installation.', leftX, termsY);
-    termsY += isA4 ? 3.0 : 2.6;
-    doc.text('• Delivery: within 2 days of confirmation | 50% advance, 50% on delivery.', leftX, termsY);
+    doc.text('• Interest @ 21% will be charged if the payment of bill not made with 7 days', leftX, termsY);
+    termsY += isA4 ? 2.8 : 2.4;
+    doc.text('• 100% Advance Payment', leftX, termsY);
+    termsY += isA4 ? 2.8 : 2.4;
+    doc.text('• Goods once sold will not be taken back or exchanged', leftX, termsY);
 
     // 4. Receiver's Signature
     const termsEndDividerY = boxY + (isA4 ? 44.5 : 37.5);

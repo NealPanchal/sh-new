@@ -10,30 +10,7 @@ import { formatDateIndian, formatPhone, cleanChallanItemDescription } from '@/li
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 
-/**
- * Dynamically look up employee contact number from cache or profile
- */
-function lookupStaffPhone(staffName?: string | null): string | undefined {
-  if (!staffName || typeof window === 'undefined') return undefined;
-  try {
-    const raw = localStorage.getItem('showhouse_employee_cache');
-    if (raw) {
-      const list = JSON.parse(raw);
-      if (Array.isArray(list)) {
-        const clean = staffName.trim().toLowerCase();
-        const found = list.find(
-          (e: any) =>
-            (e.name && e.name.trim().toLowerCase() === clean) ||
-            (e.username && e.username.trim().toLowerCase() === clean)
-        );
-        if (found?.phone && found.phone.trim()) {
-          return found.phone.trim();
-        }
-      }
-    }
-  } catch {}
-  return undefined;
-}
+import { lookupStaffPhone } from '@/lib/pdf';
 
 function formatAmountNum(amount: number | null | undefined): string {
   if (amount == null || isNaN(Number(amount)) || Number(amount) === 0) return '0';
@@ -483,8 +460,8 @@ export function exportQuotationToPDF(
   bankY = prepDividerY + (isA4 ? 3.2 : 2.8);
   const staffPhone = lookupStaffPhone(creator);
   const mobileText =
-    staffPhone && staffPhone.trim() && staffPhone !== '+91 93248 69306'
-      ? `+91 93248 69306 / ${staffPhone.trim()}`
+    staffPhone && staffPhone.trim() && staffPhone.trim() !== '+91 93248 69306'
+      ? `${staffPhone.trim()} / +91 93248 69306`
       : `+91 93248 69306`;
 
   doc.setFont('helvetica', 'bold');

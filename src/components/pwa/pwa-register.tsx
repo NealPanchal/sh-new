@@ -8,66 +8,37 @@ declare global {
   }
 }
 
+/**
+ * PWA Service Worker Cleanup & Cache Purger
+ * Completely eliminates browser offline cache traps ("This page couldn't load")
+ * Automatically unregisters any existing service workers and purges browser cache storage
+ */
 export function PwaRegister() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    let swRegistration: ServiceWorkerRegistration | null = null;
+    // 1. Proactively unregister any active or waiting service workers
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          for (const registration of registrations) {
+            registration.unregister().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
 
-    // Register Service Worker for PWA offline caching & installability
-    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then((registration) => {
-            swRegistration = registration;
-            registration.update();
-            console.log('PWA ServiceWorker registered with scope:', registration.scope);
-
-            // If a new worker is waiting, activate immediately
-            if (registration.waiting) {
-              registration.waiting.postMessage({ action: 'skipWaiting' });
-            }
-
-            registration.addEventListener('updatefound', () => {
-              const newWorker = registration.installing;
-              if (newWorker) {
-                newWorker.addEventListener('statechange', () => {
-                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    newWorker.postMessage({ action: 'skipWaiting' });
-                  }
-                });
-              }
-            });
-          })
-          .catch((error) => {
-            console.warn('PWA ServiceWorker registration failed:', error);
-          });
-      });
-
-      // Reload when a new ServiceWorker controller takes over to ensure real-time UI
-      let refreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!refreshing) {
-          refreshing = true;
-          window.location.reload();
-        }
-      });
-
-      // On visibility change / focus (when user opens Add-to-Home-Screen app), check for SW updates
-      const handleAppResume = () => {
-        if (document.visibilityState === 'visible' && swRegistration) {
-          swRegistration.update().catch(() => {});
-        }
-      };
-
-      document.addEventListener('visibilitychange', handleAppResume);
-      window.addEventListener('focus', handleAppResume);
-
-      return () => {
-        document.removeEventListener('visibilitychange', handleAppResume);
-        window.removeEventListener('focus', handleAppResume);
-      };
+    // 2. Clear all Service Worker and HTTP caches stored in browser
+    if ('caches' in window) {
+      caches
+        .keys()
+        .then((keys) => {
+          for (const key of keys) {
+            caches.delete(key).catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
 
     // Capture beforeinstallprompt for manual 1-tap install button
