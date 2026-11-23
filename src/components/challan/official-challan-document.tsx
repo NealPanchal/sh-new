@@ -86,18 +86,14 @@ export function OfficialChallanDocument({
         <thead>
           <tr className="border-b border-black text-black uppercase font-bold text-[11px] bg-surface-50/70">
             <th className="py-2 px-2 text-center border-r border-black w-12">S/N</th>
-            <th className="py-2 px-3 text-left border-r border-black">DESCRIPTION</th>
+            <th className="py-2 px-3 text-left border-r border-black">{hideRate ? 'ITEM DESCRIPTION' : 'DESCRIPTION'}</th>
             <th className="py-2 px-2 text-center border-r border-black w-24 sm:w-28">QTY</th>
-            {!hideRate && (
-              <th className="py-2 px-3 text-right border-r border-black w-28 sm:w-32 whitespace-pre-line leading-tight">
-                UNIT PRICE{'\n'}IN INR
-              </th>
-            )}
-            {!hideRate && (
-              <th className="py-2 px-3 text-right w-28 sm:w-32 whitespace-pre-line leading-tight">
-                TOTAL{'\n'}IN INR
-              </th>
-            )}
+            <th className="py-2 px-3 text-right border-r border-black w-28 sm:w-32 whitespace-pre-line leading-tight">
+              {hideRate ? `RATE\nIN INR` : `UNIT PRICE\nIN INR`}
+            </th>
+            <th className="py-2 px-3 text-right w-28 sm:w-32 whitespace-pre-line leading-tight">
+              {hideRate ? `AMOUNT\nIN INR` : `TOTAL\nIN INR`}
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-black/30">
@@ -134,16 +130,12 @@ export function OfficialChallanDocument({
                 <td className="py-2.5 px-2 text-center border-r border-black/30 font-bold uppercase whitespace-nowrap">
                   {item.quantity} {unitStr}
                 </td>
-                {!hideRate && (
-                  <td className="py-2.5 px-3 text-right border-r border-black/30 font-medium whitespace-nowrap font-mono">
-                    {rate > 0 ? rate.toLocaleString('en-IN') : '—'}
-                  </td>
-                )}
-                {!hideRate && (
-                  <td className="py-2.5 px-3 text-right font-bold whitespace-nowrap font-mono">
-                    {amt > 0 ? amt.toLocaleString('en-IN') : '—'}
-                  </td>
-                )}
+                <td className="py-2.5 px-3 text-right border-r border-black/30 font-medium whitespace-nowrap font-mono">
+                  {hideRate ? '' : (rate > 0 ? rate.toLocaleString('en-IN') : '—')}
+                </td>
+                <td className="py-2.5 px-3 text-right font-bold whitespace-nowrap font-mono">
+                  {hideRate ? '' : (amt > 0 ? amt.toLocaleString('en-IN') : '—')}
+                </td>
               </tr>
             );
           })}

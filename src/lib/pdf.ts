@@ -250,12 +250,12 @@ export function generateChallanPDF({
 
   // Table Headers & Column Widths
   const headers = hideRate
-    ? ['S/N', 'ITEM DESCRIPTION', 'QUANTITY', 'UNIT']
+    ? ['S/N', 'ITEM DESCRIPTION', 'QTY', 'RATE\nIN INR', 'AMOUNT\nIN INR']
     : ['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR'];
 
   const colWidths = isA4
-    ? (hideRate ? [12, 126, 26, 26] : [12, 92, 28, 28, 30]) // Total = 190mm
-    : (hideRate ? [8, 86, 20, 20] : [8, 63, 20, 21, 22]);   // Total = 134mm
+    ? [12, 92, 28, 28, 30] // Total = 190mm
+    : [8, 63, 20, 21, 22]; // Total = 134mm
 
   const allTableRows: (string | number)[][] = items.map((item, idx) => {
     // Clean description without supplier company name
@@ -269,13 +269,15 @@ export function generateChallanPDF({
     if (item.size) desc += ` ( ${item.size} )`;
 
     const unitStr = item.unit === 'running ft' ? 'RFT' : (item.unit || 'Sheets').toUpperCase();
+    const qtyStr = `${item.quantity} ${unitStr}`;
 
     if (hideRate) {
       return [
         idx + 1,
         desc,
-        item.quantity,
-        unitStr,
+        qtyStr,
+        '',
+        '',
       ];
     }
 
@@ -284,7 +286,6 @@ export function generateChallanPDF({
       desc += ` [ Disc: -${discText} ]`;
     }
 
-    const qtyStr = `${item.quantity} ${unitStr}`;
     const rate = Number(item.rate) || 0;
     const amount = Number(item.amount) || (rate > 0 ? rate * Number(item.quantity) : 0);
 
@@ -375,20 +376,13 @@ export function generateChallanPDF({
       lineWidth: 0.2,
       valign: 'middle',
     },
-    columnStyles: hideRate
-      ? {
-          0: { halign: 'center', cellWidth: colWidths[0] },
-          1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
-          2: { halign: 'center', cellWidth: colWidths[2], fontStyle: 'bold' },
-          3: { halign: 'center', cellWidth: colWidths[3] },
-        }
-      : {
-          0: { halign: 'center', cellWidth: colWidths[0] },
-          1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
-          2: { halign: 'center', cellWidth: colWidths[2] },
-          3: { halign: 'right', cellWidth: colWidths[3] },
-          4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
-        },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: colWidths[0] },
+      1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+      2: { halign: 'center', cellWidth: colWidths[2] },
+      3: { halign: 'right', cellWidth: colWidths[3] },
+      4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
+    },
     margin: { left: margin, right: margin },
   });
 
@@ -705,20 +699,13 @@ export function generateChallanPDF({
         lineWidth: 0.2,
         valign: 'middle',
       },
-      columnStyles: hideRate
-        ? {
-            0: { halign: 'center', cellWidth: colWidths[0] },
-            1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
-            2: { halign: 'center', cellWidth: colWidths[2], fontStyle: 'bold' },
-            3: { halign: 'center', cellWidth: colWidths[3] },
-          }
-        : {
-            0: { halign: 'center', cellWidth: colWidths[0] },
-            1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
-            2: { halign: 'center', cellWidth: colWidths[2] },
-            3: { halign: 'right', cellWidth: colWidths[3] },
-            4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
-          },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: colWidths[0] },
+        1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+        2: { halign: 'center', cellWidth: colWidths[2] },
+        3: { halign: 'right', cellWidth: colWidths[3] },
+        4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
+      },
       margin: { left: margin, right: margin },
     });
 
