@@ -10,6 +10,7 @@ import {
   saveChallanToFirestoreRest,
   deleteChallanFromFirestoreRest,
 } from '@/lib/server-firestore';
+import { safeReadDataFile, safeWriteDataFile } from '@/lib/server-storage';
 import {
   recordAuditLog,
   hasActiveCreditException,
@@ -142,31 +143,11 @@ function createTimestampedBackup(data: any[]): void {
 }
 
 function readDb(): any[] {
-  try {
-    ensureDirs();
-    if (!fs.existsSync(DATA_FILE)) {
-      return [];
-    }
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    if (!raw.trim()) return [];
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error reading data/challans.json:', err);
-    return [];
-  }
+  return safeReadDataFile<any[]>('challans.json', []);
 }
 
 function writeDb(challans: any[]): void {
-  try {
-    ensureDirs();
-    createTimestampedBackup(challans);
-    const content = JSON.stringify(challans, null, 2);
-    const tempFile = `${DATA_FILE}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    fs.writeFileSync(tempFile, content, 'utf-8');
-    fs.renameSync(tempFile, DATA_FILE);
-  } catch (err) {
-    console.error('Error writing data/challans.json:', err);
-  }
+  safeWriteDataFile('challans.json', challans);
 }
 
 /**

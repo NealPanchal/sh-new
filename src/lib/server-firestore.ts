@@ -217,3 +217,63 @@ export async function deleteChallanFromFirestoreRest(id: string): Promise<boolea
     return false;
   }
 }
+
+/**
+ * Universal document saver to Cloud Firestore REST API
+ */
+export async function saveDocToFirestoreRest(
+  collection: string,
+  docId: string,
+  data: Record<string, any>
+): Promise<boolean> {
+  if (!collection || !docId || !data) return false;
+  try {
+    const fields = challanToFirestoreFields({
+      ...data,
+      updated_at: data.updated_at || new Date().toISOString(),
+    });
+    const url = `${BASE_FIRESTORE_URL}/${encodeURIComponent(collection)}/${encodeURIComponent(docId)}`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+      cache: 'no-store',
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn(`saveDocToFirestoreRest (${collection}/${docId}) warning:`, err);
+    return false;
+  }
+}
+
+/**
+ * Universal document fetcher from Cloud Firestore REST API
+ */
+export async function fetchDocFromFirestoreRest(
+  collection: string,
+  docId: string
+): Promise<Record<string, any> | null> {
+  if (!collection || !docId) return null;
+  try {
+    const url = `${BASE_FIRESTORE_URL}/${encodeURIComponent(collection)}/${encodeURIComponent(docId)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const doc = await res.json();
+      if (doc && doc.fields) {
+        const result: Record<string, any> = {};
+        for (const k of Object.keys(doc.fields)) {
+          result[k] = convertFirestoreValue(doc.fields[k]);
+        }
+        return result;
+      }
+    }
+  } catch (err) {
+    console.warn(`fetchDocFromFirestoreRest (${collection}/${docId}) warning:`, err);
+  }
+  return null;
+}
+

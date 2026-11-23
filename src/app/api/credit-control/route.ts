@@ -8,26 +8,14 @@ import {
   recordAuditLog,
 } from '@/lib/server-accounting';
 import { CreditException, Customer } from '@/types';
-import fs from 'fs';
-import path from 'path';
+import { safeReadDataFile, safeWriteDataFile } from '@/lib/server-storage';
 
 function getCustomersFile(): Customer[] {
-  try {
-    const p = path.join(process.cwd(), 'data', 'customers.json');
-    if (!fs.existsSync(p)) return [];
-    return JSON.parse(fs.readFileSync(p, 'utf-8'));
-  } catch {
-    return [];
-  }
+  return safeReadDataFile<Customer[]>('customers.json', []);
 }
 
 function saveCustomersFile(custs: Customer[]): void {
-  try {
-    const p = path.join(process.cwd(), 'data', 'customers.json');
-    fs.writeFileSync(p, JSON.stringify(custs, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving customers.json:', err);
-  }
+  safeWriteDataFile('customers.json', custs);
 }
 
 export async function GET(req: NextRequest) {

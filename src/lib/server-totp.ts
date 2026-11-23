@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import QRCode from 'qrcode';
 import { UserRole } from '@/types';
+import { safeWriteDataFile, safeReadDataFile } from './server-storage';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const TOTP_RECORDS_FILE = path.join(DATA_DIR, 'user_totp_credentials.json');
@@ -297,19 +298,8 @@ function ensureDataDir() {
 }
 
 export function getAllUserTotpRecords(): UserTotpRecord[] {
-  try {
-    ensureDataDir();
-    if (fs.existsSync(TOTP_RECORDS_FILE)) {
-      const raw = fs.readFileSync(TOTP_RECORDS_FILE, 'utf-8');
-      if (raw.trim()) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    }
-  } catch (err) {
-    console.error('Error reading user_totp_credentials.json:', err);
-  }
-  return [];
+  const records = safeReadDataFile<UserTotpRecord[]>('user_totp_credentials.json', []);
+  return Array.isArray(records) ? records : [];
 }
 
 export function getUserTotpRecord(username: string): UserTotpRecord | null {
@@ -324,7 +314,6 @@ export function isUserTotpEnrolled(username: string): boolean {
 }
 
 export function saveUserTotpRecord(record: UserTotpRecord): void {
-  ensureDataDir();
   const records = getAllUserTotpRecords();
   const idx = records.findIndex((r) => r.username.toLowerCase() === record.username.toLowerCase());
 
@@ -338,17 +327,16 @@ export function saveUserTotpRecord(record: UserTotpRecord): void {
     });
   }
 
-  fs.writeFileSync(TOTP_RECORDS_FILE, JSON.stringify(records, null, 2), 'utf-8');
+  safeWriteDataFile('user_totp_credentials.json', records);
 }
 
 export function deleteUserTotpRecord(username: string): boolean {
-  ensureDataDir();
   const records = getAllUserTotpRecords();
   const lower = username.trim().toLowerCase();
   const filtered = records.filter((r) => r.username.toLowerCase() !== lower);
 
   if (filtered.length !== records.length) {
-    fs.writeFileSync(TOTP_RECORDS_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
+    safeWriteDataFile('user_totp_credentials.json', filtered);
     return true;
   }
   return false;

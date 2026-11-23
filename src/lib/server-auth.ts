@@ -4,6 +4,8 @@ import path from 'path';
 import type { NextRequest } from 'next/server';
 import { findEmployeeByUsername } from '@/lib/employee-accounts';
 import { AuthUser, UserRole, SecurityAuditEntry, SecurityConfig } from '@/types';
+import { safeWriteDataFile, safeReadDataFile } from '@/lib/server-storage';
+import { saveDocToFirestoreRest } from '@/lib/server-firestore';
 export * from './server-totp';
 
 export const AUTH_COOKIE_NAME = 'sh_admin_session';
@@ -35,21 +37,11 @@ const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
 };
 
 export function getSecurityConfig(): SecurityConfig {
-  try {
-    if (fs.existsSync(SECURITY_CONFIG_FILE)) {
-      const raw = fs.readFileSync(SECURITY_CONFIG_FILE, 'utf-8');
-      if (raw.trim()) {
-        const parsed = JSON.parse(raw);
-        return {
-          ...DEFAULT_SECURITY_CONFIG,
-          ...parsed,
-        };
-      }
-    }
-  } catch (err) {
-    console.error('Error reading security_config.json:', err);
-  }
-  return DEFAULT_SECURITY_CONFIG;
+  const data = safeReadDataFile<SecurityConfig>('security_config.json', DEFAULT_SECURITY_CONFIG);
+  return {
+    ...DEFAULT_SECURITY_CONFIG,
+    ...data,
+  };
 }
 
 export function updateSecurityConfig(
@@ -57,9 +49,6 @@ export function updateSecurityConfig(
   updatedBy: string = 'Admin'
 ): SecurityConfig {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
     const current = getSecurityConfig();
     const updated: SecurityConfig = {
       ...current,
@@ -67,11 +56,16 @@ export function updateSecurityConfig(
       updated_at: new Date().toISOString(),
       updated_by: updatedBy,
     };
-    fs.writeFileSync(SECURITY_CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+    safeWriteDataFile('security_config.json', updated);
     return updated;
   } catch (err) {
-    console.error('Error saving security config:', err);
-    throw err;
+    console.warn('Error saving security config:', err);
+    return {
+      ...DEFAULT_SECURITY_CONFIG,
+      ...partial,
+      updated_at: new Date().toISOString(),
+      updated_by: updatedBy,
+    };
   }
 }
 
@@ -79,29 +73,14 @@ export function updateSecurityConfig(
 // Security Audit Logs (Persistent, Ring Buffer)
 // ----------------------------------------------------
 export function getSecurityAuditLogs(limit: number = 50): SecurityAuditEntry[] {
-  try {
-    if (fs.existsSync(SECURITY_LOGS_FILE)) {
-      const raw = fs.readFileSync(SECURITY_LOGS_FILE, 'utf-8');
-      if (raw.trim()) {
-        const logs: SecurityAuditEntry[] = JSON.parse(raw);
-        if (Array.isArray(logs)) {
-          return logs.slice(0, limit);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error reading security logs:', err);
-  }
-  return [];
+  const logs = safeReadDataFile<SecurityAuditEntry[]>('security_audit_logs.json', []);
+  return Array.isArray(logs) ? logs.slice(0, limit) : [];
 }
 
 export function recordSecurityAuditLog(
   entry: Omit<SecurityAuditEntry, 'id' | 'timestamp'>
 ): void {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
     const currentLogs = getSecurityAuditLogs(200);
     const newEntry: SecurityAuditEntry = {
       id: `sec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -109,9 +88,9 @@ export function recordSecurityAuditLog(
       ...entry,
     };
     const updated = [newEntry, ...currentLogs].slice(0, 200);
-    fs.writeFileSync(SECURITY_LOGS_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+    safeWriteDataFile('security_audit_logs.json', updated);
   } catch (err) {
-    console.error('Error recording security audit log:', err);
+    console.warn('Error recording security audit log:', err);
   }
 }
 
@@ -300,61 +279,43 @@ export interface AdminCredentials {
 }
 
 let cachedAdminCreds: AdminCredentials | null = null;
-let cachedMtime = 0;
 
 export function getAdminCredentials(): AdminCredentials {
-  try {
-    if (fs.existsSync(ADMIN_CONFIG_FILE)) {
-      const stat = fs.statSync(ADMIN_CONFIG_FILE);
-      if (cachedAdminCreds && cachedMtime === stat.mtimeMs) {
-        return cachedAdminCreds;
-      }
-      const raw = fs.readFileSync(ADMIN_CONFIG_FILE, 'utf-8');
-      if (raw.trim()) {
-        const parsed = JSON.parse(raw);
-        cachedAdminCreds = {
-          username: (parsed.username || DEFAULT_ADMIN_USERNAME).trim().toLowerCase(),
-          password: parsed.password || DEFAULT_ADMIN_PASSWORD,
-          phone: (parsed.phone || DEFAULT_ADMIN_PHONE).trim(),
-          updated_at: parsed.updated_at,
-        };
-        cachedMtime = stat.mtimeMs;
-        return cachedAdminCreds;
-      }
-    }
-  } catch (err) {
-    console.error('Error reading admin_credentials.json:', err);
+  if (cachedAdminCreds) {
+    return cachedAdminCreds;
   }
-
-  return {
+  const fallback: AdminCredentials = {
     username: DEFAULT_ADMIN_USERNAME,
     password: DEFAULT_ADMIN_PASSWORD,
     phone: DEFAULT_ADMIN_PHONE,
   };
+  const data = safeReadDataFile<AdminCredentials>('admin_credentials.json', fallback);
+  cachedAdminCreds = {
+    username: (data.username || DEFAULT_ADMIN_USERNAME).trim().toLowerCase(),
+    password: data.password || DEFAULT_ADMIN_PASSWORD,
+    phone: (data.phone || DEFAULT_ADMIN_PHONE).trim(),
+    updated_at: data.updated_at,
+  };
+  return cachedAdminCreds;
 }
 
-export function setAdminCredentials(username: string, password: string, phone?: string): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const cleanUsername = username.trim().toLowerCase();
-    const currentCreds = getAdminCredentials();
-    const payload: AdminCredentials = {
-      username: cleanUsername,
-      password: password,
-      phone: phone !== undefined && phone.trim() ? phone.trim() : (currentCreds.phone || DEFAULT_ADMIN_PHONE),
-      updated_at: new Date().toISOString(),
-    };
-    fs.writeFileSync(ADMIN_CONFIG_FILE, JSON.stringify(payload, null, 2), 'utf-8');
-    cachedAdminCreds = payload;
-    try {
-      cachedMtime = fs.statSync(ADMIN_CONFIG_FILE).mtimeMs;
-    } catch { }
-  } catch (err) {
-    console.error('Error saving admin credentials:', err);
-    throw err;
-  }
+export function setAdminCredentials(username: string, password: string, phone?: string): AdminCredentials {
+  const cleanUsername = username.trim().toLowerCase();
+  const currentCreds = getAdminCredentials();
+  const payload: AdminCredentials = {
+    username: cleanUsername,
+    password: password,
+    phone: phone !== undefined && phone.trim() ? phone.trim() : (currentCreds.phone || DEFAULT_ADMIN_PHONE),
+    updated_at: new Date().toISOString(),
+  };
+
+  // 1. Safe write (in-memory + /tmp + cwd/data if writable)
+  safeWriteDataFile('admin_credentials.json', payload);
+  // 2. Dual sync to Cloud Firestore REST API
+  saveDocToFirestoreRest('auth_config', 'admin_credentials', payload).catch(() => {});
+  // 3. Update active memory cache
+  cachedAdminCreds = payload;
+  return payload;
 }
 
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days for mobile PWA usability

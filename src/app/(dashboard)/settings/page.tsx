@@ -161,8 +161,10 @@ export default function SettingsPage() {
   useEffect(() => {
     if (mounted && !isEmployee) {
       const token = getClientAuthToken();
+      const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
       fetch('/api/auth/change-password', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: authHeader,
       })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -171,6 +173,33 @@ export default function SettingsPage() {
           }
           if (data?.phone) {
             setAdminPhone(data.phone);
+          }
+        })
+        .catch(() => {});
+
+      fetch('/api/settings', {
+        headers: authHeader,
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.profile) {
+            const p = data.profile;
+            if (p.business_name) setBusinessName(p.business_name);
+            if (p.tagline) setTagline(p.tagline);
+            if (p.address) setAddress(p.address);
+            if (p.phone) setPhone(p.phone);
+            if (p.email) setEmail(p.email);
+            if (p.gstin) setGstin(p.gstin);
+            if (p.state) setStateName(p.state);
+            if (p.state_code) setStateCode(p.state_code);
+            if (p.challan_prefix) setChallanPrefix(p.challan_prefix);
+            if (p.challan_next_number) setChallanNextNumber(p.challan_next_number);
+            if (Array.isArray(p.employees) && p.employees.length > 0) setEmployees(p.employees);
+            if (p.bank_name) setBankName(p.bank_name);
+            if (p.bank_account) setBankAccount(p.bank_account);
+            if (p.bank_ifsc) setBankIfsc(p.bank_ifsc);
+            if (p.bank_branch) setBankBranch(p.bank_branch);
+            if (p.terms_conditions) setTerms(p.terms_conditions);
           }
         })
         .catch(() => {});
@@ -841,18 +870,21 @@ export default function SettingsPage() {
   }
 
   const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setSaving(true);
     try {
+      const token = getClientAuthToken();
+      const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
       const activeNames =
         employeeAccounts.length > 0
           ? employeeAccounts
-              .filter((a) => a.is_active !== false)
+              .filter((a) => a.is_active !== false && !a.is_banned)
               .map((a) => a.name.trim())
               .filter(Boolean)
           : employees.filter(Boolean);
 
-      saveProfile({
+      const profilePayload: Partial<BusinessProfile> = {
         business_name: businessName,
         tagline,
         address,
@@ -869,19 +901,83 @@ export default function SettingsPage() {
         bank_ifsc: bankIfsc,
         bank_branch: bankBranch,
         terms_conditions: terms,
+      };
+
+      // 1. Save Company Details & Business Profile to server & database
+      const settingsPromise = fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader,
+        },
+        body: JSON.stringify({ profile: profilePayload }),
       });
 
+      // 2. Save Admin Username & Phone (and new password if entered)
+      const adminCredsPayload: Record<string, any> = {
+        newUsername: adminUsername.trim(),
+        phone: adminPhone.trim(),
+      };
+      if (adminNewPassword && adminNewPassword.trim().length >= 6) {
+        if (adminNewPassword === adminConfirmPassword) {
+          adminCredsPayload.currentPassword = adminCurrentPassword ? adminCurrentPassword.trim() : undefined;
+          adminCredsPayload.newPassword = adminNewPassword.trim();
+          adminCredsPayload.confirmPassword = adminConfirmPassword.trim();
+        }
+      }
+      const adminPromise = fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader,
+        },
+        body: JSON.stringify(adminCredsPayload),
+      });
+
+      // 3. Save Employee Accounts & Passwords to server & database
+      let empPromise = Promise.resolve(null as any);
       if (employeeAccounts.length > 0) {
-        const token = getClientAuthToken();
-        const res = await fetch('/api/employees', {
+        empPromise = fetch('/api/employees', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...authHeader,
           },
           body: JSON.stringify({ employees: employeeAccounts }),
         });
-        const empData = await res.json().catch(() => ({}));
+      }
+
+      const [settingsRes, adminRes, empRes] = await Promise.all([
+        settingsPromise,
+        adminPromise,
+        empPromise,
+      ]);
+
+      const settingsData = await settingsRes.json().catch(() => ({}));
+      const adminData = await adminRes.json().catch(() => ({}));
+
+      if (!settingsRes.ok || !settingsData.success) {
+        showToast(settingsData.error || 'Failed to save business settings', 'error');
+        return;
+      }
+
+      if (!adminRes.ok || !adminData.success) {
+        showToast(adminData.error || 'Failed to update admin credentials', 'error');
+        return;
+      }
+
+      if (adminData.token && typeof window !== 'undefined') {
+        localStorage.setItem('showhouse_admin_token', adminData.token);
+      }
+
+      if (adminNewPassword && adminNewPassword === adminConfirmPassword) {
+        setAdminCurrentPassword('');
+        setAdminNewPassword('');
+        setAdminConfirmPassword('');
+      }
+
+      if (empRes) {
+        const empData = await empRes.json().catch(() => ({}));
         if (empData.success && Array.isArray(empData.employees)) {
           setEmployeeAccounts(empData.employees);
           if (typeof window !== 'undefined') {
@@ -890,9 +986,10 @@ export default function SettingsPage() {
         }
       }
 
-      showToast('Settings and business profile saved successfully');
-    } catch (err) {
-      showToast('Failed to save settings', 'error');
+      saveProfile(profilePayload);
+      showToast('All settings, company details, admin phone & staff logins saved successfully!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save settings', 'error');
     } finally {
       setSaving(false);
     }

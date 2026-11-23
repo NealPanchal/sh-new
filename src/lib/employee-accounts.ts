@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { EmployeeAccount } from '@/types';
+import { safeWriteDataFile, safeReadDataFile } from '@/lib/server-storage';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const EMPLOYEES_FILE = path.join(DATA_DIR, 'employees.json');
@@ -108,107 +109,17 @@ export const DEFAULT_EMPLOYEES: EmployeeAccount[] = [
   },
 ];
 
-let inMemoryEmployeesCache: EmployeeAccount[] | null = null;
-let cachedEmployeesMtime = 0;
-const TMP_EMPLOYEES_FILE = path.join('/tmp', 'showhouse_employees.json');
-
-function ensureDataDir(): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-  } catch (err) {
-    console.warn('Could not create DATA_DIR, will use memory / tmp fallback:', err);
-  }
-}
-
 export function getEmployeeAccounts(): EmployeeAccount[] {
-  try {
-    ensureDataDir();
-    if (fs.existsSync(EMPLOYEES_FILE)) {
-      const stat = fs.statSync(EMPLOYEES_FILE);
-      if (inMemoryEmployeesCache && cachedEmployeesMtime === stat.mtimeMs) {
-        return inMemoryEmployeesCache;
-      }
-      const raw = fs.readFileSync(EMPLOYEES_FILE, 'utf-8');
-      if (raw.trim()) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          inMemoryEmployeesCache = parsed;
-          cachedEmployeesMtime = stat.mtimeMs;
-          return parsed;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Primary employees.json read error, checking fallback:', err);
+  const accounts = safeReadDataFile<EmployeeAccount[]>('employees.json', DEFAULT_EMPLOYEES);
+  if (Array.isArray(accounts) && accounts.length > 0) {
+    return accounts;
   }
-
-  // Check /tmp fallback
-  try {
-    if (fs.existsSync(TMP_EMPLOYEES_FILE)) {
-      const raw = fs.readFileSync(TMP_EMPLOYEES_FILE, 'utf-8');
-      if (raw.trim()) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          inMemoryEmployeesCache = parsed;
-          return parsed;
-        }
-      }
-    }
-  } catch {}
-
-  // If in-memory cache exists, use it
-  if (inMemoryEmployeesCache && inMemoryEmployeesCache.length > 0) {
-    return inMemoryEmployeesCache;
-  }
-
-  // Fallback to default
-  inMemoryEmployeesCache = DEFAULT_EMPLOYEES;
   return DEFAULT_EMPLOYEES;
 }
 
 export function saveEmployeeAccounts(accounts: EmployeeAccount[]): boolean {
   if (!Array.isArray(accounts)) return false;
-
-  const content = JSON.stringify(accounts, null, 2);
-  let savedToDisk = false;
-
-  // 1. Primary synchronous write to data/employees.json
-  try {
-    ensureDataDir();
-    fs.writeFileSync(EMPLOYEES_FILE, content, 'utf-8');
-    savedToDisk = true;
-    try {
-      cachedEmployeesMtime = fs.statSync(EMPLOYEES_FILE).mtimeMs;
-    } catch {}
-  } catch (err: any) {
-    console.warn('Direct write to employees.json failed, trying atomic tmp rename:', err?.message);
-    try {
-      const tempPath = `${EMPLOYEES_FILE}.tmp.${Date.now()}`;
-      fs.writeFileSync(tempPath, content, 'utf-8');
-      fs.renameSync(tempPath, EMPLOYEES_FILE);
-      savedToDisk = true;
-      try {
-        cachedEmployeesMtime = fs.statSync(EMPLOYEES_FILE).mtimeMs;
-      } catch {}
-    } catch (atomicErr: any) {
-      console.warn('Atomic write to employees.json failed:', atomicErr?.message);
-    }
-  }
-
-  // 2. Store in memory cache
-  inMemoryEmployeesCache = [...accounts];
-
-  // 3. Fallback write to /tmp for read-only / cloud / serverless containers
-  try {
-    fs.writeFileSync(TMP_EMPLOYEES_FILE, content, 'utf-8');
-    savedToDisk = true;
-  } catch (tmpErr) {
-    console.warn('Writing to /tmp employees file failed:', tmpErr);
-  }
-
-  return savedToDisk || true;
+  return safeWriteDataFile('employees.json', accounts);
 }
 
 export function updateEmployeePassword(

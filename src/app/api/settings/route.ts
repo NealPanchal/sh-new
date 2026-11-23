@@ -1,21 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { getAuthenticatedSession } from '@/lib/server-auth';
 import { BusinessProfile } from '@/types';
-
-const DATA_DIR = path.join(process.cwd(), 'data');
-const BACKUP_DIR = path.join(DATA_DIR, 'backups');
-const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
-
-function ensureDirs() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  }
-}
+import { safeWriteDataFile, safeReadDataFile, syncFromFirestoreIfCold } from '@/lib/server-storage';
+import { saveDocToFirestoreRest } from '@/lib/server-firestore';
 
 const DEFAULT_PROFILE: BusinessProfile = {
   id: 'sh_business_profile_01',
@@ -51,31 +38,12 @@ const DEFAULT_PROFILE: BusinessProfile = {
 };
 
 function readSettings(): BusinessProfile {
-  try {
-    ensureDirs();
-    if (!fs.existsSync(SETTINGS_FILE)) {
-      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(DEFAULT_PROFILE, null, 2), 'utf-8');
-      return DEFAULT_PROFILE;
-    }
-    const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    if (!raw.trim()) return DEFAULT_PROFILE;
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error reading settings.json:', err);
-    return DEFAULT_PROFILE;
-  }
+  return safeReadDataFile<BusinessProfile>('settings.json', DEFAULT_PROFILE);
 }
 
 function writeSettings(profile: BusinessProfile): void {
-  try {
-    ensureDirs();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupFile = path.join(BACKUP_DIR, `settings-backup-${timestamp}.json`);
-    fs.writeFileSync(backupFile, JSON.stringify(profile, null, 2), 'utf-8');
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(profile, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error writing settings.json:', err);
-  }
+  safeWriteDataFile('settings.json', profile);
+  saveDocToFirestoreRest('settings', 'business_profile', profile).catch(() => {});
 }
 
 export async function GET(req: NextRequest) {
@@ -84,7 +52,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const profile = readSettings();
+  const profile = await syncFromFirestoreIfCold<BusinessProfile>('settings.json', DEFAULT_PROFILE);
   return NextResponse.json({ success: true, profile });
 }
 
@@ -95,8 +63,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
-    if (!body || !body.profile) {
+    const body = await req.json().catch(() => ({}));
+    const profilePayload = body.profile || body;
+    if (!profilePayload || typeof profilePayload !== 'object') {
       return NextResponse.json(
         { success: false, error: 'Request body must contain profile payload' },
         { status: 400 }
@@ -106,13 +75,15 @@ export async function POST(req: NextRequest) {
     const current = readSettings();
     const updated: BusinessProfile = {
       ...current,
-      ...body.profile,
+      ...profilePayload,
       updated_at: new Date().toISOString(),
     };
 
     // Ensure employees is an array of non-empty strings
-    if (Array.isArray(body.profile.employees)) {
-      updated.employees = body.profile.employees.filter((e: any) => typeof e === 'string' && e.trim().length > 0);
+    if (Array.isArray(profilePayload.employees)) {
+      updated.employees = profilePayload.employees.filter(
+        (e: any) => typeof e === 'string' && e.trim().length > 0
+      );
     }
 
     writeSettings(updated);

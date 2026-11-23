@@ -1,5 +1,27 @@
 [
   {
+    "id": "sec_1795412286671_legu3",
+    "timestamp": "2026-11-23T05:38:06.671Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "password_changed",
+    "note": "Password changed for employee @vrushank"
+  },
+  {
+    "id": "sec_1795412247521_cba17",
+    "timestamp": "2026-11-23T05:37:27.521Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @adminsh (admin) logged in successfully via Username + Password"
+  },
+  {
     "id": "sec_1795411126567_4mmhs",
     "timestamp": "2026-11-23T05:18:46.567Z",
     "username": "adminsh",
