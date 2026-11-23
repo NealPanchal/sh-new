@@ -48,30 +48,20 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
       };
     }
 
-    // Step 2: First-Time Setup Required
-    if (data.requires_totp_setup) {
-      return {
-        success: true,
-        requires_totp_setup: true,
-        challenge_id: data.challenge_id,
-        qr_code_url: data.qr_code_url,
-        manual_key: data.manual_key,
-        provisioning_uri: data.provisioning_uri,
-        plain_backup_codes: data.plain_backup_codes || [],
-        expires_in_seconds: data.expires_in_seconds || 300,
-        user: data.user,
-      };
-    }
-
-    // Step 3: Normal 2FA Verification Required
-    if (data.requires_totp) {
-      return {
-        success: true,
-        requires_totp: true,
-        challenge_id: data.challenge_id,
-        expires_in_seconds: data.expires_in_seconds || 300,
-        user: data.user,
-      };
+    if (typeof window !== 'undefined') {
+      if (data.token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+      }
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          authenticated: true,
+          username: data.user?.username,
+          name: data.user?.name || data.user?.username,
+          role: data.user?.role || 'employee',
+          loggedInAt: new Date().toISOString(),
+        })
+      );
     }
 
     return {

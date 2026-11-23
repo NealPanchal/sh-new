@@ -681,7 +681,7 @@ export default function SettingsPage() {
           <div>
             <h1 className="text-xl font-bold text-surface-900 tracking-tight">Staff Account Security</h1>
             <p className="text-xs text-surface-500 mt-0.5">
-              Manage your personal staff password and Google Authenticator 2FA settings
+              Manage your personal staff password and account security settings
             </p>
           </div>
           <Link href="/" className="btn-secondary text-xs py-2 px-3">
@@ -1294,12 +1294,12 @@ export default function SettingsPage() {
           </form>
         </div>
 
-        {/* Security Suite, 2FA OTP & Login Audit Trail */}
+        {/* Security Suite & Login Audit Trail */}
         <div className="card p-6 space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-surface-100">
             <div className="flex items-center gap-2 text-emerald-700 font-bold text-base">
               <ShieldCheck size={20} className="text-emerald-600" />
-              <span>Security Suite & 2-Factor Authentication (2FA)</span>
+              <span>Security Suite & Login Protection</span>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -1313,167 +1313,8 @@ export default function SettingsPage() {
                 <span className="hidden sm:inline">Refresh Logs</span>
               </button>
               <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
-                Google Authenticator 2FA Enforced (Zero Cost)
+                Direct Password Authentication (Active)
               </span>
-            </div>
-          </div>
-
-          {/* 2FA Policy & Recovery Information Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* TOTP Policy Info */}
-            <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 space-y-3 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
-                    <Key size={14} className="text-primary-600" />
-                    <span>RFC 6238 TOTP Two-Factor Authentication</span>
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                    MANDATORY
-                  </span>
-                </div>
-                <p className="text-[11px] text-surface-500 mt-1.5 leading-relaxed">
-                  Every Admin and Staff account is strictly verified via <b>Google Authenticator</b> (or Microsoft Authenticator). No SMS, Twilio, or MSG91 gateway costs. Time-window: <b>30 seconds</b>, 6-digit dynamic codes with Fernet-encrypted secrets and anti-replay protection.
-                </p>
-              </div>
-
-              <div className="pt-2 flex items-center justify-between border-t border-surface-200/80 text-[11px] text-surface-600">
-                <span>Issuer: <b>Showhouse</b></span>
-                <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                  <Check size={12} />
-                  <span>Zero-cost &amp; Offline Compatible</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Emergency Recovery & Anti-Brute Force */}
-            <div className="p-4 rounded-xl bg-surface-50 border border-surface-200 space-y-3 flex flex-col justify-between">
-              <div>
-                <span className="text-xs font-bold text-surface-900 flex items-center gap-1.5">
-                  <ShieldAlert size={14} className="text-amber-600" />
-                  <span>Single-Use Backup Codes &amp; Staff Reset</span>
-                </span>
-                <p className="text-[11px] text-surface-500 mt-1.5 leading-relaxed">
-                  Each user receives <b>10 cryptographic single-use backup codes</b> upon first QR scan. If an employee loses their device, Admin can reset their 2FA credentials below, requiring them to scan a new QR code on their next login.
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-surface-100/70 border border-surface-200 text-[11px] text-surface-700 flex items-center justify-between">
-                <div>
-                  <span className="font-semibold block text-[10px] text-surface-500 uppercase tracking-wider">
-                    Anti-Brute Force Protection
-                  </span>
-                  <span className="text-surface-700 font-mono text-[11px]">Auto-lockout after 5 failed OTP attempts</span>
-                </div>
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded">
-                  Active
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* User 2FA Enrollment & Recovery Management Table */}
-          <div className="space-y-2 pt-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-surface-800 flex items-center gap-1.5">
-                <Smartphone size={14} className="text-primary-600" />
-                <span>Account Authenticator Status &amp; Recovery</span>
-              </span>
-              <span className="text-[11px] text-surface-400">
-                {accounts2FA.length} total account{accounts2FA.length === 1 ? '' : 's'} managed
-              </span>
-            </div>
-
-            <div className="overflow-x-auto border border-surface-200 rounded-lg shadow-2xs">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-surface-50 text-[10px] font-bold text-surface-600 uppercase border-b border-surface-200">
-                  <tr>
-                    <th className="px-3 py-2">User / Account</th>
-                    <th className="px-3 py-2 text-center w-24">Role</th>
-                    <th className="px-3 py-2">Phone</th>
-                    <th className="px-3 py-2 text-center w-36">2FA Status</th>
-                    <th className="px-3 py-2 text-center w-28">Backup Codes</th>
-                    <th className="px-3 py-2 text-right w-28">Recovery Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-100 bg-white">
-                  {accounts2FA.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-4 text-center text-surface-400 text-xs">
-                        Loading account 2FA statuses...
-                      </td>
-                    </tr>
-                  ) : (
-                    accounts2FA.map((acc) => {
-                      const enrolledDate = acc.enrolled_at ? new Date(acc.enrolled_at) : null;
-                      const enrolledStr = enrolledDate && !isNaN(enrolledDate.getTime())
-                        ? enrolledDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                        : null;
-
-                      return (
-                        <tr key={acc.username} className="hover:bg-surface-50/70 transition-colors">
-                          <td className="px-3 py-2 font-semibold text-surface-900 whitespace-nowrap">
-                            {acc.name || acc.username}
-                            <span className="text-[10px] text-surface-400 font-mono block">
-                              @{acc.username}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-center whitespace-nowrap">
-                            <span
-                              className={cn(
-                                'text-[10px] font-bold px-2 py-0.5 rounded-full uppercase',
-                                acc.role === 'admin'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-primary-50 text-primary-700'
-                              )}
-                            >
-                              {acc.role}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 font-mono text-[11px] text-surface-600 whitespace-nowrap">
-                            {acc.phone || '—'}
-                          </td>
-                          <td className="px-3 py-2 text-center whitespace-nowrap">
-                            {acc.is_enrolled ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <Check size={11} />
-                                <span>Enrolled {enrolledStr ? `(${enrolledStr})` : ''}</span>
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-                                Setup on Next Login
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-center whitespace-nowrap font-mono text-[11px]">
-                            {acc.is_enrolled ? (
-                              <span className={cn(
-                                'font-semibold',
-                                acc.backup_codes_left <= 2 ? 'text-rose-600' : 'text-surface-700'
-                              )}>
-                                {acc.backup_codes_left} / 10 left
-                              </span>
-                            ) : (
-                              <span className="text-surface-400">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => handleResetUserTotp(acc.username)}
-                              disabled={resettingUser === acc.username}
-                              className="text-[11px] font-medium text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-1 rounded transition-colors disabled:opacity-50 cursor-pointer"
-                              title="Reset Authenticator (forces new QR code setup on next login)"
-                            >
-                              {resettingUser === acc.username ? 'Resetting...' : 'Reset 2FA'}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
             </div>
           </div>
 

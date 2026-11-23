@@ -97,10 +97,14 @@ export interface SecurityAuditEntry {
 }
 
 export interface SecurityConfig {
-  totp_enforced: boolean;
-  totp_issuer: string;
-  totp_interval: number;
-  max_totp_attempts: number;
+  totp_enforced?: boolean;
+  totp_issuer?: string;
+  totp_interval?: number;
+  max_totp_attempts?: number;
+  require_otp?: boolean;
+  otp_expiry_minutes?: number;
+  max_otp_attempts?: number;
+  master_recovery_enabled?: boolean;
   updated_at?: string;
   updated_by?: string;
 }

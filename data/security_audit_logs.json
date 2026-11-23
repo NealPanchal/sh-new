@@ -1,5 +1,126 @@
 [
   {
+    "id": "sec_1795411126567_4mmhs",
+    "timestamp": "2026-11-23T05:18:46.567Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "password_changed",
+    "note": "Password changed for employee @kenil"
+  },
+  {
+    "id": "sec_1795411126551_27l45",
+    "timestamp": "2026-11-23T05:18:46.551Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @adminsh (admin) logged in successfully via Username + Password"
+  },
+  {
+    "id": "sec_1795411126529_30b1w",
+    "timestamp": "2026-11-23T05:18:46.529Z",
+    "username": "kenil",
+    "name": "Kenil",
+    "role": "employee",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @kenil (employee) logged in successfully via Username + Password"
+  },
+  {
+    "id": "sec_1795411126514_58urf",
+    "timestamp": "2026-11-23T05:18:46.514Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "password_changed",
+    "note": "Password changed for employee @kenil"
+  },
+  {
+    "id": "sec_1795411126492_3qbvl",
+    "timestamp": "2026-11-23T05:18:46.492Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @adminsh (admin) logged in successfully via Username + Password"
+  },
+  {
+    "id": "sec_1795411116704_wl919",
+    "timestamp": "2026-11-23T05:18:36.704Z",
+    "username": "neal",
+    "name": "Unauthenticated User",
+    "role": "employee",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "failed",
+    "note": "Invalid credentials attempt"
+  },
+  {
+    "id": "sec_1795411108943_5k64z",
+    "timestamp": "2026-11-23T05:18:28.943Z",
+    "username": "vrushank",
+    "name": "Vrushank",
+    "role": "employee",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @vrushank (employee) logged in successfully via Username + Password"
+  },
+  {
+    "id": "sec_1795411108932_u1yzm",
+    "timestamp": "2026-11-23T05:18:28.932Z",
+    "username": "neal",
+    "name": "Neal",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @neal (admin) logged in successfully via Username + Password"
+  },
+  {
+    "id": "sec_1795411108899_tmtx1",
+    "timestamp": "2026-11-23T05:18:28.899Z",
+    "username": "neal",
+    "name": "Neal",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @neal (admin) logged in successfully via Username + Password"
+  },
+  {
+    "id": "sec_1795411108886_mk7ka",
+    "timestamp": "2026-11-23T05:18:28.886Z",
+    "username": "adminsh",
+    "name": "Admin SH",
+    "role": "admin",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "success",
+    "note": "User @adminsh (admin) logged in successfully via Username + Password"
+  },
+  {
+    "id": "sec_1795410110331_n6s6y",
+    "timestamp": "2026-11-23T05:01:50.331Z",
+    "username": "neal",
+    "name": "Neal",
+    "role": "employee",
+    "ip": "::1",
+    "user_agent": "curl/8.7.1",
+    "status": "totp_challenge_issued",
+    "note": "First-time login: Google Authenticator enrollment challenge generated"
+  },
+  {
     "id": "sec_1795382017959_4mezd",
     "timestamp": "2026-11-22T21:13:37.959Z",
     "username": "adminsh",

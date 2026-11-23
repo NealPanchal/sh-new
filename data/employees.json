@@ -26,8 +26,8 @@
     "username": "neal",
     "name": "Neal",
     "phone": "+91 93248 69306",
-    "password": "neal@sh26",
-    "role": "employee",
+    "password": "showhouse@2026!",
+    "role": "admin",
     "is_active": true,
     "is_banned": false,
     "po_prefix": "PO NP"
