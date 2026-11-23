@@ -1,134 +1,123 @@
 [
   {
     "id": "emp_1",
-    "username": "vrushank",
     "name": "Vrushank",
+    "role": "employee",
     "phone": "+91 81692 14522",
     "password": "vrushank@sh17",
-    "role": "employee",
+    "username": "vrushank",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO VS",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO VS"
   },
   {
     "id": "emp_2",
-    "username": "bhavin",
     "name": "Bhavin",
+    "role": "employee",
     "phone": "+91 98203 31717",
     "password": "bhavin@sh26",
-    "role": "employee",
+    "username": "bhavin",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO BH",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO BH"
   },
   {
     "id": "emp_3",
-    "username": "neal",
     "name": "Neal",
-    "phone": "+91 79773 95952",
-    "password": "showhouse@2026!",
     "role": "employee",
+    "phone": "+91 79773 95952",
+    "password": "show@nov2026",
+    "username": "neal",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO NP",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO NP"
   },
   {
     "id": "emp_4",
-    "username": "umang",
     "name": "Umang",
+    "role": "employee",
     "phone": "+91 84510 78170",
     "password": "umang@sh26",
-    "role": "employee",
+    "username": "umang",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO UM",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO UM"
   },
   {
     "id": "emp_5",
-    "username": "rishi",
     "name": "Rishi",
+    "role": "employee",
     "phone": "+91 77000 03183",
     "password": "rishi@sh26",
-    "role": "employee",
+    "username": "rishi",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO RS",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO RS"
   },
   {
     "id": "emp_6",
-    "username": "ronak",
     "name": "Ronak sir",
+    "role": "employee",
     "phone": "+91 99202 91446",
     "password": "ronak@sh26",
-    "role": "employee",
+    "username": "ronak",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO RN",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO RN"
   },
   {
     "id": "emp_7",
-    "username": "divya",
     "name": "Divya",
+    "role": "employee",
     "phone": "+91 91674 03210",
     "password": "divya@25",
-    "role": "employee",
+    "username": "divya",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO DK",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO DK"
   },
   {
     "id": "emp_8",
-    "username": "deepak",
     "name": "Deepak",
-    "phone": "+91 93248 69306",
-    "password": "deepak@sh26",
     "role": "employee",
+    "phone": "+91 98670 65600",
+    "password": "deepak@sh26",
+    "username": "deepak",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO DP",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO DP"
   },
   {
     "id": "emp_9",
-    "username": "ketan",
     "name": "Ketan",
+    "role": "employee",
     "phone": "+91 93248 69306",
     "password": "ketan@sh26",
-    "role": "employee",
+    "username": "ketan",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO KK",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO KK"
   },
   {
     "id": "emp_10",
-    "username": "kenil",
     "name": "Kenil",
+    "role": "employee",
     "phone": "+91 93248 69306",
     "password": "kenil@sh26",
-    "role": "employee",
+    "username": "kenil",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO KN",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO KN"
   },
   {
     "id": "emp_11",
-    "username": "jignesh",
     "name": "Jignesh",
+    "role": "employee",
     "phone": "+91 93248 69306",
     "password": "jignesh@sh26",
-    "role": "employee",
+    "username": "jignesh",
     "is_active": true,
     "is_banned": false,
-    "po_prefix": "PO JG",
-    "updated_at": "2026-11-23T11:45:00.000Z"
+    "po_prefix": "PO JG"
   }
 ]

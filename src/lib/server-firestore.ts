@@ -102,7 +102,7 @@ export async function fetchSingleChallanFromFirestore(id: string): Promise<Chall
   try {
     const supa = await fetchDocFromSupabase('challans', id);
     if (supa && supa.id) return supa as Challan;
-  } catch {}
+  } catch { }
 
   // 1. Try direct doc lookup in Firestore
   try {
@@ -169,7 +169,7 @@ export async function fetchAllChallansFromFirestore(): Promise<Challan[]> {
       const valid = supaDocs.filter((c: any) => c && !c.is_deleted && c.id !== 'all_challans');
       if (valid.length > 0) return valid as Challan[];
     }
-  } catch {}
+  } catch { }
 
   try {
     const res = await fetch(`${BASE_FIRESTORE_URL}/challans?pageSize=300`, {
@@ -206,7 +206,7 @@ export async function saveChallanToFirestoreRest(challan: Challan): Promise<bool
   // 1. Dual save to Supabase PostgreSQL (Guaranteed persistence)
   try {
     await saveDocToSupabase('challans', challan.id, challan);
-  } catch {}
+  } catch { }
 
   try {
     const fields = challanToFirestoreFields({
@@ -237,7 +237,7 @@ export async function deleteChallanFromFirestoreRest(id: string): Promise<boolea
   // 1. Dual delete from Supabase PostgreSQL
   try {
     await deleteDocFromSupabase('challans', id);
-  } catch {}
+  } catch { }
 
   try {
     const url = `${BASE_FIRESTORE_URL}/challans/${encodeURIComponent(id)}`;

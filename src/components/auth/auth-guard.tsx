@@ -57,8 +57,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!authorized && pathname !== '/login') {
     return (
-      <div className="min-h-screen bg-surface-950 flex flex-col items-center justify-center p-4 select-none">
-        <div className="w-16 h-16 rounded-2xl bg-white p-2.5 shadow-xl border border-amber-200/40 mb-4 flex items-center justify-center animate-pulse">
+      <div className="min-h-screen bg-surface-950 flex flex-col items-center justify-center p-4 select-none" suppressHydrationWarning>
+        <div className="w-16 h-16 rounded-2xl bg-white p-2.5 shadow-xl border border-amber-200/40 mb-4 flex items-center justify-center animate-pulse" suppressHydrationWarning>
           <img
             src="/logo-emblem.png"
             alt="Showhouse"
