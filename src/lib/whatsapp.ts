@@ -674,7 +674,9 @@ export function generateCustomerRatesWhatsAppMessage(
     rate: number;
   }>,
   attendee?: string | null,
-  dateStr?: string | null
+  dateStr?: string | null,
+  transportationCharges?: number | null,
+  selectionCharges?: number | null
 ): string {
   const cleanClient = (customerName || 'RONAK').toUpperCase();
   const cleanAttendee = (attendee || 'VRUSHANK').toUpperCase();
@@ -704,6 +706,16 @@ export function generateCustomerRatesWhatsAppMessage(
     msg += `   • Agreed Rate: ${rateStr}\n\n`;
   });
 
+  if (transportationCharges && Number(transportationCharges) > 0) {
+    msg += `🚚 Delivery / Transportation Charges: ₹${Number(transportationCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+  }
+  if (selectionCharges && Number(selectionCharges) > 0) {
+    msg += `✨ Selection & Consultation Charges: ₹${Number(selectionCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+  }
+  if ((transportationCharges && Number(transportationCharges) > 0) || (selectionCharges && Number(selectionCharges) > 0)) {
+    msg += `\n`;
+  }
+
   msg += `Note: Quantities will be finalized & billed upon delivery challan dispatch.\n\n`;
   msg += `— SHOWHOUSE DECOR STUDIO\n`;
   msg += `Vishram Baug, Near Makhmali Talao, LBS Marg, Thane (W)\n`;
@@ -724,15 +736,17 @@ export function shareCustomerRatesViaWhatsApp(options: {
     particulars?: string;
     rate: number;
   }>;
+  transportationCharges?: number | null;
+  selectionCharges?: number | null;
   onToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }): boolean {
-  const { customerName, phone, attendee, dateStr, selectedRates, onToast } = options;
+  const { customerName, phone, attendee, dateStr, selectedRates, transportationCharges, selectionCharges, onToast } = options;
   if (!selectedRates || selectedRates.length === 0) {
     onToast?.('Please select at least one material rate to share', 'error');
     return false;
   }
 
-  const message = generateCustomerRatesWhatsAppMessage(customerName, selectedRates, attendee, dateStr);
+  const message = generateCustomerRatesWhatsAppMessage(customerName, selectedRates, attendee, dateStr, transportationCharges, selectionCharges);
   const targetPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
   openWhatsApp(targetPhone, message);
   onToast?.(`WhatsApp opened with Selection message for ${customerName}!`, 'success');
@@ -778,6 +792,12 @@ export function generateQuotationWhatsAppMessage(
 
   msg += `────────────────────────────\n`;
   msg += `*Total Quantity:* ${quotation.total_quantity} items\n`;
+  if (quotation.transportation_charges && Number(quotation.transportation_charges) > 0) {
+    msg += `*Transportation Charges:* ₹${Number(quotation.transportation_charges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+  }
+  if (quotation.selection_charges && Number(quotation.selection_charges) > 0) {
+    msg += `*Selection / Design Charges:* ₹${Number(quotation.selection_charges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+  }
   msg += `*Subtotal:* ₹${Number(quotation.subtotal_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
 
   if (quotation.apply_gst) {

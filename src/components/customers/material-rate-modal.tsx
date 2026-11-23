@@ -72,6 +72,12 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
   const [rates, setRates] = useState<CustomerMaterialRate[]>(initialRates);
   const [selectedRateIds, setSelectedRateIds] = useState<Set<string>>(new Set());
   const [activeSiteFilter, setActiveSiteFilter] = useState<string>('all');
+  const [transportCharges, setTransportCharges] = useState(
+    customer.transportation_charges ? String(customer.transportation_charges) : ''
+  );
+  const [selectionCharges, setSelectionCharges] = useState(
+    customer.selection_charges ? String(customer.selection_charges) : ''
+  );
 
   const filteredRates = activeSiteFilter === 'all'
     ? rates
@@ -163,6 +169,8 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
       profile,
       preparedBy: currentUser?.name || 'VRUSHANK',
       selectedRates: list,
+      transportationCharges: transportCharges ? parseFloat(transportCharges) : null,
+      selectionCharges: selectionCharges ? parseFloat(selectionCharges) : null,
     });
     showToast('Downloaded Customer Material Selection PDF!', 'success');
   };
@@ -178,14 +186,20 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
       phone: customer.phone,
       attendee: currentUser?.name || 'Vrushank',
       selectedRates: list,
+      transportationCharges: transportCharges ? parseFloat(transportCharges) : null,
+      selectionCharges: selectionCharges ? parseFloat(selectionCharges) : null,
       onToast: showToast,
     });
   };
 
   const handleSave = () => {
-    const valid = rates.filter((r) => r.particulars?.trim() || r.code?.trim() || r.rate > 0);
+    const valid = rates.filter((r) => r.particulars?.trim() || r.code?.trim() || r.rate > 0 || r.room?.trim());
+    const tc = transportCharges && !isNaN(parseFloat(transportCharges)) ? parseFloat(transportCharges) : null;
+    const sc = selectionCharges && !isNaN(parseFloat(selectionCharges)) ? parseFloat(selectionCharges) : null;
     updateCustomer(customer.id, {
       material_rates: valid,
+      transportation_charges: tc,
+      selection_charges: sc,
     });
     showToast(`Saved ${valid.length} agreed material rate(s) successfully!`, 'success');
     if (onSaved) onSaved(valid);
@@ -477,6 +491,40 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
               </datalist>
             </div>
           )}
+
+          {/* Transportation & Selection / Consultation Charges */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-orange-50/50 rounded-xl border border-orange-200">
+            <div>
+              <label className="block text-[11px] font-bold text-surface-700 mb-1">
+                Delivery / Transportation Charges (₹)
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={transportCharges}
+                onChange={(e) => setTransportCharges(e.target.value)}
+                placeholder="e.g. 500"
+                className="input text-xs py-1.5 px-2.5 font-mono bg-white"
+              />
+              <span className="text-[10px] text-surface-400">Optional site delivery / tempo freight</span>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-surface-700 mb-1">
+                Selection &amp; Consultation Charges (₹)
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={selectionCharges}
+                onChange={(e) => setSelectionCharges(e.target.value)}
+                placeholder="e.g. 1500"
+                className="input text-xs py-1.5 px-2.5 font-mono bg-white"
+              />
+              <span className="text-[10px] text-surface-400">Optional designer / site visit fee</span>
+            </div>
+          </div>
 
           {/* Privacy Note */}
           <div className="flex items-center justify-between text-[11px] text-surface-500 bg-surface-50 p-2.5 rounded-lg border border-surface-200">

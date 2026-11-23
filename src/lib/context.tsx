@@ -164,6 +164,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     }).catch(() => {});
 
+    // Fetch and sync quotations from Server API & Firestore
+    try {
+      const { getClientAuthToken } = require('@/lib/auth');
+      const token = getClientAuthToken();
+      fetch('/api/quotations', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.quotations)) {
+            store.syncQuotations(data.quotations);
+            setQuotations([...store.getQuotations()]);
+            setDataVersion((v) => v + 1);
+          }
+        })
+        .catch(() => {});
+    } catch {}
+
     // Fetch and subscribe to profile / employees from Firebase Firestore & Server API
     import('@/lib/firebase-service').then(({ fetchProfileFromFirebase, subscribeToProfile }) => {
       fetchProfileFromFirebase().then((remoteProfile) => {
@@ -545,6 +563,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
     setQuotations([...store.getQuotations()]);
     setDataVersion((v) => v + 1);
+
+    if (typeof window !== 'undefined' && q) {
+      try {
+        const { getClientAuthToken } = require('@/lib/auth');
+        const token = getClientAuthToken();
+        fetch('/api/quotations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(q),
+        }).catch(() => {});
+      } catch {}
+    }
+
     return q;
   }, []);
 
@@ -552,6 +586,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const q = store.updateQuotation(id, data, items);
     setQuotations([...store.getQuotations()]);
     setDataVersion((v) => v + 1);
+
+    if (typeof window !== 'undefined' && q) {
+      try {
+        const { getClientAuthToken } = require('@/lib/auth');
+        const token = getClientAuthToken();
+        fetch('/api/quotations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(q),
+        }).catch(() => {});
+      } catch {}
+    }
+
     return q;
   }, []);
 
@@ -559,6 +609,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const res = store.deleteQuotation(id);
     setQuotations([...store.getQuotations()]);
     setDataVersion((v) => v + 1);
+
+    if (typeof window !== 'undefined') {
+      try {
+        const { getClientAuthToken } = require('@/lib/auth');
+        const token = getClientAuthToken();
+        fetch(`/api/quotations?id=${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }).catch(() => {});
+      } catch {}
+    }
+
     return res;
   }, []);
 

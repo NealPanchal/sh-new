@@ -163,8 +163,9 @@ export default function SettingsPage() {
       const token = getClientAuthToken();
       const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-      fetch('/api/auth/change-password', {
+      fetch(`/api/auth/change-password?_t=${Date.now()}`, {
         headers: authHeader,
+        cache: 'no-store',
       })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -177,8 +178,9 @@ export default function SettingsPage() {
         })
         .catch(() => {});
 
-      fetch('/api/settings', {
+      fetch(`/api/settings?_t=${Date.now()}`, {
         headers: authHeader,
+        cache: 'no-store',
       })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -377,8 +379,9 @@ export default function SettingsPage() {
     if (mounted && !isEmployee) {
       setLoadingAccounts(true);
       const token = getClientAuthToken();
-      fetch('/api/employees', {
+      fetch(`/api/employees?_t=${Date.now()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: 'no-store',
       })
         .then((res) => res.json())
         .then((data) => {

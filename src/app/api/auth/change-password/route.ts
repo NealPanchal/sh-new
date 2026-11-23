@@ -16,6 +16,9 @@ import {
   updateEmployeePassword,
   updateEmployeePasswordAsync,
 } from '@/lib/employee-accounts';
+import { invalidateDataCache } from '@/lib/server-storage';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   const session = getAuthenticatedSession(req);
@@ -191,6 +194,7 @@ export async function POST(req: NextRequest) {
         : (adminCreds.phone || '+91 79773 95952');
 
       await setAdminCredentialsAsync(targetUsername, adminCreds.password, targetPhone);
+      invalidateDataCache('admin_credentials.json');
 
       const newToken = createSignedSessionToken({
         username: targetUsername,
@@ -258,6 +262,7 @@ export async function POST(req: NextRequest) {
 
     // Save updated credentials to persistent data storage (with awaited Firestore sync)
     await setAdminCredentialsAsync(targetUsername, newPassword.trim(), targetPhone);
+    invalidateDataCache('admin_credentials.json');
 
     // Generate fresh session token with updated credentials
     const newToken = createSignedSessionToken({
@@ -299,23 +304,37 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
+  const noCacheHeaders = {
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  };
+
   if (session.role === 'employee') {
     const emp = findEmployeeByUsername(session.username);
-    return NextResponse.json({
-      success: true,
-      username: session.username,
-      name: emp?.name || session.name,
-      phone: emp?.phone || '',
-      role: 'employee',
-      po_prefix: emp?.po_prefix || '',
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        username: session.username,
+        name: emp?.name || session.name,
+        phone: emp?.phone || '',
+        role: 'employee',
+        po_prefix: emp?.po_prefix || '',
+      },
+      { headers: noCacheHeaders }
+    );
   }
 
+  // Force fresh pull from Cloud Firestore on admin credentials fetch
+  invalidateDataCache('admin_credentials.json');
   const adminCreds = await getAdminCredentialsAsync();
-  return NextResponse.json({
-    success: true,
-    username: adminCreds.username,
-    phone: adminCreds.phone || '+91 79773 95952',
-    updatedAt: adminCreds.updated_at || null,
-  });
+  return NextResponse.json(
+    {
+      success: true,
+      username: adminCreds.username,
+      phone: adminCreds.phone || '+91 79773 95952',
+      updatedAt: adminCreds.updated_at || null,
+    },
+    { headers: noCacheHeaders }
+  );
 }

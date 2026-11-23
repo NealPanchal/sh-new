@@ -24,6 +24,7 @@ import {
   CreditException,
   AuditLog,
   Challan,
+  Quotation,
   TallyPartyMapping,
   TallySyncLog,
   TallySettings,
@@ -2004,5 +2005,23 @@ export function generateTallyPrimeXml(options: {
   xml += `</ENVELOPE>\n`;
 
   return xml;
+}
+
+// ----------------------------------------------------
+// 8. QUOTATIONS (PRE-CHALLAN ESTIMATES & SELECTIONS)
+// ----------------------------------------------------
+export function getAllQuotations(): Quotation[] {
+  let quotes = readJsonFile<Quotation[]>('quotations.json', []);
+  if (!Array.isArray(quotes)) quotes = [];
+  return quotes;
+}
+
+export function saveQuotations(quotes: Quotation[]): void {
+  writeJsonFile('quotations.json', quotes, true);
+}
+
+export async function saveQuotationsAsync(quotes: Quotation[]): Promise<boolean> {
+  const { safeWriteDataFileAsync } = await import('@/lib/server-storage');
+  return safeWriteDataFileAsync('quotations.json', quotes);
 }
 

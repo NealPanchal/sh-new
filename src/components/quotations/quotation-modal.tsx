@@ -34,6 +34,12 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
   const [selectedSiteName, setSelectedSiteName] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [applyGst, setApplyGst] = useState(true);
+  const [transportCharges, setTransportCharges] = useState(
+    editQuotation?.transportation_charges ? String(editQuotation.transportation_charges) : ''
+  );
+  const [selectionCharges, setSelectionCharges] = useState(
+    editQuotation?.selection_charges ? String(editQuotation.selection_charges) : ''
+  );
   const [preparedBy, setPreparedBy] = useState(currentUser?.name || 'Vrushank');
   const [notes, setNotes] = useState('');
 
@@ -72,6 +78,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       setSelectedSiteName(editQuotation.site_name || '');
       setDeliveryAddress(editQuotation.delivery_address || '');
       setApplyGst(Boolean(editQuotation.apply_gst));
+      setTransportCharges(editQuotation.transportation_charges ? String(editQuotation.transportation_charges) : '');
+      setSelectionCharges(editQuotation.selection_charges ? String(editQuotation.selection_charges) : '');
       setPreparedBy(editQuotation.prepared_by || currentUser?.name || 'Vrushank');
       setNotes(editQuotation.notes || '');
 
@@ -189,7 +197,10 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
 
   // Computations
   const totalQuantity = items.reduce((sum, it) => sum + (parseFloat(it.quantity) || 0), 0);
-  const subtotal = items.reduce((sum, it) => sum + (it.amount || 0), 0);
+  const itemsSubtotal = items.reduce((sum, it) => sum + (it.amount || 0), 0);
+  const parsedTransport = parseFloat(transportCharges) || 0;
+  const parsedSelection = parseFloat(selectionCharges) || 0;
+  const subtotal = itemsSubtotal + parsedTransport + parsedSelection;
   const cgstAmount = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const sgstAmount = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const totalAmount = subtotal + cgstAmount + sgstAmount;
@@ -214,6 +225,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       status: andShareWhatsApp ? 'sent' : 'draft',
       total_quantity: totalQuantity,
       subtotal_amount: subtotal,
+      transportation_charges: parsedTransport,
+      selection_charges: parsedSelection,
       apply_gst: applyGst,
       cgst_amount: cgstAmount,
       sgst_amount: sgstAmount,
@@ -470,7 +483,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
 
           {/* Financial Calculation Summary Card */}
           <div className="flex flex-col sm:flex-row justify-between items-start gap-4 p-3 bg-surface-50 rounded-xl border border-surface-200">
-            <div className="space-y-2 max-w-sm">
+            <div className="space-y-2 max-w-sm w-full">
               <label className="text-[11px] font-semibold text-surface-600 block">Terms &amp; Notes</label>
               <textarea
                 value={notes}
@@ -479,6 +492,39 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
                 placeholder="e.g. Validity: 1 Week | 50% advance, remaining on delivery."
                 className="input text-xs w-full py-1.5 bg-white"
               />
+
+              {/* Extra Charges Section: Transport & Selection */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label className="text-[10px] font-bold text-surface-700 block mb-0.5">
+                    Transportation Charges (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={transportCharges}
+                    onChange={(e) => setTransportCharges(e.target.value)}
+                    placeholder="0"
+                    className="input text-xs w-full py-1 bg-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-surface-700 block mb-0.5">
+                    Selection Charges (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={selectionCharges}
+                    onChange={(e) => setSelectionCharges(e.target.value)}
+                    placeholder="0"
+                    className="input text-xs w-full py-1 bg-white font-mono"
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -499,8 +545,26 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
                 <span className="font-bold text-surface-900">{totalQuantity} sheets</span>
               </div>
               <div className="flex justify-between text-surface-600">
-                <span>Subtotal:</span>
+                <span>Items Subtotal:</span>
                 <span className="font-mono font-semibold text-surface-900">
+                  ₹{itemsSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              {parsedTransport > 0 && (
+                <div className="flex justify-between text-surface-600 text-[11px]">
+                  <span>Transportation:</span>
+                  <span className="font-mono text-surface-800">+₹{parsedTransport.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {parsedSelection > 0 && (
+                <div className="flex justify-between text-surface-600 text-[11px]">
+                  <span>Selection Charges:</span>
+                  <span className="font-mono text-surface-800">+₹{parsedSelection.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-surface-700 font-semibold pt-1 border-t border-surface-200">
+                <span>Net Subtotal:</span>
+                <span className="font-mono font-bold text-surface-900">
                   ₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </div>

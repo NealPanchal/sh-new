@@ -49,6 +49,8 @@ export interface Quotation {
   items: QuotationItem[];
   total_quantity: number;
   subtotal_amount: number;
+  transportation_charges?: number | null;
+  selection_charges?: number | null;
   discount_type?: 'percent' | 'amount' | null;
   discount_value?: number | null;
   discount_amount?: number | null;
@@ -251,6 +253,8 @@ export interface Customer {
   gstin: string | null;
   notes: string | null;
   material_rates?: CustomerMaterialRate[]; // 4-column matrix: Room, Code, Company, Rate
+  transportation_charges?: number | null;
+  selection_charges?: number | null;
   is_active: boolean;
   credit_status?: 'credit' | 'no_credit'; // 'credit' = Udhar allowed, 'no_credit' = Strict cash/advance
   opening_balance?: number;

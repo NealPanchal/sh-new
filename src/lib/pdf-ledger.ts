@@ -113,6 +113,17 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
   doc.setFontSize(8.5);
   doc.text(`${startD} to ${endD}`, pageWidth / 2, y, { align: 'center' });
 
+  // Opening Balance mention directly at top of ledger statement
+  y += 4.5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(
+    `Opening Balance: ₹ ${formatAmount(Math.abs(openingBalance))} ${openingBalance >= 0 ? 'Dr' : 'Cr'}`,
+    pageWidth / 2,
+    y,
+    { align: 'center' }
+  );
+
   // Page 1 indicator on right side above table
   y += 5;
   doc.setFontSize(8);

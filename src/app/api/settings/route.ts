@@ -6,8 +6,11 @@ import {
   safeWriteDataFileAsync,
   safeReadDataFile,
   syncFromFirestoreIfCold,
+  invalidateDataCache,
 } from '@/lib/server-storage';
 import { saveDocToFirestoreRest } from '@/lib/server-firestore';
+
+export const dynamic = 'force-dynamic';
 
 const DEFAULT_PROFILE: BusinessProfile = {
   id: 'sh_business_profile_01',
@@ -59,8 +62,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
+  invalidateDataCache('settings.json');
   const profile = await syncFromFirestoreIfCold<BusinessProfile>('settings.json', DEFAULT_PROFILE);
-  return NextResponse.json({ success: true, profile });
+  return NextResponse.json(
+    { success: true, profile },
+    {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      },
+    }
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -94,7 +107,15 @@ export async function POST(req: NextRequest) {
     }
 
     await writeSettingsAsync(updated);
-    return NextResponse.json({ success: true, profile: updated });
+    invalidateDataCache('settings.json');
+    return NextResponse.json(
+      { success: true, profile: updated },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      }
+    );
   } catch (err: any) {
     console.error('Error saving settings:', err);
     return NextResponse.json(

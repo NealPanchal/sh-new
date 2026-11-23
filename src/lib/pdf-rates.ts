@@ -19,6 +19,8 @@ export interface ExportRatesPDFOptions {
   profile?: BusinessProfile | null;
   selectedRates: CustomerMaterialRate[];
   paperSize?: 'a4' | 'a5';
+  transportationCharges?: number | null;
+  selectionCharges?: number | null;
 }
 
 export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
@@ -32,6 +34,8 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
     profile,
     selectedRates,
     paperSize = 'a4',
+    transportationCharges,
+    selectionCharges,
   } = options;
 
   // Paper Dimensions: Default A4 Portrait (210mm × 297mm), fallback A5 (148mm × 210mm)
@@ -504,6 +508,16 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
   totalsY += isA4 ? 4.5 : 4.0;
   if (siteName) {
     doc.text(`TARGET SITE : ${siteName.toUpperCase()}`, rightX + 4.0, totalsY);
+    totalsY += isA4 ? 4.5 : 4.0;
+  }
+  if (transportationCharges && Number(transportationCharges) > 0) {
+    const tcFormatted = Number(transportationCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    doc.text(`DELIVERY / TRANSPORT : Rs. ${tcFormatted}`, rightX + 4.0, totalsY);
+    totalsY += isA4 ? 4.5 : 4.0;
+  }
+  if (selectionCharges && Number(selectionCharges) > 0) {
+    const scFormatted = Number(selectionCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    doc.text(`SELECTION CHARGES : Rs. ${scFormatted}`, rightX + 4.0, totalsY);
     totalsY += isA4 ? 4.5 : 4.0;
   }
   doc.setFont('helvetica', 'normal');

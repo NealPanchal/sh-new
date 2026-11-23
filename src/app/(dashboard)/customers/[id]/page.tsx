@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp } from '@/lib/context';
+import * as store from '@/lib/demo-store';
 import {
   ArrowLeft,
   Edit,
@@ -42,6 +43,10 @@ export default function CustomerDetailPage() {
     getCustomerQuotations,
     deleteQuotation,
     updateCustomer,
+    customers,
+    quotations: allQuotations,
+    challans: allChallans,
+    dataVersion,
     profile,
     showToast,
   } = useApp();
@@ -57,15 +62,36 @@ export default function CustomerDetailPage() {
   const [selectedRateIds, setSelectedRateIds] = useState<Set<string>>(new Set());
 
   const customerId = params.id as string;
-  const customer = useMemo(() => getCustomer(customerId), [getCustomer, customerId]);
+  const customer = useMemo(
+    () => getCustomer(customerId),
+    [getCustomer, customerId, customers, dataVersion]
+  );
   const challans = useMemo(
     () => getCustomerChallans(customerId),
-    [getCustomerChallans, customerId]
+    [getCustomerChallans, customerId, allChallans, dataVersion]
   );
   const quotations = useMemo(
     () => getCustomerQuotations(customerId),
-    [getCustomerQuotations, customerId]
+    [getCustomerQuotations, customerId, allQuotations, dataVersion]
   );
+
+  useEffect(() => {
+    if (!customerId) return;
+    const fetchQuotations = async () => {
+      try {
+        const res = await fetch(`/api/quotations?customerId=${encodeURIComponent(customerId)}&_t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.success && Array.isArray(data.quotations)) {
+            store.syncQuotations(data.quotations);
+          }
+        }
+      } catch {}
+    };
+    fetchQuotations();
+  }, [customerId]);
 
   const materialRates: CustomerMaterialRate[] = useMemo(() => {
     return Array.isArray(customer?.material_rates) ? customer.material_rates : [];
@@ -161,6 +187,8 @@ export default function CustomerDetailPage() {
       profile,
       preparedBy: currentUser?.name || 'VRUSHANK',
       selectedRates: list,
+      transportationCharges: customer.transportation_charges,
+      selectionCharges: customer.selection_charges,
     });
     showToast('Downloaded Customer Material Selection PDF!', 'success');
   };
@@ -178,6 +206,8 @@ export default function CustomerDetailPage() {
       phone: customer.phone,
       attendee: user?.name || 'VRUSHANK',
       selectedRates: list,
+      transportationCharges: customer.transportation_charges,
+      selectionCharges: customer.selection_charges,
       onToast: showToast,
     });
   };

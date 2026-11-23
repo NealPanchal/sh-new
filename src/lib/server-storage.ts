@@ -71,6 +71,13 @@ const FIRESTORE_SYNC_MAP: Record<string, SyncConfig> = {
   },
   'goods_returns.json': { collection: 'goods_returns', docId: 'all_returns', wrapAs: 'list' },
   'site_adjustments.json': { collection: 'site_adjustments', docId: 'all_adjustments', wrapAs: 'list' },
+  'quotations.json': {
+    collection: 'quotations',
+    docId: 'all_quotations',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'quotations',
+    idField: 'id',
+  },
 };
 
 /**
@@ -317,6 +324,11 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
           const tmpPath = path.join(TMP_DATA_DIR, filename);
           fs.writeFileSync(tmpPath, JSON.stringify(consolidated, null, 2), 'utf-8');
         } catch {}
+        try {
+          ensureDirSafe(DATA_DIR);
+          const primaryPath = path.join(DATA_DIR, filename);
+          fs.writeFileSync(primaryPath, JSON.stringify(consolidated, null, 2), 'utf-8');
+        } catch {}
         return consolidated as T;
       }
     } else {
@@ -333,6 +345,11 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
           ensureDirSafe(TMP_DATA_DIR);
           const tmpPath = path.join(TMP_DATA_DIR, filename);
           fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+        } catch {}
+        try {
+          ensureDirSafe(DATA_DIR);
+          const primaryPath = path.join(DATA_DIR, filename);
+          fs.writeFileSync(primaryPath, JSON.stringify(data, null, 2), 'utf-8');
         } catch {}
         return data as T;
       }

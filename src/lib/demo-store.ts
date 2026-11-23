@@ -1524,6 +1524,20 @@ export function getCustomerQuotations(customerId: string): Quotation[] {
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 }
 
+export function syncQuotations(list: Quotation[]): void {
+  if (!Array.isArray(list)) return;
+  if (!state.quotations) state.quotations = [];
+  const map = new Map<string, Quotation>();
+  state.quotations.forEach((q) => map.set(q.id, q));
+  list.forEach((q) => {
+    if (q && q.id) map.set(q.id, q);
+  });
+  state.quotations = Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || b.quotation_date || 0).getTime() - new Date(a.created_at || a.quotation_date || 0).getTime()
+  );
+  saveState(state);
+}
+
 export function getQuotation(id: string): Quotation | undefined {
   return (state.quotations || []).find((q) => q.id === id);
 }
@@ -1569,8 +1583,11 @@ export function createQuotation(data: Partial<Quotation>, items: Partial<Quotati
     };
   });
 
+  const transportCharges = Number(data.transportation_charges) || 0;
+  const selectionCharges = Number(data.selection_charges) || 0;
   const totalQty = cleanItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-  const subtotal = cleanItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const itemsSubtotal = cleanItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const subtotal = itemsSubtotal + transportCharges + selectionCharges;
   const applyGst = Boolean(data.apply_gst);
   const cgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const sgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
@@ -1591,6 +1608,8 @@ export function createQuotation(data: Partial<Quotation>, items: Partial<Quotati
     items: cleanItems,
     total_quantity: totalQty,
     subtotal_amount: subtotal,
+    transportation_charges: transportCharges,
+    selection_charges: selectionCharges,
     apply_gst: applyGst,
     cgst_amount: cgst,
     sgst_amount: sgst,
@@ -1637,8 +1656,15 @@ export function updateQuotation(id: string, data: Partial<Quotation>, items?: Pa
     });
   }
 
+  const transportCharges = Number(
+    data.transportation_charges !== undefined ? data.transportation_charges : prev.transportation_charges
+  ) || 0;
+  const selectionCharges = Number(
+    data.selection_charges !== undefined ? data.selection_charges : prev.selection_charges
+  ) || 0;
   const totalQty = cleanItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-  const subtotal = cleanItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const itemsSubtotal = cleanItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const subtotal = itemsSubtotal + transportCharges + selectionCharges;
   const applyGst = data.apply_gst !== undefined ? Boolean(data.apply_gst) : Boolean(prev.apply_gst);
   const cgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const sgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
@@ -1647,6 +1673,8 @@ export function updateQuotation(id: string, data: Partial<Quotation>, items?: Pa
   state.quotations[idx] = {
     ...prev,
     ...data,
+    transportation_charges: transportCharges,
+    selection_charges: selectionCharges,
     items: cleanItems,
     total_quantity: totalQty,
     subtotal_amount: subtotal,

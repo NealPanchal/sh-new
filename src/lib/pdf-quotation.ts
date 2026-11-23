@@ -180,6 +180,15 @@ export function exportQuotationToPDF(quotation: Quotation, profile?: BusinessPro
     ];
   });
 
+  // Add Transportation Charges row if present
+  if (quotation.transportation_charges && Number(quotation.transportation_charges) > 0) {
+    allTableRows.push(['', 'DELIVERY / TRANSPORTATION CHARGES', '', '', `₹ ${formatAmountNum(Number(quotation.transportation_charges))}`]);
+  }
+  // Add Selection Charges row if present
+  if (quotation.selection_charges && Number(quotation.selection_charges) > 0) {
+    allTableRows.push(['', 'SELECTION & CONSULTATION CHARGES', '', '', `₹ ${formatAmountNum(Number(quotation.selection_charges))}`]);
+  }
+
   // Pagination: 8 items max on Page 1 (same as Challan PDF)
   const MAX_ITEMS_PAGE1 = 8;
   const isMultiPage = allTableRows.length > MAX_ITEMS_PAGE1;
@@ -334,7 +343,10 @@ export function exportQuotationToPDF(quotation: Quotation, profile?: BusinessPro
   // ONLY material summary and Grand Total (plus GST breakdown if applied).
   // ----------------------------------------------------
   const applyGst = Boolean(quotation.apply_gst);
-  const subtotalAmount = Number(quotation.subtotal_amount || 0);
+  const transportCharges = Number(quotation.transportation_charges || 0);
+  const selectionCharges = Number(quotation.selection_charges || 0);
+  const itemsSubtotal = (quotation.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const subtotalAmount = Number(quotation.subtotal_amount || (itemsSubtotal + transportCharges + selectionCharges));
   const cgstAmount = quotation.cgst_amount ?? (applyGst ? Math.round(subtotalAmount * 0.09) : 0);
   const sgstAmount = quotation.sgst_amount ?? (applyGst ? Math.round(subtotalAmount * 0.09) : 0);
   const applyAdditional9 = Boolean(quotation.apply_additional_9);
@@ -399,8 +411,19 @@ export function exportQuotationToPDF(quotation: Quotation, profile?: BusinessPro
     doc.text(`Prepared By: ${quotation.prepared_by.toUpperCase()}`, leftNoteX, y + 11.0);
   }
 
+  // Render charges breakdown
+  if (transportCharges > 0 || selectionCharges > 0) {
+    renderTotalRow('ITEMS SUBTOTAL', `₹ ${formatAmountNum(itemsSubtotal)}`);
+    if (transportCharges > 0) {
+      renderTotalRow('DELIVERY CHARGES', `₹ ${formatAmountNum(transportCharges)}`);
+    }
+    if (selectionCharges > 0) {
+      renderTotalRow('SELECTION CHARGES', `₹ ${formatAmountNum(selectionCharges)}`);
+    }
+  }
+
   // Render totals: If GST is applied, show Sub Total, CGST, SGST, Grand Total.
-  // If NO GST, show ONLY Grand Total as requested.
+  // If NO GST, show Sub Total (if charges exist) + Grand Total
   if (applyGst) {
     renderTotalRow('SUB TOTAL', `₹ ${formatAmountNum(subtotalAmount)}`);
     renderTotalRow('CGST 9%', `₹ ${formatAmountNum(cgstAmount)}`);
@@ -410,6 +433,9 @@ export function exportQuotationToPDF(quotation: Quotation, profile?: BusinessPro
     }
     renderTotalRow('GRAND TOTAL', `₹ ${formatAmountNum(grandTotal)}`, true);
   } else {
+    if (transportCharges > 0 || selectionCharges > 0) {
+      renderTotalRow('SUB TOTAL', `₹ ${formatAmountNum(subtotalAmount)}`);
+    }
     renderTotalRow('GRAND TOTAL', `₹ ${formatAmountNum(grandTotal)}`, true);
   }
 

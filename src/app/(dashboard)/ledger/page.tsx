@@ -2289,6 +2289,9 @@ function MasterPartyLedgerContent() {
                   : (fromDate ? formatDateDisplay(fromDate) : '1-Apr-24'))
             } to {toDate ? formatDateDisplay(toDate) : '31-Mar-27'}
           </div>
+          <div className="pt-1.5 text-[11px] font-bold">
+            Opening Balance: ₹{formatAmountDisplay(Math.abs(Number(ledgerData.openingBalance) || 0))} {Number(ledgerData.openingBalance) >= 0 ? 'Dr' : 'Cr'}
+          </div>
         </div>
 
         {/* 3. Page 1 right-aligned */}
@@ -2397,23 +2400,21 @@ function MasterPartyLedgerContent() {
             ) : (
               <>
                 {/* Standard Customer Continuous View */}
-                {Number(ledgerData.openingBalance) !== 0 && (
-                  <tr className="leading-snug">
-                    <td className="py-0.5 px-1.5 text-left whitespace-nowrap">
-                      {selectedCustomer?.created_at ? formatDateDisplay(selectedCustomer.created_at) : (fromDate ? formatDateDisplay(fromDate) : '')}
-                    </td>
-                    <td className="py-0.5 px-1.5 text-left">
-                      {Number(ledgerData.openingBalance) >= 0 ? 'To Opening Balance' : 'By Opening Balance'}
-                    </td>
-                    <td colSpan={2}></td>
-                    <td className="py-0.5 px-1.5 text-right font-mono">
-                      {Number(ledgerData.openingBalance) >= 0 ? formatAmountDisplay(ledgerData.openingBalance) : ''}
-                    </td>
-                    <td className="py-0.5 px-1.5 text-right font-mono">
-                      {Number(ledgerData.openingBalance) < 0 ? formatAmountDisplay(Math.abs(ledgerData.openingBalance)) : ''}
-                    </td>
-                  </tr>
-                )}
+                <tr className="leading-snug">
+                  <td className="py-0.5 px-1.5 text-left whitespace-nowrap">
+                    {selectedCustomer?.created_at ? formatDateDisplay(selectedCustomer.created_at) : (fromDate ? formatDateDisplay(fromDate) : '')}
+                  </td>
+                  <td className="py-0.5 px-1.5 text-left">
+                    {Number(ledgerData.openingBalance) >= 0 ? 'To Opening Balance' : 'By Opening Balance'}
+                  </td>
+                  <td colSpan={2}></td>
+                  <td className="py-0.5 px-1.5 text-right font-mono">
+                    {Number(ledgerData.openingBalance) >= 0 ? formatAmountDisplay(ledgerData.openingBalance) : ''}
+                  </td>
+                  <td className="py-0.5 px-1.5 text-right font-mono">
+                    {Number(ledgerData.openingBalance) < 0 ? formatAmountDisplay(Math.abs(ledgerData.openingBalance)) : ''}
+                  </td>
+                </tr>
                 {displayEntries.map((e) => {
                   const isDr = (Number(e.debit) || 0) > 0;
                   return (

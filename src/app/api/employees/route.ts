@@ -8,11 +8,21 @@ import {
   updateEmployeePassword,
   updateEmployeePasswordAsync,
 } from '@/lib/employee-accounts';
+import { invalidateDataCache } from '@/lib/server-storage';
 import { EmployeeAccount } from '@/types';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const session = getAuthenticatedSession(req);
+  invalidateDataCache('employees.json');
   const accounts = await getEmployeeAccountsAsync();
+
+  const noCacheHeaders = {
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  };
 
   // If not admin, return public safe info (name, username, phone, po_prefix, is_active) WITHOUT passwords
   if (!session || session.role !== 'admin') {
@@ -30,11 +40,11 @@ export async function GET(req: NextRequest) {
         ...(isSelf ? { password: a.password } : {}),
       };
     });
-    return NextResponse.json({ success: true, employees: publicAccounts });
+    return NextResponse.json({ success: true, employees: publicAccounts }, { headers: noCacheHeaders });
   }
 
   // Admin gets full accounts including passwords for management
-  return NextResponse.json({ success: true, employees: accounts });
+  return NextResponse.json({ success: true, employees: accounts }, { headers: noCacheHeaders });
 }
 
 export async function POST(req: NextRequest) {
@@ -82,6 +92,8 @@ export async function POST(req: NextRequest) {
       if (!updateResult.success) {
         return NextResponse.json({ success: false, error: updateResult.error }, { status: 400 });
       }
+
+      invalidateDataCache('employees.json');
 
       recordSecurityAuditLog({
         username: session.username,
@@ -175,6 +187,8 @@ export async function POST(req: NextRequest) {
     if (!saved) {
       return NextResponse.json({ success: false, error: 'Failed to write employees file' }, { status: 500 });
     }
+
+    invalidateDataCache('employees.json');
 
     recordSecurityAuditLog({
       username: session.username,
