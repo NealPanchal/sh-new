@@ -94,7 +94,13 @@ function loadState(): DemoState {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
+      if (!parsed || typeof parsed !== 'object') return getDefaultState();
       if (!Array.isArray(parsed.quotations)) parsed.quotations = [];
+      if (!Array.isArray(parsed.challans)) parsed.challans = [];
+      if (!Array.isArray(parsed.customers)) parsed.customers = [];
+      if (!Array.isArray(parsed.products)) parsed.products = [];
+      if (!Array.isArray(parsed.challanItems)) parsed.challanItems = [];
+      if (!Array.isArray(parsed.activityLog)) parsed.activityLog = [];
       return parsed;
     }
   } catch {
@@ -567,7 +573,8 @@ export function getChallans(filters?: {
   toDate?: string;
   customerId?: string;
 }): Challan[] {
-  let challans = state.challans.filter((c) => c.status !== 'void' && !c.is_deleted);
+  const source = Array.isArray(state?.challans) ? state.challans : [];
+  let challans = source.filter((c) => c && c.status !== 'void' && !c.is_deleted);
 
   if (filters) {
     if (filters.search) {
@@ -583,8 +590,9 @@ export function getChallans(filters?: {
             (c.created_by && c.created_by.toLowerCase().includes(q)) ||
             (c.prepared_by && c.prepared_by.toLowerCase().includes(q)) ||
             (c.items &&
+              Array.isArray(c.items) &&
               c.items.some(
-                (it) => it.item_description && it.item_description.toLowerCase().includes(q)
+                (it) => it && it.item_description && it.item_description.toLowerCase().includes(q)
               ))
         );
       }
@@ -607,11 +615,12 @@ export function getChallans(filters?: {
   }
 
   // Ensure items are populated for every returned challan
+  const safeItems = Array.isArray(state?.challanItems) ? state.challanItems : [];
   return challans
     .map((c) => {
       if (!c.items || c.items.length === 0) {
-        const items = state.challanItems
-          .filter((i) => i.challan_id === c.id)
+        const items = safeItems
+          .filter((i) => i && i.challan_id === c.id)
           .sort((a, b) => (a.serial_number || 0) - (b.serial_number || 0));
         if (items.length > 0) {
           return { ...c, items };

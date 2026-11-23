@@ -158,32 +158,40 @@ export function getDateFilterRange(state: DateFilterState): {
 /**
  * Filter an array of items by their `challan_date` field
  */
-export function filterChallansByDate<T extends { challan_date: string }>(
+export function filterChallansByDate<T extends { challan_date?: string }>(
   items: T[],
   state: DateFilterState
 ): T[] {
-  if (state.preset === 'all') return items;
+  if (!Array.isArray(items)) return [];
+  if (!state || state.preset === 'all') return items;
 
-  const range = getDateFilterRange(state);
+  try {
+    const range = getDateFilterRange(state);
 
-  if (range.single) {
-    return items.filter((item) => {
-      const d = (item.challan_date || '').slice(0, 10);
-      return d === range.single;
-    });
+    if (range.single) {
+      return items.filter((item) => {
+        if (!item) return false;
+        const d = (item.challan_date || '').slice(0, 10);
+        return d === range.single;
+      });
+    }
+
+    if (range.from || range.to) {
+      return items.filter((item) => {
+        if (!item) return false;
+        const d = (item.challan_date || '').slice(0, 10);
+        if (!d) return false;
+        if (range.from && d < range.from) return false;
+        if (range.to && d > range.to) return false;
+        return true;
+      });
+    }
+
+    return items;
+  } catch (e) {
+    console.error('Error in filterChallansByDate:', e);
+    return items;
   }
-
-  if (range.from || range.to) {
-    return items.filter((item) => {
-      const d = (item.challan_date || '').slice(0, 10);
-      if (!d) return false;
-      if (range.from && d < range.from) return false;
-      if (range.to && d > range.to) return false;
-      return true;
-    });
-  }
-
-  return items;
 }
 
 export function DateFilter({
@@ -218,8 +226,9 @@ export function DateFilter({
     countMap.set(curMonthKey, 0);
     countMap.set(prevMonthKey, 0);
 
-    availableChallans.forEach((c) => {
-      if (c.challan_date) {
+    const safeList = Array.isArray(availableChallans) ? availableChallans : [];
+    safeList.forEach((c) => {
+      if (c && c.challan_date && typeof c.challan_date === 'string') {
         const key = c.challan_date.slice(0, 7);
         if (/^\d{4}-\d{2}$/.test(key)) {
           countMap.set(key, (countMap.get(key) || 0) + 1);
@@ -233,7 +242,7 @@ export function DateFilter({
       const [yStr, mStr] = key.split('-');
       const y = parseInt(yStr, 10);
       const m = parseInt(mStr, 10);
-      const label = `${MONTH_NAMES[m - 1]} ${y}`;
+      const label = `${MONTH_NAMES[m - 1] || 'Month'} ${y || ''}`;
       return {
         key,
         year: y,

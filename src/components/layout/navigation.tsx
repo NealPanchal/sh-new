@@ -159,6 +159,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               className={cn(
                 'flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
                 isActive
@@ -335,6 +336,7 @@ export function MobileDrawer({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={onClose}
                 className={cn(
                   'flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all',
@@ -564,6 +566,7 @@ export function MobileNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              prefetch={false}
               className={cn(
                 'flex flex-col items-center justify-center flex-1 py-1 transition-colors',
                 isActive ? 'text-[#ea580c]' : 'text-surface-400 hover:text-surface-700'

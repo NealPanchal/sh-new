@@ -99,92 +99,120 @@ export default function DeliveryBillsPage() {
 
   const allChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
-    let list = getChallans();
-    if (isEmp && currentUser) {
-      const uName = (currentUser.name || '').toLowerCase();
-      const uUser = (currentUser.username || '').toLowerCase();
-      list = list.filter((c) => {
-        const prep = (c.prepared_by || '').toLowerCase();
-        const cr = (c.created_by || '').toLowerCase();
-        return (uName && (prep.includes(uName) || cr.includes(uName))) ||
-               (uUser && (prep === uUser || cr === uUser));
-      });
+    try {
+      let list = (getChallans() || []).filter(Boolean);
+      if (isEmp && currentUser) {
+        const uName = (currentUser.name || '').toLowerCase();
+        const uUser = (currentUser.username || '').toLowerCase();
+        list = list.filter((c) => {
+          if (!c) return false;
+          const prep = (c.prepared_by || '').toLowerCase();
+          const cr = (c.created_by || '').toLowerCase();
+          return (uName && (prep.includes(uName) || cr.includes(uName))) ||
+                 (uUser && (prep === uUser || cr === uUser));
+        });
+      }
+      return list;
+    } catch (e) {
+      console.error('Error computing allChallans in bills:', e);
+      return [];
     }
-    return list;
   }, [mounted, isLoading, getChallans, dataVersion, liveChallans, isEmp, currentUser]);
 
   const uniqueCompanies = useMemo(() => {
-    const names = Array.from(new Set(allChallans.map((c) => c.customer_name).filter(Boolean)));
-    return names.sort();
+    try {
+      const names = Array.from(new Set(allChallans.filter(Boolean).map((c) => c.customer_name).filter(Boolean)));
+      return names.sort();
+    } catch {
+      return [];
+    }
   }, [allChallans]);
 
   const uniqueCreators = useMemo(() => {
-    const names = Array.from(
-      new Set(
-        allChallans.map((c) => c.created_by || c.prepared_by || 'Unassigned').filter(Boolean)
-      )
-    );
-    return names.sort();
+    try {
+      const names = Array.from(
+        new Set(
+          allChallans.filter(Boolean).map((c) => c.created_by || c.prepared_by || 'Unassigned').filter(Boolean)
+        )
+      );
+      return names.sort();
+    } catch {
+      return [];
+    }
   }, [allChallans]);
 
   const filteredBills = useMemo(() => {
     if (!mounted || isLoading) return [];
-    let list = getChallans({
-      search: search.trim() || undefined,
-    });
-    if (isEmp && currentUser) {
-      const uName = (currentUser.name || '').toLowerCase();
-      const uUser = (currentUser.username || '').toLowerCase();
-      list = list.filter((c) => {
-        const prep = (c.prepared_by || '').toLowerCase();
-        const cr = (c.created_by || '').toLowerCase();
-        return (uName && (prep.includes(uName) || cr.includes(uName))) ||
-               (uUser && (prep === uUser || cr === uUser));
-      });
+    try {
+      let list = (getChallans({
+        search: search.trim() || undefined,
+      }) || []).filter(Boolean);
+      if (isEmp && currentUser) {
+        const uName = (currentUser.name || '').toLowerCase();
+        const uUser = (currentUser.username || '').toLowerCase();
+        list = list.filter((c) => {
+          if (!c) return false;
+          const prep = (c.prepared_by || '').toLowerCase();
+          const cr = (c.created_by || '').toLowerCase();
+          return (uName && (prep.includes(uName) || cr.includes(uName))) ||
+                 (uUser && (prep === uUser || cr === uUser));
+        });
+      }
+      if (companyFilter !== 'all') {
+        list = list.filter((c) => (c?.customer_name || '').toLowerCase() === companyFilter.toLowerCase());
+      }
+      if (creatorFilter !== 'all') {
+        list = list.filter((c) => {
+          const creator = (c?.created_by || c?.prepared_by || 'Unassigned').toLowerCase();
+          return creator === creatorFilter.toLowerCase();
+        });
+      }
+      list = filterChallansByDate(list, dateFilter) || [];
+      return list.filter(Boolean);
+    } catch (e) {
+      console.error('Error filtering bills:', e);
+      return [];
     }
-    if (companyFilter !== 'all') {
-      list = list.filter((c) => (c.customer_name || '').toLowerCase() === companyFilter.toLowerCase());
-    }
-    if (creatorFilter !== 'all') {
-      list = list.filter((c) => {
-        const creator = (c.created_by || c.prepared_by || 'Unassigned').toLowerCase();
-        return creator === creatorFilter.toLowerCase();
-      });
-    }
-    list = filterChallansByDate(list, dateFilter);
-    return list;
   }, [mounted, isLoading, getChallans, search, companyFilter, creatorFilter, dateFilter, dataVersion, liveChallans, isEmp, currentUser]);
 
   // Grouped by Company
   const groupedByCompany = useMemo(() => {
-    const map = new Map<string, { company: string; items: Challan[]; totalQty: number; totalAmount: number }>();
-    filteredBills.forEach((c) => {
-      const comp = c.customer_name || 'Unknown Company';
-      if (!map.has(comp)) {
-        map.set(comp, { company: comp, items: [], totalQty: 0, totalAmount: 0 });
-      }
-      const group = map.get(comp)!;
-      group.items.push(c);
-      group.totalQty += c.total_quantity || 0;
-      group.totalAmount += c.total_amount || 0;
-    });
-    return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+    try {
+      const map = new Map<string, { company: string; items: Challan[]; totalQty: number; totalAmount: number }>();
+      (filteredBills || []).filter(Boolean).forEach((c) => {
+        const comp = c?.customer_name || 'Unknown Company';
+        if (!map.has(comp)) {
+          map.set(comp, { company: comp, items: [], totalQty: 0, totalAmount: 0 });
+        }
+        const group = map.get(comp)!;
+        group.items.push(c);
+        group.totalQty += c?.total_quantity || 0;
+        group.totalAmount += c?.total_amount || 0;
+      });
+      return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+    } catch {
+      return [];
+    }
   }, [filteredBills]);
 
   // Grouped by Creator / Billed By
   const groupedByCreator = useMemo(() => {
-    const map = new Map<string, { creator: string; items: Challan[]; totalQty: number; totalAmount: number }>();
-    filteredBills.forEach((c) => {
-      const creator = c.created_by || c.prepared_by || 'Unassigned';
-      if (!map.has(creator)) {
-        map.set(creator, { creator, items: [], totalQty: 0, totalAmount: 0 });
-      }
-      const group = map.get(creator)!;
-      group.items.push(c);
-      group.totalQty += c.total_quantity || 0;
-      group.totalAmount += c.total_amount || 0;
-    });
-    return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+    try {
+      const map = new Map<string, { creator: string; items: Challan[]; totalQty: number; totalAmount: number }>();
+      (filteredBills || []).filter(Boolean).forEach((c) => {
+        const creator = c?.created_by || c?.prepared_by || 'Unassigned';
+        if (!map.has(creator)) {
+          map.set(creator, { creator, items: [], totalQty: 0, totalAmount: 0 });
+        }
+        const group = map.get(creator)!;
+        group.items.push(c);
+        group.totalQty += c?.total_quantity || 0;
+        group.totalAmount += c?.total_amount || 0;
+      });
+      return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+    } catch {
+      return [];
+    }
   }, [filteredBills]);
 
   const toggleGroup = (key: string) => {
