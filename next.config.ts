@@ -25,6 +25,10 @@ const securityHeaders = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=()",
   },
+  {
+    key: "Clear-Site-Data",
+    value: '"cache"',
+  },
 ];
 
 const nextConfig: NextConfig = {
