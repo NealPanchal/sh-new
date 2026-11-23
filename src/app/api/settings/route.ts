@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession } from '@/lib/server-auth';
 import { BusinessProfile } from '@/types';
-import { safeWriteDataFile, safeReadDataFile, syncFromFirestoreIfCold } from '@/lib/server-storage';
+import {
+  safeWriteDataFile,
+  safeWriteDataFileAsync,
+  safeReadDataFile,
+  syncFromFirestoreIfCold,
+} from '@/lib/server-storage';
 import { saveDocToFirestoreRest } from '@/lib/server-firestore';
 
 const DEFAULT_PROFILE: BusinessProfile = {
@@ -41,9 +46,11 @@ function readSettings(): BusinessProfile {
   return safeReadDataFile<BusinessProfile>('settings.json', DEFAULT_PROFILE);
 }
 
-function writeSettings(profile: BusinessProfile): void {
-  safeWriteDataFile('settings.json', profile);
-  saveDocToFirestoreRest('settings', 'business_profile', profile).catch(() => {});
+async function writeSettingsAsync(profile: BusinessProfile): Promise<void> {
+  await safeWriteDataFileAsync('settings.json', profile);
+  try {
+    await saveDocToFirestoreRest('settings', 'business_profile', profile);
+  } catch {}
 }
 
 export async function GET(req: NextRequest) {
@@ -86,7 +93,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    writeSettings(updated);
+    await writeSettingsAsync(updated);
     return NextResponse.json({ success: true, profile: updated });
   } catch (err: any) {
     console.error('Error saving settings:', err);

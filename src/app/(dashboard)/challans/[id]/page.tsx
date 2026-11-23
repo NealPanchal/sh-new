@@ -33,7 +33,12 @@ import {
 import { formatDateIndian, formatINR, formatPhone, amountToWords, cn } from '@/lib/utils';
 import { Challan, ChallanStatus, PaymentMode } from '@/types';
 import { getCurrentUser, isEmployee, isAdmin } from '@/lib/auth';
-import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
+import {
+  downloadChallanPDF,
+  printChallanPDF,
+  downloadInternalChallanPDF,
+  printInternalChallanPDF,
+} from '@/lib/pdf';
 import {
   openWhatsApp,
   generateShareMessage,
@@ -74,7 +79,7 @@ export default function ChallanDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
-  const [viewMode, setViewMode] = useState<'challan' | 'pi'>('challan');
+  const [viewMode, setViewMode] = useState<'challan' | 'pi' | 'office'>('challan');
   const [activeDocType, setActiveDocType] = useState<'DELIVERY CHALLAN' | 'PROFORMA INVOICE'>('DELIVERY CHALLAN');
 
   // Payment Received Modal State
@@ -412,6 +417,28 @@ export default function ChallanDetailPage() {
     showToast(`PDF downloaded (Without Rate): ${challan.challan_number}`);
   };
 
+  const handlePrintOfficeCopy = () => {
+    if (!profile || !challan) return;
+    printInternalChallanPDF({
+      challan,
+      items: challan.items || [],
+      profile,
+      documentType: 'DELIVERY CHALLAN',
+    });
+    showToast(`Print opened (Office Copy with Brand & Code) for ${challan.challan_number}`);
+  };
+
+  const handleDownloadOfficeCopy = () => {
+    if (!profile || !challan) return;
+    downloadInternalChallanPDF({
+      challan,
+      items: challan.items || [],
+      profile,
+      documentType: 'DELIVERY CHALLAN',
+    });
+    showToast(`PDF downloaded (Office Copy): ${challan.challan_number}`);
+  };
+
   const handleWhatsApp = async (typeOverride?: 'DELIVERY CHALLAN' | 'PROFORMA INVOICE') => {
     if (!profile || !challan) return;
     const docType = typeOverride || activeDocType;
@@ -630,6 +657,16 @@ export default function ChallanDetailPage() {
               <span>Print (No Rate)</span>
             </button>
 
+            {/* Print Office Copy (Brand & Code) */}
+            <button
+              onClick={handlePrintOfficeCopy}
+              className="btn-secondary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-300 shadow-2xs"
+              title="Print Warehouse & Office Copy (Includes Supplier Brand & Product Codes)"
+            >
+              <Building2 size={14} className="text-purple-700" />
+              <span>Print (Office Copy)</span>
+            </button>
+
             <button
               onClick={() => handleDownload(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
               className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
@@ -637,6 +674,16 @@ export default function ChallanDetailPage() {
             >
               <Download size={14} />
               <span>PDF ({viewMode === 'pi' ? 'PI' : 'Challan'})</span>
+            </button>
+
+            {/* Download Office Copy PDF */}
+            <button
+              onClick={handleDownloadOfficeCopy}
+              className="btn-secondary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-300 shadow-2xs"
+              title="Download Warehouse & Office Copy PDF (Includes Supplier Brand & Product Codes)"
+            >
+              <Download size={14} className="text-purple-700" />
+              <span>PDF (Office Copy)</span>
             </button>
 
             {canEdit ? (
@@ -703,7 +750,7 @@ export default function ChallanDetailPage() {
           )}
         >
           <FileText size={14} />
-          <span>Delivery Challan (A5)</span>
+          <span>Delivery Challan (A4 Client)</span>
         </button>
 
         <button
@@ -719,7 +766,24 @@ export default function ChallanDetailPage() {
           )}
         >
           <FileText size={14} />
-          <span>Proforma Invoice PI (A5)</span>
+          <span>Proforma Invoice PI (A4)</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setViewMode('office');
+            setActiveDocType('DELIVERY CHALLAN');
+          }}
+          className={cn(
+            'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer',
+            viewMode === 'office'
+              ? 'bg-purple-800 text-white shadow-xs'
+              : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
+          )}
+          title="Internal warehouse/office copy with supplier company name & code (Staff view only)"
+        >
+          <Building2 size={14} />
+          <span>Office Copy (Brand & Code)</span>
         </button>
 
       </div>
@@ -774,7 +838,8 @@ export default function ChallanDetailPage() {
       <OfficialChallanDocument
         challan={challan}
         profile={profile}
-        viewMode={viewMode === 'pi' ? 'pi' : 'challan'}
+        viewMode={viewMode === 'office' ? 'office' : viewMode === 'pi' ? 'pi' : 'challan'}
+        showBrandAndCode={viewMode === 'office'}
         hideRate={false}
       />
 

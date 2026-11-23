@@ -73,6 +73,9 @@ interface AppContextType {
   // Dashboard
   getDashboardStats: () => DashboardStats;
 
+  // Real-time Cloud Sync & PWA Refresh
+  reloadAllData: () => Promise<void>;
+
   // Toast
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   toast: { message: string; type: string } | null;
@@ -210,6 +213,98 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.warn('Firebase sync listener initialization skipped:', err);
     });
   }, []);
+
+  const reloadAllData = useCallback(async () => {
+    try {
+      const {
+        fetchChallansFromFirebase,
+        fetchChallansFromServer,
+        fetchCustomersFromFirebase,
+        fetchProductsFromFirebase,
+        fetchProfileFromFirebase,
+      } = await import('@/lib/firebase-service');
+
+      const [firestoreChallans, serverChallans, remoteCust, remoteProd, remoteProf] = await Promise.all([
+        fetchChallansFromFirebase().catch(() => []),
+        fetchChallansFromServer().catch(() => []),
+        fetchCustomersFromFirebase().catch(() => []),
+        fetchProductsFromFirebase().catch(() => []),
+        fetchProfileFromFirebase().catch(() => null),
+      ]);
+
+      const combinedChallans = [...firestoreChallans, ...serverChallans];
+      if (combinedChallans.length > 0) {
+        store.syncFromFirebase(combinedChallans);
+        setChallans([...store.getChallans()]);
+      }
+
+      if (remoteCust && remoteCust.length > 0) {
+        store.syncCustomersFromFirebase(remoteCust);
+        setCustomers(store.getCustomers());
+      }
+
+      if (remoteProd && remoteProd.length > 0) {
+        store.syncProductsFromFirebase(remoteProd);
+        setProducts(store.getProducts());
+      }
+
+      if (remoteProf) {
+        store.syncProfile(remoteProf);
+        setProfile(store.getProfile());
+      }
+
+      // Refresh employee accounts cache
+      try {
+        const { getClientAuthToken } = await import('@/lib/auth');
+        const token = getClientAuthToken();
+        const empRes = await fetch('/api/employees', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (empRes.ok) {
+          const empData = await empRes.json();
+          if (empData.success && Array.isArray(empData.employees) && typeof window !== 'undefined') {
+            localStorage.setItem('showhouse_employee_cache', JSON.stringify(empData.employees));
+          }
+        }
+      } catch {}
+
+      setDataVersion((v) => v + 1);
+    } catch (err) {
+      console.warn('reloadAllData error:', err);
+    }
+  }, []);
+
+  // Standalone PWA / Mobile Background & Visibility Resume Sync
+  // Automatically updates data as soon as user opens or resumes the app from home screen
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleResume = () => {
+      if (document.visibilityState === 'visible') {
+        reloadAllData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleResume);
+    window.addEventListener('app-reload-data', reloadAllData);
+
+    // Periodic refresh while app is actively viewed (every 25s)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        reloadAllData();
+      }
+    }, 25000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleResume);
+      window.removeEventListener('app-reload-data', reloadAllData);
+      clearInterval(interval);
+    };
+  }, [reloadAllData]);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type });
@@ -513,6 +608,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     duplicateChallan: duplicateChallanFn,
     getActivityLog: store.getActivityLog,
     getDashboardStats: getDashboardStatsFn,
+    reloadAllData,
     showToast,
     toast,
   };

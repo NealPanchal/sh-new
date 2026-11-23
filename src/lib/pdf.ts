@@ -18,6 +18,7 @@ export interface PDFOptions {
   employeePhone?: string;
   hideRate?: boolean;
   paperSize?: 'a4' | 'a5';
+  showBrandAndCode?: boolean; // When true: includes vendor company brand name and item code (Office / Warehouse Copy)
 }
 
 /**
@@ -67,6 +68,7 @@ export function generateChallanPDF({
   employeePhone,
   hideRate = false,
   paperSize = 'a4',
+  showBrandAndCode = false,
 }: PDFOptions): jsPDF {
   // Paper Dimensions: Default A4 Portrait (210mm × 297mm), fallback A5 (148mm × 210mm)
   const isA4 = paperSize !== 'a5';
@@ -123,9 +125,16 @@ export function generateChallanPDF({
   doc.setTextColor(...goldColor);
   doc.text('Decor Studio', margin + (isA4 ? 18 : 15), y + (isA4 ? 10.8 : 8.8));
 
-  // Right Header: Rounded Pill Box ("PROFORMA INVOICE" / "DELIVERY CHALLAN" / "DELIVERY SLIP")
-  const titleText = hideRate ? 'DELIVERY SLIP' : resolvedDocType;
-  const boxWidth = isA4 ? (hideRate ? 48 : isPI ? 54 : 58) : (hideRate ? 40 : isPI ? 44 : 48);
+  // Right Header: Rounded Pill Box ("PROFORMA INVOICE" / "DELIVERY CHALLAN" / "DELIVERY SLIP" / "OFFICE COPY")
+  const isOfficeCopy = Boolean(showBrandAndCode);
+  const titleText = isOfficeCopy
+    ? 'DELIVERY CHALLAN (OFFICE COPY)'
+    : hideRate
+    ? 'DELIVERY SLIP'
+    : resolvedDocType;
+  const boxWidth = isA4
+    ? (isOfficeCopy ? 72 : hideRate ? 48 : isPI ? 54 : 58)
+    : (isOfficeCopy ? 60 : hideRate ? 40 : isPI ? 44 : 48);
   const boxHeight = isA4 ? 7.2 : 6.2;
   const boxX = pageWidth - margin - boxWidth;
   const boxY = y;
@@ -136,7 +145,7 @@ export function generateChallanPDF({
   doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 1.2, 1.2, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(isA4 ? 9.8 : 8.8);
+  doc.setFontSize(isA4 ? (isOfficeCopy ? 8.2 : 9.8) : (isOfficeCopy ? 7.2 : 8.8));
   doc.setTextColor(...blueColor);
   doc.text(titleText, boxX + boxWidth / 2, boxY + (isA4 ? 4.9 : 4.3), { align: 'center' });
 
@@ -258,12 +267,27 @@ export function generateChallanPDF({
     : [8, 63, 20, 21, 22]; // Total = 134mm
 
   const allTableRows: (string | number)[][] = items.map((item, idx) => {
-    // Clean description without supplier company name
-    let desc = cleanChallanItemDescription(item.item_description, item.brand).toUpperCase();
-    if (item.colour_finish) {
-      const cleanFinish = cleanChallanItemDescription(item.colour_finish, item.brand).toUpperCase();
-      if (cleanFinish && !desc.includes(cleanFinish)) {
-        desc += ` - ${cleanFinish}`;
+    let desc = '';
+    if (isOfficeCopy) {
+      // Internal Office / Warehouse copy: include vendor brand [ BRAND ] and item code (Code: ...)
+      const brandStr = item.brand ? `[ ${item.brand.trim().toUpperCase()} ]` : '';
+      const codeStr = item.product_id ? `(Code: ${item.product_id.trim().toUpperCase()})` : '';
+      const baseDesc = (item.item_description || '').trim().toUpperCase();
+      desc = [baseDesc, brandStr, codeStr].filter(Boolean).join(' ');
+      if (item.colour_finish) {
+        const finishStr = item.colour_finish.trim().toUpperCase();
+        if (finishStr && !desc.includes(finishStr)) {
+          desc += ` - ${finishStr}`;
+        }
+      }
+    } else {
+      // Clean description without supplier company name for client
+      desc = cleanChallanItemDescription(item.item_description, item.brand).toUpperCase();
+      if (item.colour_finish) {
+        const cleanFinish = cleanChallanItemDescription(item.colour_finish, item.brand).toUpperCase();
+        if (cleanFinish && !desc.includes(cleanFinish)) {
+          desc += ` - ${cleanFinish}`;
+        }
       }
     }
     if (item.size) desc += ` ( ${item.size} )`;
@@ -531,38 +555,49 @@ export function generateChallanPDF({
     let totalsY = boxY;
 
     if (hideRate) {
-      // Delivery Verification (No Prices)
-      doc.setFillColor(242, 244, 246);
-      doc.rect(rightX, totalsY, rightColWidth, isA4 ? 6.0 : 5.0, 'F');
-      doc.setDrawColor(40, 40, 40);
-      doc.setLineWidth(0.2);
-      doc.line(rightX, totalsY + (isA4 ? 6.0 : 5.0), rightX + rightColWidth, totalsY + (isA4 ? 6.0 : 5.0));
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(isA4 ? 7.8 : 6.8);
-      doc.setTextColor(...blackColor);
-      doc.text('DELIVERY ACKNOWLEDGMENT', rightX + rightColWidth / 2, totalsY + (isA4 ? 4.2 : 3.5), { align: 'center' });
-      totalsY += isA4 ? 8.5 : 7.5;
+      // Delivery Slip / No-Rate: Matches standard layout with blank amount boxes for hand writing
+      const rightAmountColWidth = isA4 ? 26 : 21;
+      const renderTotalRow = (label: string, value: string, isGrandTotal = false) => {
+        const rowH = isGrandTotal ? (isA4 ? 5.8 : 5.0) : (isA4 ? 4.4 : 3.8);
+        if (isGrandTotal) {
+          doc.setFillColor(235, 238, 242);
+          doc.rect(rightX, totalsY, rightColWidth, rowH, 'F');
+        }
+        doc.setDrawColor(40, 40, 40);
+        doc.setLineWidth(0.2);
+        doc.line(rightX, totalsY + rowH, rightX + rightColWidth, totalsY + rowH);
+        doc.line(rightX + rightColWidth - rightAmountColWidth, totalsY, rightX + rightColWidth - rightAmountColWidth, totalsY + rowH);
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(isA4 ? 7.4 : 6.4);
-      doc.text(`TOTAL ITEMS : ${items.length}`, rightX + 3, totalsY);
-      totalsY += isA4 ? 4.0 : 3.6;
-      doc.text(`TOTAL QUANTITY : ${challan.total_quantity}`, rightX + 3, totalsY);
-      totalsY += isA4 ? 4.8 : 4.2;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(isGrandTotal ? (isA4 ? 8.2 : 7.2) : (isA4 ? 7.2 : 6.3));
+        doc.setTextColor(...blackColor);
+        doc.text(label, rightX + 2.5, totalsY + (isGrandTotal ? (isA4 ? 4.0 : 3.5) : (isA4 ? 3.1 : 2.7)));
+        if (value) {
+          doc.text(value, rightX + rightColWidth - 2.0, totalsY + (isGrandTotal ? (isA4 ? 4.0 : 3.5) : (isA4 ? 3.1 : 2.7)), {
+            align: 'right',
+          });
+        }
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(isA4 ? 6.8 : 5.8);
-      doc.text('[   ] Verified and Received', rightX + 3, totalsY);
+        totalsY += rowH;
+      };
 
-      // Signatory
+      renderTotalRow('SUB TOTAL', '');
+      renderTotalRow('GRAND TOTAL', '', true);
+
+      // Authorized Signatory Box below Grand Total (Right Column)
+      const authHeaderY = Math.max(totalsY + (isA4 ? 4.5 : 4.0), boxY + (isA4 ? 33.0 : 28.0));
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(isA4 ? 7.2 : 6.2);
-      doc.text('For Showhouse Concepts & Designs LLP', rightX + rightColWidth / 2, boxY + (isA4 ? 36.0 : 31.0), { align: 'center' });
+      doc.setTextColor(...blackColor);
+      doc.text('For and on behalf of', rightX + rightColWidth / 2, authHeaderY, { align: 'center' });
+      doc.text('Showhouse Concepts & Designs LLP', rightX + rightColWidth / 2, authHeaderY + (isA4 ? 3.6 : 3.2), { align: 'center' });
 
+      // Signature line aligned with left signature line
       doc.setDrawColor(180, 180, 180);
       doc.setLineWidth(0.2);
       doc.line(rightX + (isA4 ? 8 : 6), sigLineY, rightX + rightColWidth - (isA4 ? 8 : 6), sigLineY);
 
+      // Text aligned with receiver signature
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(isA4 ? 7.2 : 6.2);
       doc.text('Authorized Signatory', rightX + rightColWidth / 2, sigLineY + (isA4 ? 3.4 : 3.0), { align: 'center' });
@@ -747,12 +782,22 @@ export function downloadChallanPDF(options: PDFOptions): void {
     ? (options.challan.pi_number || options.challan.challan_number.replace(/^SH\//, 'PI/'))
     : options.challan.challan_number;
   const safeNum = docNum.replace(/[\/\\]/g, '-');
-  const filePrefix = options.hideRate
+  const filePrefix = options.showBrandAndCode
+    ? 'Showhouse_Office_Copy_'
+    : options.hideRate
     ? 'Showhouse_Delivery_Slip_'
     : isPI
     ? 'Showhouse_PI_'
     : 'Showhouse_Challan_';
   doc.save(`${filePrefix}${safeNum}.pdf`);
+}
+
+export function downloadInternalChallanPDF(options: Omit<PDFOptions, 'showBrandAndCode'>): void {
+  downloadChallanPDF({ ...options, showBrandAndCode: true });
+}
+
+export function printInternalChallanPDF(options: Omit<PDFOptions, 'showBrandAndCode'>): void {
+  printChallanPDF({ ...options, showBrandAndCode: true });
 }
 
 export function printChallanPDF(options: PDFOptions): void {

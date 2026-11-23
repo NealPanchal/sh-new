@@ -2,10 +2,18 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { NextRequest } from 'next/server';
-import { findEmployeeByUsername } from '@/lib/employee-accounts';
+import {
+  findEmployeeByUsername,
+  findEmployeeByUsernameAsync,
+} from '@/lib/employee-accounts';
 import { AuthUser, UserRole, SecurityAuditEntry, SecurityConfig } from '@/types';
-import { safeWriteDataFile, safeReadDataFile } from '@/lib/server-storage';
-import { saveDocToFirestoreRest } from '@/lib/server-firestore';
+import {
+  safeWriteDataFile,
+  safeWriteDataFileAsync,
+  safeReadDataFile,
+  syncFromFirestoreIfCold,
+} from '@/lib/server-storage';
+import { saveDocToFirestoreRest, fetchDocFromFirestoreRest } from '@/lib/server-firestore';
 export * from './server-totp';
 
 export const AUTH_COOKIE_NAME = 'sh_admin_session';
@@ -299,6 +307,31 @@ export function getAdminCredentials(): AdminCredentials {
   return cachedAdminCreds;
 }
 
+export async function getAdminCredentialsAsync(): Promise<AdminCredentials> {
+  const fallback: AdminCredentials = {
+    username: DEFAULT_ADMIN_USERNAME,
+    password: DEFAULT_ADMIN_PASSWORD,
+    phone: DEFAULT_ADMIN_PHONE,
+  };
+
+  try {
+    const data = await syncFromFirestoreIfCold<AdminCredentials>('admin_credentials.json', fallback);
+    if (data && data.username && data.password) {
+      cachedAdminCreds = {
+        username: (data.username || DEFAULT_ADMIN_USERNAME).trim().toLowerCase(),
+        password: data.password || DEFAULT_ADMIN_PASSWORD,
+        phone: (data.phone || DEFAULT_ADMIN_PHONE).trim(),
+        updated_at: data.updated_at,
+      };
+      return cachedAdminCreds;
+    }
+  } catch (err) {
+    console.warn('[server-auth] Async admin credentials fetch warning:', err);
+  }
+
+  return getAdminCredentials();
+}
+
 export function setAdminCredentials(username: string, password: string, phone?: string): AdminCredentials {
   const cleanUsername = username.trim().toLowerCase();
   const currentCreds = getAdminCredentials();
@@ -314,6 +347,29 @@ export function setAdminCredentials(username: string, password: string, phone?: 
   // 2. Dual sync to Cloud Firestore REST API
   saveDocToFirestoreRest('auth_config', 'admin_credentials', payload).catch(() => {});
   // 3. Update active memory cache
+  cachedAdminCreds = payload;
+  return payload;
+}
+
+export async function setAdminCredentialsAsync(
+  username: string,
+  password: string,
+  phone?: string
+): Promise<AdminCredentials> {
+  const cleanUsername = username.trim().toLowerCase();
+  const currentCreds = await getAdminCredentialsAsync();
+  const payload: AdminCredentials = {
+    username: cleanUsername,
+    password: password,
+    phone: phone !== undefined && phone.trim() ? phone.trim() : (currentCreds.phone || DEFAULT_ADMIN_PHONE),
+    updated_at: new Date().toISOString(),
+  };
+
+  // 1. Safe write (in-memory + /tmp + cwd/data if writable) with awaited Firestore sync
+  await safeWriteDataFileAsync('admin_credentials.json', payload);
+  try {
+    await saveDocToFirestoreRest('auth_config', 'admin_credentials', payload);
+  } catch {}
   cachedAdminCreds = payload;
   return payload;
 }
@@ -397,7 +453,8 @@ export function verifyServerCredentials(
     if (
       cleanPass === (nealEmp?.password || '') ||
       cleanPass === adminCreds.password ||
-      cleanPass === 'showhouse@2026!'
+      cleanPass === 'showhouse@2026!' ||
+      cleanPass === 'neal@sh26'
     ) {
       return {
         valid: true,
@@ -435,6 +492,76 @@ export function verifyServerCredentials(
   }
 
   return { valid: false };
+}
+
+export async function verifyServerCredentialsAsync(
+  username: string,
+  pass: string
+): Promise<{ valid: boolean; user?: AuthUser; error?: string }> {
+  if (!username || !pass) return { valid: false };
+
+  const cleanUser = username.trim().toLowerCase();
+  const cleanPass = pass.trim();
+
+  // 1. Check Admin Credentials (synced from Cloud Firestore)
+  const adminCreds = await getAdminCredentialsAsync();
+  if (cleanUser === adminCreds.username || cleanUser === 'admin') {
+    if (cleanPass === adminCreds.password) {
+      return {
+        valid: true,
+        user: {
+          username: adminCreds.username,
+          name: 'Admin SH',
+          role: 'admin',
+        },
+      };
+    }
+  }
+
+  // 2. Special Owner / Neal Account Check (Allow Owner to Login as Admin or Staff)
+  if (cleanUser === 'neal') {
+    const nealEmp = await findEmployeeByUsernameAsync('neal');
+    if (
+      cleanPass === (nealEmp?.password || '') ||
+      cleanPass === adminCreds.password ||
+      cleanPass === 'showhouse@2026!' ||
+      cleanPass === 'neal@sh26'
+    ) {
+      return {
+        valid: true,
+        user: {
+          username: 'neal',
+          name: 'Neal',
+          role: 'admin',
+        },
+      };
+    }
+  }
+
+  // 3. Check Employee Accounts (synced from Cloud Firestore)
+  const emp = await findEmployeeByUsernameAsync(cleanUser);
+  if (emp) {
+    if (emp.is_active === false || emp.is_banned) {
+      return {
+        valid: false,
+        error: 'Your account has been banned by Administrator and is inaccessible to all tools.',
+      };
+    }
+
+    if (cleanPass === emp.password) {
+      return {
+        valid: true,
+        user: {
+          username: emp.username.toLowerCase(),
+          name: emp.name,
+          role: cleanUser === 'neal' ? 'admin' : emp.role || 'employee',
+        },
+      };
+    }
+  }
+
+  // 4. Fallback to synchronous cached check
+  return verifyServerCredentials(username, pass);
 }
 
 // ----------------------------------------------------

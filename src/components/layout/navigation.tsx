@@ -391,6 +391,15 @@ export function MobileDrawer({
 export function MobileHeader() {
   const [user, setUser] = useState<{ username: string; name: string; role: UserRole } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  const handleManualSync = () => {
+    setSyncing(true);
+    window.dispatchEvent(new CustomEvent('app-reload-data'));
+    setTimeout(() => {
+      setSyncing(false);
+    }, 1200);
+  };
 
   useEffect(() => {
     setUser(getCurrentUser());
@@ -435,6 +444,20 @@ export function MobileHeader() {
 
           {/* Right: Quick Action & Role */}
           <div className="flex items-center gap-2">
+            {/* 1-Tap Instant Sync Button for PWA & Add-to-Home-Screen app */}
+            <button
+              onClick={handleManualSync}
+              disabled={syncing}
+              className={cn(
+                'p-1.5 rounded-lg border border-surface-200 bg-surface-50 hover:bg-surface-100 text-surface-700 transition-all active:scale-90 cursor-pointer',
+                syncing && 'text-[#ea580c] border-[#ea580c]/40'
+              )}
+              title="Sync & Update All Data with Server"
+              aria-label="Refresh Data"
+            >
+              <RotateCcw size={15} className={cn(syncing && 'animate-spin text-[#ea580c]')} />
+            </button>
+
             <Link
               href="/challans/new"
               className="btn-primary py-1 px-2.5 text-xs font-bold flex items-center gap-1 rounded-lg shadow-xs bg-[#ea580c] hover:bg-[#c2410c] text-white active:scale-95"

@@ -138,6 +138,74 @@ export function safeWriteDataFile<T = any>(filename: string, data: T): boolean {
 }
 
 /**
+ * Universal async data writer for Serverless / Cloud environments
+ * Guarantees that Cloud Firestore REST writes are AWAITED before returning,
+ * preventing Vercel Lambda freeze from dropping pending network writes.
+ */
+export async function safeWriteDataFileAsync<T = any>(filename: string, data: T): Promise<boolean> {
+  if (!filename) return false;
+
+  // 1. Keep in memory cache
+  inMemoryCache.set(filename, data);
+
+  const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  let writtenSuccessfully = false;
+
+  // 2. Always write to /tmp/showhouse_data/ (guaranteed writable on Linux/Vercel/Lambda/Mac)
+  try {
+    ensureDirSafe(TMP_DATA_DIR);
+    const tmpPath = path.join(TMP_DATA_DIR, filename);
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+    writtenSuccessfully = true;
+  } catch (tmpErr) {
+    console.warn(`[server-storage] /tmp write failed for ${filename}:`, tmpErr);
+  }
+
+  // 3. Try writing to primary process.cwd()/data/ (silently ignore EROFS on serverless)
+  try {
+    ensureDirSafe(DATA_DIR);
+    const primaryPath = path.join(DATA_DIR, filename);
+    fs.writeFileSync(primaryPath, content, 'utf-8');
+    writtenSuccessfully = true;
+  } catch {
+    // Expected on Vercel / AWS Lambda where /var/task is read-only (EROFS)
+  }
+
+  // 4. Awaited sync to Google Cloud Firestore REST API
+  const mapping = FIRESTORE_SYNC_MAP[filename];
+  if (mapping) {
+    const payload = mapping.wrapAs
+      ? { [mapping.wrapAs]: data, count: Array.isArray(data) ? data.length : 1 }
+      : typeof data === 'object' && data !== null
+      ? data
+      : { value: data };
+
+    try {
+      await saveDocToFirestoreRest(mapping.collection, mapping.docId, payload);
+    } catch (syncErr) {
+      console.warn(`[server-storage] Firestore REST sync warning for ${filename}:`, syncErr);
+    }
+
+    // Save individual documents in top-level collection so they are visible in Firebase Console
+    if (mapping.saveIndividualToCollection && Array.isArray(data)) {
+      const individualPromises = data.map((item: any) => {
+        if (item && typeof item === 'object') {
+          const rawId = mapping.idField ? item[mapping.idField] : item.id || item.username;
+          if (rawId) {
+            const docId = String(rawId).trim().toLowerCase();
+            return saveDocToFirestoreRest(mapping.saveIndividualToCollection!, docId, item);
+          }
+        }
+        return Promise.resolve();
+      });
+      await Promise.allSettled(individualPromises);
+    }
+  }
+
+  return writtenSuccessfully || true;
+}
+
+/**
  * Universal safe data reader
  * Reads from memory cache -> /tmp -> primary data/ -> fallback
  */

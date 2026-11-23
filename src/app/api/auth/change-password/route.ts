@@ -3,14 +3,18 @@ import crypto from 'crypto';
 import {
   getAuthenticatedSession,
   getAdminCredentials,
+  getAdminCredentialsAsync,
   setAdminCredentials,
+  setAdminCredentialsAsync,
   createSignedSessionToken,
   AUTH_COOKIE_NAME,
   recordSecurityAuditLog,
 } from '@/lib/server-auth';
 import {
   findEmployeeByUsername,
+  findEmployeeByUsernameAsync,
   updateEmployeePassword,
+  updateEmployeePasswordAsync,
 } from '@/lib/employee-accounts';
 
 export async function POST(req: NextRequest) {
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest) {
       }
 
       // If current password provided, verify against current employee record
-      const currentEmp = findEmployeeByUsername(session.username);
+      const currentEmp = await findEmployeeByUsernameAsync(session.username);
       if (!currentEmp) {
         return NextResponse.json({ success: false, error: 'Staff account not found.' }, { status: 404 });
       }
@@ -74,7 +78,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const updateResult = updateEmployeePassword(session.username, newPassword.trim());
+      const updateResult = await updateEmployeePasswordAsync(session.username, newPassword.trim());
       if (!updateResult.success) {
         return NextResponse.json(
           { success: false, error: updateResult.error || 'Failed to update employee password.' },
@@ -138,7 +142,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const updateResult = updateEmployeePassword(targetEmployeeId.trim(), newPassword.trim());
+      const updateResult = await updateEmployeePasswordAsync(targetEmployeeId.trim(), newPassword.trim());
       if (!updateResult.success) {
         return NextResponse.json(
           { success: false, error: updateResult.error || 'Failed to update employee password.' },
@@ -173,7 +177,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const adminCreds = getAdminCredentials();
+    const adminCreds = await getAdminCredentialsAsync();
     const isProfileOnly = !newPassword && (phone !== undefined || newUsername !== undefined);
 
     // Case C1: Updating Admin Profile / Phone only (No password change required)
@@ -186,7 +190,7 @@ export async function POST(req: NextRequest) {
         ? phone.trim()
         : (adminCreds.phone || '+91 79773 95952');
 
-      setAdminCredentials(targetUsername, adminCreds.password, targetPhone);
+      await setAdminCredentialsAsync(targetUsername, adminCreds.password, targetPhone);
 
       const newToken = createSignedSessionToken({
         username: targetUsername,
@@ -252,8 +256,8 @@ export async function POST(req: NextRequest) {
       ? phone.trim()
       : (adminCreds.phone || '+91 79773 95952');
 
-    // Save updated credentials to persistent data storage
-    setAdminCredentials(targetUsername, newPassword.trim(), targetPhone);
+    // Save updated credentials to persistent data storage (with awaited Firestore sync)
+    await setAdminCredentialsAsync(targetUsername, newPassword.trim(), targetPhone);
 
     // Generate fresh session token with updated credentials
     const newToken = createSignedSessionToken({
@@ -307,7 +311,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const adminCreds = getAdminCredentials();
+  const adminCreds = await getAdminCredentialsAsync();
   return NextResponse.json({
     success: true,
     username: adminCreds.username,

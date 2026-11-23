@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   verifyServerCredentials,
+  verifyServerCredentialsAsync,
   createSignedSessionToken,
   checkLoginRateLimit,
   recordFailedLogin,
@@ -53,8 +54,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Validate Credentials dynamically from storage (Admin or Staff)
-    const authResult = verifyServerCredentials(username, password);
+    // 2. Validate Credentials dynamically from storage & Cloud Firestore (Admin or Staff)
+    const authResult = await verifyServerCredentialsAsync(username, password);
 
     if (!authResult.valid || !authResult.user) {
       recordFailedLogin(ip);

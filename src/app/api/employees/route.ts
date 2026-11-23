@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession, recordSecurityAuditLog } from '@/lib/server-auth';
 import {
   getEmployeeAccounts,
+  getEmployeeAccountsAsync,
   saveEmployeeAccounts,
+  saveEmployeeAccountsAsync,
   updateEmployeePassword,
+  updateEmployeePasswordAsync,
 } from '@/lib/employee-accounts';
 import { EmployeeAccount } from '@/types';
 
 export async function GET(req: NextRequest) {
   const session = getAuthenticatedSession(req);
-  const accounts = getEmployeeAccounts();
+  const accounts = await getEmployeeAccountsAsync();
 
   // If not admin, return public safe info (name, username, phone, po_prefix, is_active) WITHOUT passwords
   if (!session || session.role !== 'admin') {
@@ -75,7 +78,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const updateResult = updateEmployeePassword(targetUser, String(newPassword).trim());
+      const updateResult = await updateEmployeePasswordAsync(targetUser, String(newPassword).trim());
       if (!updateResult.success) {
         return NextResponse.json({ success: false, error: updateResult.error }, { status: 400 });
       }
@@ -106,7 +109,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const current = getEmployeeAccounts();
+      const current = await getEmployeeAccountsAsync();
       const updated = current.map((emp) => {
         if (emp.id === body.employeeId || emp.username.toLowerCase() === String(body.employeeId).toLowerCase()) {
           const willBan = body.banned !== undefined ? Boolean(body.banned) : (emp.is_active !== false);
@@ -118,7 +121,7 @@ export async function POST(req: NextRequest) {
         }
         return emp;
       });
-      saveEmployeeAccounts(updated);
+      await saveEmployeeAccountsAsync(updated);
       return NextResponse.json({ success: true, employees: updated });
     }
 
@@ -137,7 +140,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const current = getEmployeeAccounts();
+    const current = await getEmployeeAccountsAsync();
     const updated: EmployeeAccount[] = body.employees.map((item: any, idx: number) => {
       const existing =
         current.find(
@@ -168,7 +171,7 @@ export async function POST(req: NextRequest) {
       };
     });
 
-    const saved = saveEmployeeAccounts(updated);
+    const saved = await saveEmployeeAccountsAsync(updated);
     if (!saved) {
       return NextResponse.json({ success: false, error: 'Failed to write employees file' }, { status: 500 });
     }

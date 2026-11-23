@@ -10,8 +10,9 @@ import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
 interface OfficialChallanDocumentProps {
   challan: Challan;
   profile?: BusinessProfile | null;
-  viewMode?: 'challan' | 'pi' | 'slip';
+  viewMode?: 'challan' | 'pi' | 'slip' | 'office';
   hideRate?: boolean;
+  showBrandAndCode?: boolean;
 }
 
 export function OfficialChallanDocument({
@@ -19,7 +20,9 @@ export function OfficialChallanDocument({
   profile,
   viewMode = 'challan',
   hideRate = false,
+  showBrandAndCode = false,
 }: OfficialChallanDocumentProps) {
+  const isOffice = viewMode === 'office' || Boolean(showBrandAndCode);
   const isPI = viewMode === 'pi' && !hideRate;
   const isPaid = challan.payment_status === 'paid';
 
@@ -98,11 +101,25 @@ export function OfficialChallanDocument({
         </thead>
         <tbody className="divide-y divide-black/30">
           {itemList.map((item, idx) => {
-            let desc = cleanChallanItemDescription(item.item_description, item.brand).toUpperCase();
-            if (item.colour_finish) {
-              const cleanFinish = cleanChallanItemDescription(item.colour_finish, item.brand).toUpperCase();
-              if (cleanFinish && !desc.includes(cleanFinish)) {
-                desc += ` - ${cleanFinish}`;
+            let desc = '';
+            if (isOffice) {
+              const brandStr = item.brand ? `[ ${item.brand.trim().toUpperCase()} ]` : '';
+              const codeStr = item.product_id ? `(Code: ${item.product_id.trim().toUpperCase()})` : '';
+              const baseDesc = (item.item_description || '').trim().toUpperCase();
+              desc = [baseDesc, brandStr, codeStr].filter(Boolean).join(' ');
+              if (item.colour_finish) {
+                const finishStr = item.colour_finish.trim().toUpperCase();
+                if (finishStr && !desc.includes(finishStr)) {
+                  desc += ` - ${finishStr}`;
+                }
+              }
+            } else {
+              desc = cleanChallanItemDescription(item.item_description, item.brand).toUpperCase();
+              if (item.colour_finish) {
+                const cleanFinish = cleanChallanItemDescription(item.colour_finish, item.brand).toUpperCase();
+                if (cleanFinish && !desc.includes(cleanFinish)) {
+                  desc += ` - ${cleanFinish}`;
+                }
               }
             }
             if (item.size) desc += ` ( ${item.size} )`;
@@ -243,17 +260,14 @@ export function OfficialChallanDocument({
       <div className="md:col-span-5 flex flex-col justify-between">
         {/* Totals Table */}
         {hideRate ? (
-          <div className="p-3 text-xs space-y-2 border-b border-black">
-            <div className="font-bold text-center uppercase tracking-wider bg-surface-100 py-1 border border-black/30">
-              DELIVERY ACKNOWLEDGMENT
+          <div className="divide-y divide-black text-xs font-bold">
+            <div className="flex justify-between p-2">
+              <span>SUB TOTAL</span>
+              <span className="font-mono"></span>
             </div>
-            <div className="flex justify-between font-bold pt-1">
-              <span>TOTAL ITEMS :</span>
-              <span>{items.length}</span>
-            </div>
-            <div className="flex justify-between font-bold">
-              <span>TOTAL QUANTITY :</span>
-              <span>{challan.total_quantity}</span>
+            <div className="flex justify-between p-2.5 text-xs sm:text-sm font-black bg-surface-100/90 border-t border-black">
+              <span>GRAND TOTAL</span>
+              <span className="font-mono"></span>
             </div>
           </div>
         ) : (
@@ -369,7 +383,7 @@ export function OfficialChallanDocument({
           {/* Right: Blue Pill Box & Document Metadata */}
           <div className="text-right flex flex-col items-end">
             <div className="border-2 border-[#2B5EA7] rounded-xl px-5 sm:px-7 py-1 bg-[#FCFEFF] text-[#2B5EA7] font-bold text-xs sm:text-sm tracking-wider uppercase inline-block text-center shadow-2xs">
-              {hideRate ? 'DELIVERY SLIP' : isPI ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN'}
+              {isOffice ? 'DELIVERY CHALLAN (OFFICE COPY)' : hideRate ? 'DELIVERY SLIP' : isPI ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN'}
             </div>
 
             <div className="mt-2.5 sm:mt-3 space-y-0.5 text-right font-bold text-[11px] sm:text-xs text-black">
@@ -479,7 +493,7 @@ export function OfficialChallanDocument({
 
               <div className="text-right flex flex-col items-end">
                 <div className="border-2 border-[#2B5EA7] rounded-xl px-4 py-0.5 bg-[#FCFEFF] text-[#2B5EA7] font-bold text-xs uppercase tracking-wider">
-                  {hideRate ? 'DELIVERY SLIP' : isPI ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN'}
+                  {isOffice ? 'DELIVERY CHALLAN (OFFICE COPY)' : hideRate ? 'DELIVERY SLIP' : isPI ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN'}
                 </div>
                 <div className="mt-1.5 font-bold text-[11px] text-black">
                   {isPI ? 'PI NO : ' : 'CHALLAN NO : '}

@@ -1,5 +1,5 @@
 // Showhouse Progressive Web App Service Worker
-const CACHE_NAME = 'showhouse-pwa-v3';
+const CACHE_NAME = 'showhouse-pwa-v5';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/favicon.png',
@@ -8,7 +8,7 @@ const STATIC_ASSETS = [
   '/icons/icon-512.png',
 ];
 
-// Install: Cache critical static shell
+// Install: Cache critical static shell and immediately take over
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -20,7 +20,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate: Clean up old caches
+// Activate: Immediately purge all outdated caches and claim open clients
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -36,7 +36,14 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: Pass-through for APIs, cache for static icons/assets, network-first for pages
+// Allow client pages to command immediate skipWaiting on update
+self.addEventListener('message', (event) => {
+  if (event.data?.action === 'skipWaiting' || event.data === 'skipWaiting') {
+    self.skipWaiting();
+  }
+});
+
+// Fetch: Pass-through for APIs, cache for static icons/assets, pure network-first for pages
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -51,7 +58,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets (images, icons, fonts): Cache-first
+  // Navigation / HTML Pages: Always network-first with cache-bust to ensure Add-to-Home-Screen app stays real-time
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request, { cache: 'no-cache' })
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(request);
+        })
+    );
+    return;
+  }
+
+  // Static assets (images, icons, fonts): Cache-first with network revalidation
   if (
     url.pathname.startsWith('/icons/') ||
     url.pathname.endsWith('.png') ||
@@ -73,15 +98,4 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-
-  // Navigation / HTML Pages: Pure network-first
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).catch(() => {
-        return caches.match(request);
-      })
-    );
-    return;
-  }
 });
-

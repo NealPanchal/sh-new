@@ -1,7 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { EmployeeAccount } from '@/types';
-import { safeWriteDataFile, safeReadDataFile } from '@/lib/server-storage';
+import {
+  safeWriteDataFile,
+  safeWriteDataFileAsync,
+  safeReadDataFile,
+  syncFromFirestoreIfCold,
+} from '@/lib/server-storage';
+import { fetchDocFromFirestoreRest, saveDocToFirestoreRest } from '@/lib/server-firestore';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const EMPLOYEES_FILE = path.join(DATA_DIR, 'employees.json');
@@ -117,9 +123,26 @@ export function getEmployeeAccounts(): EmployeeAccount[] {
   return DEFAULT_EMPLOYEES;
 }
 
+export async function getEmployeeAccountsAsync(): Promise<EmployeeAccount[]> {
+  try {
+    const accounts = await syncFromFirestoreIfCold<EmployeeAccount[]>('employees.json', DEFAULT_EMPLOYEES);
+    if (Array.isArray(accounts) && accounts.length > 0) {
+      return accounts;
+    }
+  } catch (err) {
+    console.warn('[employee-accounts] Async fetch error:', err);
+  }
+  return getEmployeeAccounts();
+}
+
 export function saveEmployeeAccounts(accounts: EmployeeAccount[]): boolean {
   if (!Array.isArray(accounts)) return false;
   return safeWriteDataFile('employees.json', accounts);
+}
+
+export async function saveEmployeeAccountsAsync(accounts: EmployeeAccount[]): Promise<boolean> {
+  if (!Array.isArray(accounts)) return false;
+  return safeWriteDataFileAsync('employees.json', accounts);
 }
 
 export function updateEmployeePassword(
@@ -159,6 +182,71 @@ export function updateEmployeePassword(
   );
 
   return { success: true, employee: updatedEmp };
+}
+
+export async function updateEmployeePasswordAsync(
+  usernameOrId: string,
+  newPassword: string
+): Promise<{ success: boolean; employee?: EmployeeAccount; error?: string }> {
+  if (!usernameOrId || !newPassword || newPassword.trim().length < 6) {
+    return { success: false, error: 'Password must be at least 6 characters long' };
+  }
+
+  const current = await getEmployeeAccountsAsync();
+  const clean = usernameOrId.trim().toLowerCase();
+  let found = false;
+
+  const updated = current.map((emp) => {
+    if (emp.id === usernameOrId || emp.username.trim().toLowerCase() === clean) {
+      found = true;
+      return {
+        ...emp,
+        password: newPassword.trim(),
+      };
+    }
+    return emp;
+  });
+
+  if (!found) {
+    return { success: false, error: `Employee "${usernameOrId}" not found` };
+  }
+
+  const saved = await saveEmployeeAccountsAsync(updated);
+  if (!saved) {
+    return { success: false, error: 'Failed to save updated password to database' };
+  }
+
+  const updatedEmp = updated.find(
+    (e) => e.id === usernameOrId || e.username.trim().toLowerCase() === clean
+  );
+
+  if (updatedEmp) {
+    // Explicitly update individual Firestore doc in employees collection
+    try {
+      await saveDocToFirestoreRest('employees', clean, updatedEmp);
+    } catch {}
+  }
+
+  return { success: true, employee: updatedEmp };
+}
+
+export async function findEmployeeByUsernameAsync(username: string): Promise<EmployeeAccount | null> {
+  const clean = username.trim().toLowerCase();
+
+  // 1. Try from accounts list (synced)
+  const accounts = await getEmployeeAccountsAsync();
+  const found = accounts.find((a) => a.username.trim().toLowerCase() === clean);
+  if (found) return found;
+
+  // 2. Direct individual doc lookup in Firestore 'employees' collection
+  try {
+    const doc = await fetchDocFromFirestoreRest('employees', clean);
+    if (doc && doc.username) {
+      return doc as EmployeeAccount;
+    }
+  } catch {}
+
+  return null;
 }
 
 export function isEmployeeBanned(usernameOrId: string): boolean {
