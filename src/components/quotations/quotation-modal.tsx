@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { Customer, CustomerSite, Quotation, QuotationItem, UnitType } from '@/types';
 import { useApp } from '@/lib/context';
 import { getCurrentUser } from '@/lib/auth';
-import { X, Plus, Trash2, Layers, Send, Save, Building2, Calendar, FileText } from 'lucide-react';
+import { X, Plus, Trash2, Layers, Send, Save, Download, Building2, Calendar, FileText } from 'lucide-react';
 import { shareQuotationViaWhatsApp } from '@/lib/whatsapp';
+import { exportQuotationToPDF } from '@/lib/pdf-quotation';
 
 interface QuotationModalProps {
   customer: Customer;
@@ -205,7 +206,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
   const sgstAmount = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
   const totalAmount = subtotal + cgstAmount + sgstAmount;
 
-  const handleSave = (andShareWhatsApp = false) => {
+  const handleSave = (andShareWhatsApp = false, andDownloadPDF = false) => {
     const validItems = items.filter((it) => it.item_description.trim() && parseFloat(it.quantity) > 0);
     if (validItems.length === 0) {
       showToast('Please add at least one item with description and quantity', 'error');
@@ -261,6 +262,11 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
         profile,
         onToast: showToast,
       });
+    }
+
+    if (saved && andDownloadPDF) {
+      exportQuotationToPDF(saved, profile, 'a4');
+      showToast('Downloaded Quotation PDF!', 'success');
     }
 
     if (saved && onSaved) onSaved(saved);
@@ -511,7 +517,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-surface-700 block mb-0.5">
-                    Selection Charges (₹)
+                    Loading / Unloading Charges (₹)
                   </label>
                   <input
                     type="number"
@@ -558,7 +564,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
               )}
               {parsedSelection > 0 && (
                 <div className="flex justify-between text-surface-600 text-[11px]">
-                  <span>Selection Charges:</span>
+                  <span>Loading / Unloading:</span>
                   <span className="font-mono text-surface-800">+₹{parsedSelection.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
               )}
@@ -603,7 +609,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => handleSave(false)}
+              onClick={() => handleSave(false, false)}
               className="btn-secondary py-1.5 px-3 text-xs font-bold flex items-center gap-1.5"
             >
               <Save size={13} />
@@ -612,7 +618,17 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
 
             <button
               type="button"
-              onClick={() => handleSave(true)}
+              onClick={() => handleSave(false, true)}
+              className="py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer"
+              title="Save quotation and download PDF"
+            >
+              <Download size={13} />
+              <span>Download PDF</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSave(true, false)}
               className="py-1.5 px-3.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer"
             >
               <Send size={13} />

@@ -710,7 +710,7 @@ export function generateCustomerRatesWhatsAppMessage(
     msg += `🚚 Delivery / Transportation Charges: ₹${Number(transportationCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
   }
   if (selectionCharges && Number(selectionCharges) > 0) {
-    msg += `✨ Selection & Consultation Charges: ₹${Number(selectionCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+    msg += `📦 Loading / Unloading Charges: ₹${Number(selectionCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
   }
   if ((transportationCharges && Number(transportationCharges) > 0) || (selectionCharges && Number(selectionCharges) > 0)) {
     msg += `\n`;
@@ -796,7 +796,7 @@ export function generateQuotationWhatsAppMessage(
     msg += `*Transportation Charges:* ₹${Number(quotation.transportation_charges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
   }
   if (quotation.selection_charges && Number(quotation.selection_charges) > 0) {
-    msg += `*Selection / Design Charges:* ₹${Number(quotation.selection_charges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+    msg += `*Loading / Unloading Charges:* ₹${Number(quotation.selection_charges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
   }
   msg += `*Subtotal:* ₹${Number(quotation.subtotal_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
 

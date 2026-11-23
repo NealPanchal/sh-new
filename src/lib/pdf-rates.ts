@@ -248,6 +248,12 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
     body: page1Rows,
     theme: 'grid',
     tableWidth: contentWidth,
+    tableLineColor: [40, 40, 40],
+    tableLineWidth: 0.3,
+    styles: {
+      lineColor: [60, 60, 60],
+      lineWidth: 0.25,
+    },
     headStyles: {
       fillColor: [248, 249, 250],
       textColor: blackColor,
@@ -257,15 +263,15 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
       valign: 'middle',
       halign: 'center',
       lineColor: [40, 40, 40],
-      lineWidth: 0.25,
+      lineWidth: 0.3,
     },
     bodyStyles: {
       fontSize: p1FontSize,
       textColor: blackColor,
       cellPadding: p1CellPadding,
       minCellHeight: p1MinHeight,
-      lineColor: [180, 180, 180],
-      lineWidth: 0.2,
+      lineColor: [60, 60, 60],
+      lineWidth: 0.25,
       valign: 'middle',
     },
     columnStyles: {
@@ -316,6 +322,12 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
       body: page2Rows,
       theme: 'grid',
       tableWidth: contentWidth,
+      tableLineColor: [40, 40, 40],
+      tableLineWidth: 0.3,
+      styles: {
+        lineColor: [60, 60, 60],
+        lineWidth: 0.25,
+      },
       headStyles: {
         fillColor: [248, 249, 250],
         textColor: blackColor,
@@ -325,15 +337,15 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
         valign: 'middle',
         halign: 'center',
         lineColor: [40, 40, 40],
-        lineWidth: 0.25,
+        lineWidth: 0.3,
       },
       bodyStyles: {
         fontSize: isA4 ? 7.8 : 7.0,
         textColor: blackColor,
         cellPadding: isA4 ? 2.2 : 1.8,
         minCellHeight: isA4 ? 9.0 : 7.5,
-        lineColor: [180, 180, 180],
-        lineWidth: 0.2,
+        lineColor: [60, 60, 60],
+        lineWidth: 0.25,
         valign: 'middle',
       },
       columnStyles: {
@@ -517,7 +529,7 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
   }
   if (selectionCharges && Number(selectionCharges) > 0) {
     const scFormatted = Number(selectionCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    doc.text(`SELECTION CHARGES : Rs. ${scFormatted}`, rightX + 4.0, totalsY);
+    doc.text(`LOADING / UNLOADING : Rs. ${scFormatted}`, rightX + 4.0, totalsY);
     totalsY += isA4 ? 4.5 : 4.0;
   }
   doc.setFont('helvetica', 'normal');

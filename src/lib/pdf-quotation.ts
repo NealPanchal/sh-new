@@ -237,9 +237,9 @@ export function exportQuotationToPDF(
   if (quotation.transportation_charges && Number(quotation.transportation_charges) > 0) {
     allTableRows.push(['', 'DELIVERY / TRANSPORTATION CHARGES', '', '', formatAmountNum(Number(quotation.transportation_charges))]);
   }
-  // Add Selection Charges row if present
+  // Add Selection / Loading & Unloading Charges row if present
   if (quotation.selection_charges && Number(quotation.selection_charges) > 0) {
-    allTableRows.push(['', 'SELECTION & CONSULTATION CHARGES', '', '', formatAmountNum(Number(quotation.selection_charges))]);
+    allTableRows.push(['', 'LOADING & UNLOADING CHARGES', '', '', formatAmountNum(Number(quotation.selection_charges))]);
   }
 
   // Pagination: 8 items max on Page 1 (same as Delivery Challan PDF)
@@ -584,7 +584,7 @@ export function exportQuotationToPDF(
       renderTotalRow('DELIVERY CHARGES', formatAmountNum(transportCharges));
     }
     if (selectionCharges > 0) {
-      renderTotalRow('SELECTION CHARGES', formatAmountNum(selectionCharges));
+      renderTotalRow('LOADING / UNLOADING', formatAmountNum(selectionCharges));
     }
   }
 

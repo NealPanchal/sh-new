@@ -511,7 +511,7 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
             </div>
             <div>
               <label className="block text-[11px] font-bold text-surface-700 mb-1">
-                Selection &amp; Consultation Charges (₹)
+                Loading / Unloading Charges (₹)
               </label>
               <input
                 type="number"
@@ -522,7 +522,7 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
                 placeholder="e.g. 1500"
                 className="input text-xs py-1.5 px-2.5 font-mono bg-white"
               />
-              <span className="text-[10px] text-surface-400">Optional designer / site visit fee</span>
+              <span className="text-[10px] text-surface-400">Optional labour / loading / unloading fee</span>
             </div>
           </div>
 

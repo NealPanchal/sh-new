@@ -494,18 +494,29 @@ export default function CustomerDetailPage() {
                           ₹{Number(q.total_amount || 0).toLocaleString('en-IN')}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-2 border-t border-surface-200">
+                      <div className="flex items-center gap-1.5 pt-2 border-t border-surface-200">
                         <button
                           type="button"
                           onClick={() => handleShareQuotationWhatsApp(q)}
-                          className="flex-1 py-1 px-2 text-[11px] font-bold bg-emerald-600 text-white rounded flex items-center justify-center gap-1"
+                          className="flex-1 py-1.5 px-2 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-1 cursor-pointer"
+                          title="Share via WhatsApp"
                         >
                           <Send size={11} />
                           <span>WhatsApp</span>
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadQuotationPDF(q)}
+                          className="flex-1 py-1.5 px-2 text-[11px] font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 rounded-lg border border-surface-300 flex items-center justify-center gap-1 cursor-pointer"
+                          title="Download Quotation PDF"
+                        >
+                          <Download size={11} />
+                          <span>PDF</span>
+                        </button>
                         <Link
                           href={`/challans/new?customerId=${customer.id}&quotationId=${q.id}`}
-                          className="flex-1 py-1 px-2 text-[11px] font-bold bg-[#ea580c] text-white rounded flex items-center justify-center gap-1"
+                          className="flex-1 py-1.5 px-2 text-[11px] font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center justify-center gap-1"
+                          title="Convert to Delivery Challan"
                         >
                           <ArrowRight size={11} />
                           <span>To Challan</span>
