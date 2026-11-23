@@ -295,4 +295,101 @@ export function cleanChallanItemDescription(rawDesc?: string | null, brand?: str
   return cleaned;
 }
 
+const ROOM_REGEX = /\b(?:LIVING(?:\s*ROOM)?|BED(?:ROOM)?|MASTER(?:\s*BEDROOM)?|KITCHEN|BATH(?:ROOM)?|BALCONY|DINING|FOYER|LOBBY|PASSAGE|COMMON(?:\s*INNER)?|PARENTS?(?:\s*ROOM)?|GUEST(?:\s*ROOM)?|KIDS?(?:\s*ROOM)?|STUDY|POOJA|DRESS(?:ING)?)\b/i;
+
+export interface ItemOfficeDetails {
+  description: string;
+  brand: string;
+  code: string;
+}
+
+/**
+ * Extracts clean material specification, supplier brand, and product code
+ * for internal office / warehouse copies.
+ * Completely strips room tags (e.g. [ LIVING ROOM 1 ], [ MASTER ROOM 2 ]) from description.
+ */
+export function extractItemOfficeDetails(item: {
+  item_description?: string | null;
+  brand?: string | null;
+  product_id?: string | null;
+  colour_finish?: string | null;
+  size?: string | null;
+}): ItemOfficeDetails {
+  let cleanDesc = (item.item_description || '').trim();
+
+  // Strip all leading bracketed rooms: e.g. [ LIVING ROOM 1 ], [ MASTER ROOM 2 ]
+  while (/^\s*\[\s*([^\]]+?)\s*\]\s*/.test(cleanDesc)) {
+    cleanDesc = cleanDesc.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
+  }
+
+  // Strip trailing bracket if it is a room: e.g. [ LIVING ROOM ]
+  const trailingRoomMatch = cleanDesc.match(/\[\s*([^\]]+?)\s*\]\s*$/);
+  if (trailingRoomMatch && ROOM_REGEX.test(trailingRoomMatch[1])) {
+    cleanDesc = cleanDesc.substring(0, cleanDesc.lastIndexOf(trailingRoomMatch[0])).trim();
+  }
+
+  // Also strip trailing room suffix without brackets: e.g. ' - LIVING ROOM'
+  cleanDesc = cleanDesc.replace(new RegExp('\\s*[-|/]?\\s*' + ROOM_REGEX.source + '\\s*$', 'i'), '').trim();
+
+  // Extract / resolve brand
+  let brand = (item.brand || '').trim();
+  if (brand) {
+    const brandRegex = new RegExp('\\s*\\[?\\s*' + brand.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&') + '\\s*\\]?\\s*', 'gi');
+    cleanDesc = cleanDesc.replace(brandRegex, ' ').trim();
+  } else {
+    // Check trailing bracket for brand (if not a room)
+    const trailingBracketMatch = cleanDesc.match(/\[\s*([^\]]+?)\s*\]\s*$/);
+    if (trailingBracketMatch && !ROOM_REGEX.test(trailingBracketMatch[1])) {
+      brand = trailingBracketMatch[1].trim();
+      cleanDesc = cleanDesc.substring(0, cleanDesc.lastIndexOf(trailingBracketMatch[0])).trim();
+    }
+  }
+
+  // Extract / resolve code
+  let code = (item.product_id || '').trim();
+  const codeBadgeMatch = cleanDesc.match(/\[\s*(?:CODE|SHADE)[:\s]+([^\]]+?)\s*\]/i);
+  if (codeBadgeMatch) {
+    if (!code) code = codeBadgeMatch[1].trim();
+    cleanDesc = cleanDesc.replace(codeBadgeMatch[0], ' ').trim();
+  }
+  if (!code) {
+    const fullCodeMatch = cleanDesc.match(/^([A-Za-z]{1,4}\s*[-/]?\s*\d+[A-Za-z0-9\s\-/()]*)$/i);
+    if (fullCodeMatch) {
+      code = fullCodeMatch[1].trim();
+    } else {
+      const codeMatch = cleanDesc.match(/\s+([A-Za-z]{0,4}\s*[-/]?\s*\d+[A-Za-z0-9\s\-/()]*|[A-Za-z]{1,4}\s*[-]\s*[A-Za-z0-9]+)$/i);
+      if (codeMatch) {
+        code = codeMatch[1].trim();
+        cleanDesc = cleanDesc.substring(0, cleanDesc.length - codeMatch[0].length).trim();
+      }
+    }
+  }
+
+  if (/^LAM(?:INATE)?\s+/i.test(code)) {
+    code = code.replace(/^LAM(?:INATE)?\s+/i, '').trim();
+    cleanDesc = `${cleanDesc} LAM`.trim();
+  }
+  if (/^LAM(?:INATE)?$/i.test(code)) {
+    code = '';
+    cleanDesc = `${cleanDesc} LAM`.trim();
+  }
+  cleanDesc = cleanDesc.replace(/\s*[-/:]\s*$/, '').trim();
+
+  if (item.colour_finish) {
+    const finish = item.colour_finish.trim();
+    if (finish && !cleanDesc.toLowerCase().includes(finish.toLowerCase())) {
+      cleanDesc += ` - ${finish}`;
+    }
+  }
+  if (item.size) {
+    cleanDesc += ` ( ${item.size} )`;
+  }
+
+  return {
+    description: cleanDesc.toUpperCase(),
+    brand: (brand || '—').toUpperCase(),
+    code: (code || '—').toUpperCase(),
+  };
+}
+
 

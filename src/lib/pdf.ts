@@ -6,7 +6,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Challan, ChallanItem, BusinessProfile } from '@/types';
-import { formatDateIndian, formatPhone, cleanChallanItemDescription } from '@/lib/utils';
+import { formatDateIndian, formatPhone, cleanChallanItemDescription, extractItemOfficeDetails } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 
@@ -259,46 +259,73 @@ export function generateChallanPDF({
   const grandTotal = challan.total_amount || (taxableSubtotal + cgstAmount + sgstAmount + additional9Amount);
 
   // Table Headers & Column Widths
-  const headers = hideRate
-    ? ['S/N', 'ITEM DESCRIPTION', 'QTY', 'RATE\nIN INR', 'AMOUNT\nIN INR']
-    : ['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR'];
+  const headers = isOfficeCopy
+    ? (hideRate
+        ? ['S/N', 'ITEM DESCRIPTION', 'BRAND', 'CODE', 'QTY', 'RATE\nIN INR', 'AMOUNT\nIN INR']
+        : ['S/N', 'DESCRIPTION', 'BRAND', 'CODE', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR'])
+    : (hideRate
+        ? ['S/N', 'ITEM DESCRIPTION', 'QTY', 'RATE\nIN INR', 'AMOUNT\nIN INR']
+        : ['S/N', 'DESCRIPTION', 'QTY', 'UNIT PRICE\nIN INR', 'TOTAL\nIN INR']);
 
-  const colWidths = isA4
-    ? [12, 92, 28, 28, 30] // Total = 190mm
-    : [8, 63, 20, 21, 22]; // Total = 134mm
+  const colWidths = isOfficeCopy
+    ? (isA4
+        ? [10, 56, 28, 22, 22, 26, 26] // Total = 190mm
+        : [7, 39, 20, 16, 16, 18, 18]) // Total = 134mm
+    : (isA4
+        ? [12, 92, 28, 28, 30] // Total = 190mm
+        : [8, 63, 20, 21, 22]); // Total = 134mm
+
+  const columnStyles = isOfficeCopy
+    ? {
+        0: { halign: 'center', cellWidth: colWidths[0] },
+        1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+        2: { halign: 'left', cellWidth: colWidths[2], fontStyle: 'bold' },
+        3: { halign: 'center', cellWidth: colWidths[3], fontStyle: 'bold' },
+        4: { halign: 'center', cellWidth: colWidths[4] },
+        5: { halign: 'right', cellWidth: colWidths[5] },
+        6: { halign: 'right', cellWidth: colWidths[6], fontStyle: 'bold' },
+      }
+    : {
+        0: { halign: 'center', cellWidth: colWidths[0] },
+        1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
+        2: { halign: 'center', cellWidth: colWidths[2] },
+        3: { halign: 'right', cellWidth: colWidths[3] },
+        4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
+      };
 
   const allTableRows: (string | number)[][] = itemList.map((item, idx) => {
     let desc = '';
     if (isOfficeCopy) {
-      // Internal Office / Warehouse copy: include vendor brand [ BRAND ] and item code [ CODE: ... ]
-      let cleanDesc = (item.item_description || '').trim();
-      let roomStr = '';
-      const roomMatch = cleanDesc.match(/^\s*\[\s*([^\]]+)\s*\]\s*/);
-      if (roomMatch) {
-        roomStr = `[ ${roomMatch[1].trim().toUpperCase()} ]`;
-        cleanDesc = cleanDesc.substring(roomMatch[0].length).trim();
+      // Internal Office Copy: Dedicated BRAND & CODE columns, room name stripped from description
+      const details = extractItemOfficeDetails(item);
+      desc = details.description;
+      const brandStr = details.brand;
+      const codeStr = details.code;
+
+      const unitStr = item.unit === 'running ft' ? 'RFT' : (item.unit || 'Sheets').toUpperCase();
+      const qtyStr = `${item.quantity} ${unitStr}`;
+
+      if (hideRate) {
+        return [idx + 1, desc, brandStr, codeStr, qtyStr, '', ''];
       }
 
-      let codeStr = item.product_id ? item.product_id.trim().toUpperCase() : '';
-      if (!codeStr) {
-        // Extract embedded code pattern (e.g. EV 50, 614, 40 A HYBRID, 604, 134, B 131-B, I 20(B)(D))
-        const codeMatch = cleanDesc.match(/\s+(?:(?:lam(?:inate)?|finish|shade)\s+)?([A-Za-z]{0,3}\s*[-/]?\s*\d+[A-Za-z0-9\s\-/()]*|[A-Za-z]{1,4}\s*[-]\s*[A-Za-z0-9]+)$/i);
-        if (codeMatch) {
-          codeStr = codeMatch[1].trim().toUpperCase();
-          cleanDesc = cleanDesc.substring(0, cleanDesc.lastIndexOf(codeMatch[0])).trim();
-        }
+      if (item.discount_amount && Number(item.discount_amount) > 0) {
+        const discText = item.discount_type === 'percent' ? `${item.discount_value}%` : `₹${item.discount_amount}`;
+        desc += ` [ Disc: -${discText} ]`;
       }
 
-      const brandStr = item.brand ? `[ ${item.brand.trim().toUpperCase()} ]` : '';
-      const codeBadge = codeStr ? `[ CODE: ${codeStr} ]` : '';
+      const rate = Number(item.rate) || 0;
+      const amount = Number(item.amount) || (rate > 0 ? rate * Number(item.quantity) : 0);
 
-      desc = [roomStr, cleanDesc.toUpperCase(), codeBadge, brandStr].filter(Boolean).join(' ');
-      if (item.colour_finish) {
-        const finishStr = item.colour_finish.trim().toUpperCase();
-        if (finishStr && !desc.includes(finishStr)) {
-          desc += ` - ${finishStr}`;
-        }
-      }
+      return [
+        idx + 1,
+        desc,
+        brandStr,
+        codeStr,
+        qtyStr,
+        rate > 0 ? formatRateNum(rate) : '—',
+        amount > 0 ? formatAmountNum(amount) : '—',
+      ];
     } else {
       // Clean description without supplier company name for client
       desc = cleanChallanItemDescription(item.item_description, item.brand).toUpperCase();
@@ -343,10 +370,18 @@ export function generateChallanPDF({
 
   // Extra charges rows
   if (!hideRate && transportCharges > 0) {
-    allTableRows.push(['', 'DELIVERY CHARGES', '', '', formatAmountNum(transportCharges)]);
+    if (isOfficeCopy) {
+      allTableRows.push(['', 'DELIVERY CHARGES', '', '', '', '', formatAmountNum(transportCharges)]);
+    } else {
+      allTableRows.push(['', 'DELIVERY CHARGES', '', '', formatAmountNum(transportCharges)]);
+    }
   }
   if (!hideRate && loadingCharges > 0) {
-    allTableRows.push(['', 'LOADING / UNLOADING CHARGES', '', '', formatAmountNum(loadingCharges)]);
+    if (isOfficeCopy) {
+      allTableRows.push(['', 'LOADING / UNLOADING CHARGES', '', '', '', '', formatAmountNum(loadingCharges)]);
+    } else {
+      allTableRows.push(['', 'LOADING / UNLOADING CHARGES', '', '', formatAmountNum(loadingCharges)]);
+    }
   }
 
   // ----------------------------------------------------
@@ -419,13 +454,7 @@ export function generateChallanPDF({
       lineWidth: 0.2,
       valign: 'middle',
     },
-    columnStyles: {
-      0: { halign: 'center', cellWidth: colWidths[0] },
-      1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
-      2: { halign: 'center', cellWidth: colWidths[2] },
-      3: { halign: 'right', cellWidth: colWidths[3] },
-      4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
-    },
+    columnStyles: columnStyles as any,
     margin: { left: margin, right: margin },
   });
 
@@ -757,13 +786,7 @@ export function generateChallanPDF({
         lineWidth: 0.2,
         valign: 'middle',
       },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: colWidths[0] },
-        1: { halign: 'left', cellWidth: colWidths[1], fontStyle: 'bold' },
-        2: { halign: 'center', cellWidth: colWidths[2] },
-        3: { halign: 'right', cellWidth: colWidths[3] },
-        4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
-      },
+      columnStyles: columnStyles as any,
       margin: { left: margin, right: margin },
     });
 

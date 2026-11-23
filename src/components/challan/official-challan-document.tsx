@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Challan, BusinessProfile } from '@/types';
-import { formatPhone, cleanChallanItemDescription } from '@/lib/utils';
+import { formatPhone, cleanChallanItemDescription, extractItemOfficeDetails } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
@@ -88,13 +88,19 @@ export function OfficialChallanDocument({
       <table className="w-full border-collapse border border-black text-xs text-black">
         <thead>
           <tr className="border-b border-black text-black uppercase font-bold text-[11px] bg-surface-50/70">
-            <th className="py-2 px-2 text-center border-r border-black w-12">S/N</th>
+            <th className="py-2 px-2 text-center border-r border-black w-10">S/N</th>
             <th className="py-2 px-3 text-left border-r border-black">{hideRate ? 'ITEM DESCRIPTION' : 'DESCRIPTION'}</th>
-            <th className="py-2 px-2 text-center border-r border-black w-24 sm:w-28">QTY</th>
-            <th className="py-2 px-3 text-right border-r border-black w-28 sm:w-32 whitespace-pre-line leading-tight">
+            {isOffice && (
+              <>
+                <th className="py-2 px-2.5 text-left border-r border-black w-28 whitespace-nowrap">BRAND</th>
+                <th className="py-2 px-2 text-center border-r border-black w-24 whitespace-nowrap">CODE</th>
+              </>
+            )}
+            <th className="py-2 px-2 text-center border-r border-black w-20 sm:w-24">QTY</th>
+            <th className="py-2 px-3 text-right border-r border-black w-24 sm:w-28 whitespace-pre-line leading-tight">
               {hideRate ? `RATE\nIN INR` : `UNIT PRICE\nIN INR`}
             </th>
-            <th className="py-2 px-3 text-right w-28 sm:w-32 whitespace-pre-line leading-tight">
+            <th className="py-2 px-3 text-right w-24 sm:w-28 whitespace-pre-line leading-tight">
               {hideRate ? `AMOUNT\nIN INR` : `TOTAL\nIN INR`}
             </th>
           </tr>
@@ -102,34 +108,14 @@ export function OfficialChallanDocument({
         <tbody className="divide-y divide-black/30">
           {itemList.map((item, idx) => {
             let desc = '';
+            let brandStr = '';
+            let codeStr = '';
+
             if (isOffice) {
-              let cleanDesc = (item.item_description || '').trim();
-              let roomStr = '';
-              const roomMatch = cleanDesc.match(/^\s*\[\s*([^\]]+)\s*\]\s*/);
-              if (roomMatch) {
-                roomStr = `[ ${roomMatch[1].trim().toUpperCase()} ]`;
-                cleanDesc = cleanDesc.substring(roomMatch[0].length).trim();
-              }
-
-              let codeStr = item.product_id ? item.product_id.trim().toUpperCase() : '';
-              if (!codeStr) {
-                const codeMatch = cleanDesc.match(/\s+(?:(?:lam(?:inate)?|finish|shade)\s+)?([A-Za-z]{0,3}\s*[-/]?\s*\d+[A-Za-z0-9\s\-/()]*|[A-Za-z]{1,4}\s*[-]\s*[A-Za-z0-9]+)$/i);
-                if (codeMatch) {
-                  codeStr = codeMatch[1].trim().toUpperCase();
-                  cleanDesc = cleanDesc.substring(0, cleanDesc.lastIndexOf(codeMatch[0])).trim();
-                }
-              }
-
-              const brandStr = item.brand ? `[ ${item.brand.trim().toUpperCase()} ]` : '';
-              const codeBadge = codeStr ? `[ CODE: ${codeStr} ]` : '';
-
-              desc = [roomStr, cleanDesc.toUpperCase(), codeBadge, brandStr].filter(Boolean).join(' ');
-              if (item.colour_finish) {
-                const finishStr = item.colour_finish.trim().toUpperCase();
-                if (finishStr && !desc.includes(finishStr)) {
-                  desc += ` - ${finishStr}`;
-                }
-              }
+              const details = extractItemOfficeDetails(item);
+              desc = details.description;
+              brandStr = details.brand;
+              codeStr = details.code;
             } else {
               desc = cleanChallanItemDescription(item.item_description, item.brand).toUpperCase();
               if (item.colour_finish) {
@@ -138,8 +124,9 @@ export function OfficialChallanDocument({
                   desc += ` - ${cleanFinish}`;
                 }
               }
+              if (item.size) desc += ` ( ${item.size} )`;
             }
-            if (item.size) desc += ` ( ${item.size} )`;
+
             if (item.discount_amount && Number(item.discount_amount) > 0) {
               const discText =
                 item.discount_type === 'percent'
@@ -161,6 +148,16 @@ export function OfficialChallanDocument({
                 <td className="py-2.5 px-3 border-r border-black/30 font-bold uppercase leading-snug">
                   {desc}
                 </td>
+                {isOffice && (
+                  <>
+                    <td className="py-2.5 px-2.5 border-r border-black/30 font-bold uppercase whitespace-nowrap">
+                      {brandStr}
+                    </td>
+                    <td className="py-2.5 px-2 text-center border-r border-black/30 font-mono font-bold uppercase whitespace-nowrap">
+                      {codeStr}
+                    </td>
+                  </>
+                )}
                 <td className="py-2.5 px-2 text-center border-r border-black/30 font-bold uppercase whitespace-nowrap">
                   {item.quantity} {unitStr}
                 </td>
@@ -179,6 +176,12 @@ export function OfficialChallanDocument({
             <tr className="font-bold border-t border-black/30 bg-surface-50/30">
               <td className="py-2 px-2 text-center border-r border-black/30"></td>
               <td className="py-2 px-3 border-r border-black/30 uppercase">DELIVERY CHARGES</td>
+              {isOffice && (
+                <>
+                  <td className="py-2 px-2.5 border-r border-black/30"></td>
+                  <td className="py-2 px-2 text-center border-r border-black/30"></td>
+                </>
+              )}
               <td className="py-2 px-2 text-center border-r border-black/30"></td>
               <td className="py-2 px-3 text-right border-r border-black/30 font-mono">—</td>
               <td className="py-2 px-3 text-right whitespace-nowrap font-mono">
@@ -194,6 +197,12 @@ export function OfficialChallanDocument({
               <td className="py-2 px-3 border-r border-black/30 uppercase">
                 LOADING / UNLOADING CHARGES
               </td>
+              {isOffice && (
+                <>
+                  <td className="py-2 px-2.5 border-r border-black/30"></td>
+                  <td className="py-2 px-2 text-center border-r border-black/30"></td>
+                </>
+              )}
               <td className="py-2 px-2 text-center border-r border-black/30"></td>
               <td className="py-2 px-3 text-right border-r border-black/30 font-mono">—</td>
               <td className="py-2 px-3 text-right whitespace-nowrap font-mono">

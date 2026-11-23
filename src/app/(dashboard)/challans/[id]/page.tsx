@@ -365,6 +365,10 @@ export default function ChallanDetailPage() {
 
   const handlePrint = (typeOverride?: 'DELIVERY CHALLAN' | 'PROFORMA INVOICE') => {
     if (!profile) return;
+    if (viewMode === 'office') {
+      handlePrintOfficeCopy();
+      return;
+    }
     const docType = typeOverride || activeDocType;
     printChallanPDF({
       challan,
@@ -380,6 +384,10 @@ export default function ChallanDetailPage() {
 
   const handleDownload = (typeOverride?: 'DELIVERY CHALLAN' | 'PROFORMA INVOICE') => {
     if (!profile) return;
+    if (viewMode === 'office') {
+      handleDownloadOfficeCopy();
+      return;
+    }
     const docType = typeOverride || activeDocType;
     downloadChallanPDF({
       challan,
@@ -625,7 +633,7 @@ export default function ChallanDetailPage() {
 
             {(() => {
               const targetPhone = challan ? resolveCustomerPhone(challan, customers, liveChallans) : '';
-              const docLabel = viewMode === 'pi' ? 'PI' : 'Challan';
+              const docLabel = viewMode === 'office' ? 'Office Copy' : viewMode === 'pi' ? 'PI' : 'Challan';
               return (
                 <button
                   onClick={() => handleWhatsApp(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
@@ -641,10 +649,10 @@ export default function ChallanDetailPage() {
             <button
               onClick={() => handlePrint(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
               className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
-              title={`Print ${viewMode === 'pi' ? 'Proforma Invoice' : 'Delivery Challan'}`}
+              title={`Print ${viewMode === 'office' ? 'Office Copy' : viewMode === 'pi' ? 'Proforma Invoice' : 'Delivery Challan'}`}
             >
               <Printer size={14} />
-              <span>Print {viewMode === 'pi' ? 'PI' : 'Challan'}</span>
+              <span>Print {viewMode === 'office' ? 'Office Copy' : viewMode === 'pi' ? 'PI' : 'Challan'}</span>
             </button>
 
             {/* Print Without Rate Option */}
@@ -670,10 +678,10 @@ export default function ChallanDetailPage() {
             <button
               onClick={() => handleDownload(viewMode === 'pi' ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN')}
               className="btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
-              title={`Download ${viewMode === 'pi' ? 'Proforma Invoice' : 'Delivery Challan'} PDF`}
+              title={`Download ${viewMode === 'office' ? 'Office Copy' : viewMode === 'pi' ? 'Proforma Invoice' : 'Delivery Challan'} PDF`}
             >
               <Download size={14} />
-              <span>PDF ({viewMode === 'pi' ? 'PI' : 'Challan'})</span>
+              <span>PDF ({viewMode === 'office' ? 'Office Copy' : viewMode === 'pi' ? 'PI' : 'Challan'})</span>
             </button>
 
             {/* Download Office Copy PDF */}
