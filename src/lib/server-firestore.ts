@@ -4,6 +4,12 @@
  */
 
 import { Challan } from '@/types';
+import {
+  saveDocToSupabase,
+  fetchDocFromSupabase,
+  fetchCollectionDocsFromSupabase,
+  deleteDocFromSupabase,
+} from './server-supabase';
 
 const FIRESTORE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'showhouse-2ea0f';
 const BASE_FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/(default)/documents`;
@@ -92,7 +98,13 @@ export function challanToFirestoreFields(challan: Record<string, any>): Record<s
 export async function fetchSingleChallanFromFirestore(id: string): Promise<Challan | null> {
   if (!id) return null;
 
-  // 1. Try direct doc lookup
+  // 0. Try Supabase first (Instant, unlimited operations)
+  try {
+    const supa = await fetchDocFromSupabase('challans', id);
+    if (supa && supa.id) return supa as Challan;
+  } catch {}
+
+  // 1. Try direct doc lookup in Firestore
   try {
     const res = await fetch(`${BASE_FIRESTORE_URL}/challans/${encodeURIComponent(id)}`, {
       method: 'GET',
@@ -150,6 +162,15 @@ export async function fetchSingleChallanFromFirestore(id: string): Promise<Chall
  * Fetch all active challans from Cloud Firestore REST API
  */
 export async function fetchAllChallansFromFirestore(): Promise<Challan[]> {
+  // 0. Try Supabase first (Instant, unlimited operations)
+  try {
+    const supaDocs = await fetchCollectionDocsFromSupabase('challans');
+    if (Array.isArray(supaDocs) && supaDocs.length > 0) {
+      const valid = supaDocs.filter((c: any) => c && !c.is_deleted && c.id !== 'all_challans');
+      if (valid.length > 0) return valid as Challan[];
+    }
+  } catch {}
+
   try {
     const res = await fetch(`${BASE_FIRESTORE_URL}/challans?pageSize=300`, {
       method: 'GET',
@@ -181,6 +202,12 @@ export async function fetchAllChallansFromFirestore(): Promise<Challan[]> {
  */
 export async function saveChallanToFirestoreRest(challan: Challan): Promise<boolean> {
   if (!challan || !challan.id) return false;
+
+  // 1. Dual save to Supabase PostgreSQL (Guaranteed persistence)
+  try {
+    await saveDocToSupabase('challans', challan.id, challan);
+  } catch {}
+
   try {
     const fields = challanToFirestoreFields({
       ...challan,
@@ -206,6 +233,12 @@ export async function saveChallanToFirestoreRest(challan: Challan): Promise<bool
  */
 export async function deleteChallanFromFirestoreRest(id: string): Promise<boolean> {
   if (!id) return false;
+
+  // 1. Dual delete from Supabase PostgreSQL
+  try {
+    await deleteDocFromSupabase('challans', id);
+  } catch {}
+
   try {
     const url = `${BASE_FIRESTORE_URL}/challans/${encodeURIComponent(id)}`;
     const res = await fetch(url, {
