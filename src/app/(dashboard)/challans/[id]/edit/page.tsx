@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useApp } from '@/lib/context';
@@ -82,6 +82,25 @@ export default function EditChallanPage() {
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const customerDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleCustomerOutsideClick(event: MouseEvent | TouchEvent) {
+      if (
+        customerDropdownRef.current &&
+        !customerDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowCustomerDropdown(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleCustomerOutsideClick);
+    document.addEventListener('touchstart', handleCustomerOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleCustomerOutsideClick);
+      document.removeEventListener('touchstart', handleCustomerOutsideClick);
+    };
+  }, []);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -744,7 +763,7 @@ export default function EditChallanPage() {
       {/* Customer & Date */}
       <div className="card p-3.5 sm:p-4 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-          <div className="sm:col-span-6 relative">
+          <div className="sm:col-span-6 relative" ref={customerDropdownRef}>
             <div className="flex items-center justify-between mb-1">
               <label className="label text-xs mb-0">Customer Name *</label>
               {customerName.trim() && (

@@ -208,7 +208,7 @@ export default function ChallansPage() {
       });
     }
     if (companyFilter !== 'all') {
-      list = list.filter((c) => c.customer_name.toLowerCase() === companyFilter.toLowerCase());
+      list = list.filter((c) => (c.customer_name || '').toLowerCase() === companyFilter.toLowerCase());
     }
     if (creatorFilter !== 'all') {
       list = list.filter((c) => {
@@ -518,7 +518,7 @@ export default function ChallansPage() {
               <option value="all">🏢 All Companies / Clients ({uniqueCompanies.length})</option>
               {uniqueCompanies.map((comp) => {
                 const count = allChallans.filter(
-                  (c) => c.customer_name.toLowerCase() === comp.toLowerCase()
+                  (c) => (c.customer_name || '').toLowerCase() === comp.toLowerCase()
                 ).length;
                 return (
                   <option key={comp} value={comp}>

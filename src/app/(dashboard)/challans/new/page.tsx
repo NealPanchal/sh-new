@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useApp } from '@/lib/context';
@@ -510,6 +510,26 @@ function CreateChallanContent() {
   // Autocomplete UI
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const customerDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleCustomerOutsideClick(event: MouseEvent | TouchEvent) {
+      if (
+        customerDropdownRef.current &&
+        !customerDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowCustomerDropdown(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleCustomerOutsideClick);
+    document.addEventListener('touchstart', handleCustomerOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleCustomerOutsideClick);
+      document.removeEventListener('touchstart', handleCustomerOutsideClick);
+    };
+  }, []);
+
   const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState('');
 
@@ -1057,7 +1077,7 @@ function CreateChallanContent() {
       <div className="card p-3.5 sm:p-4 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           {/* Customer Name Search / Input */}
-          <div className="sm:col-span-6 relative">
+          <div className="sm:col-span-6 relative" ref={customerDropdownRef}>
             <div className="flex items-center justify-between mb-1">
               <label className="label text-xs mb-0">Customer Name *</label>
               {(customerName.trim() || matchedCustomer) && (
