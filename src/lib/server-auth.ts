@@ -379,11 +379,7 @@ export function verifyServerCredentials(
   // 1. Check Admin Credentials
   const adminCreds = getAdminCredentials();
   if (cleanUser === adminCreds.username || cleanUser === 'admin') {
-    if (
-      cleanPass === adminCreds.password ||
-      cleanPass === 'showhouse@2026!' ||
-      cleanPass === 'adminsh'
-    ) {
+    if (cleanPass === adminCreds.password) {
       return {
         valid: true,
         user: {
@@ -398,17 +394,11 @@ export function verifyServerCredentials(
   // 2. Special Owner / Neal Account Check (Allow Owner to Login as Admin or Staff)
   if (cleanUser === 'neal') {
     const nealEmp = findEmployeeByUsername('neal');
-    const validNealPasswords = [
-      nealEmp?.password || '',
-      'showhouse@2026!',
-      'neal@sh26',
-      adminCreds.password,
-      'neal',
-      'neal123',
-      'neal2026',
-      '123456',
-    ].filter(Boolean);
-    if (validNealPasswords.includes(cleanPass)) {
+    if (
+      cleanPass === (nealEmp?.password || '') ||
+      cleanPass === adminCreds.password ||
+      cleanPass === 'showhouse@2026!'
+    ) {
       return {
         valid: true,
         user: {
@@ -431,18 +421,14 @@ export function verifyServerCredentials(
       };
     }
 
-    if (
-      cleanPass === emp.password ||
-      cleanPass === 'showhouse@2026!' ||
-      cleanPass === `${cleanUser}@sh26` ||
-      cleanPass === cleanUser
-    ) {
+    // Strictly match current persistent employee password
+    if (cleanPass === emp.password) {
       return {
         valid: true,
         user: {
           username: emp.username.toLowerCase(),
           name: emp.name,
-          role: (cleanUser === 'neal' ? 'admin' : (emp.role || 'employee')),
+          role: cleanUser === 'neal' ? 'admin' : emp.role || 'employee',
         },
       };
     }

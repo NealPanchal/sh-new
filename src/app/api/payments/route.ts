@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession } from '@/lib/server-auth';
 import { getPayments, addPayment, recordAuditLog, updateChallanPayment } from '@/lib/server-accounting';
+import { syncFromFirestoreIfCold } from '@/lib/server-storage';
 import { PaymentRecord, PaymentMode } from '@/types';
 
 export async function GET(req: NextRequest) {
@@ -8,6 +9,8 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
+
+  await syncFromFirestoreIfCold('payments.json', []);
 
   const { searchParams } = new URL(req.url);
   const customerId = searchParams.get('customerId');

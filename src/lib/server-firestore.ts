@@ -277,3 +277,57 @@ export async function fetchDocFromFirestoreRest(
   return null;
 }
 
+/**
+ * Universal document deleter from Cloud Firestore REST API
+ */
+export async function deleteDocFromFirestoreRest(
+  collection: string,
+  docId: string
+): Promise<boolean> {
+  if (!collection || !docId) return false;
+  try {
+    const url = `${BASE_FIRESTORE_URL}/${encodeURIComponent(collection)}/${encodeURIComponent(docId)}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn(`deleteDocFromFirestoreRest (${collection}/${docId}) warning:`, err);
+    return false;
+  }
+}
+
+/**
+ * Universal collection fetcher from Cloud Firestore REST API
+ */
+export async function fetchCollectionDocsFromFirestoreRest(
+  collection: string
+): Promise<Record<string, any>[]> {
+  if (!collection) return [];
+  try {
+    const url = `${BASE_FIRESTORE_URL}/${encodeURIComponent(collection)}?pageSize=300`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = data.documents || [];
+      return docs.map((doc: any) => {
+        const docId = doc.name ? doc.name.split('/').pop() : '';
+        const item: Record<string, any> = { id: docId };
+        if (doc.fields) {
+          for (const k of Object.keys(doc.fields)) {
+            item[k] = convertFirestoreValue(doc.fields[k]);
+          }
+        }
+        return item;
+      });
+    }
+  } catch (err) {
+    console.warn(`fetchCollectionDocsFromFirestoreRest (${collection}) warning:`, err);
+  }
+  return [];
+}
+

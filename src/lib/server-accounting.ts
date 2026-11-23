@@ -13,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { cleanTallyParticulars } from './utils';
+import { safeReadDataFile, safeWriteDataFile } from './server-storage';
 import {
   Customer,
   CustomerSite,
@@ -69,74 +70,11 @@ interface FileCacheEntry<T> {
 const memoryFileCache = new Map<string, FileCacheEntry<any>>();
 
 function readJsonFile<T>(filename: string, fallback: T): T {
-  try {
-    ensureDataDir();
-    const filePath = path.join(DATA_DIR, filename);
-    if (!fs.existsSync(filePath)) {
-      const seedPath = path.join(SEED_DATA_DIR, filename);
-      if (fs.existsSync(seedPath)) {
-        const seedRaw = fs.readFileSync(seedPath, 'utf-8');
-        if (seedRaw.trim()) {
-          try {
-            fs.writeFileSync(filePath, seedRaw, 'utf-8');
-          } catch {}
-          const parsed = JSON.parse(seedRaw);
-          try {
-            const stat = fs.statSync(filePath);
-            memoryFileCache.set(filename, { mtimeMs: stat.mtimeMs, data: parsed });
-          } catch {}
-          return parsed;
-        }
-      }
-      try {
-        fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2), 'utf-8');
-      } catch {}
-      return fallback;
-    }
-
-    const stat = fs.statSync(filePath);
-    const cached = memoryFileCache.get(filename);
-    if (cached && cached.mtimeMs === stat.mtimeMs) {
-      return cached.data;
-    }
-
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    if (!raw.trim()) return fallback;
-    const parsed = JSON.parse(raw);
-    memoryFileCache.set(filename, { mtimeMs: stat.mtimeMs, data: parsed });
-    return parsed;
-  } catch (err) {
-    console.error(`Error reading ${filename}:`, err);
-    return fallback;
-  }
+  return safeReadDataFile<T>(filename, fallback);
 }
 
 function writeJsonFile<T>(filename: string, data: T, backup = false): void {
-  try {
-    ensureDataDir();
-    const filePath = path.join(DATA_DIR, filename);
-    const content = JSON.stringify(data, null, 2);
-
-    if (backup) {
-      try {
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupPath = path.join(BACKUP_DIR, `${filename.replace('.json', '')}-${ts}.json`);
-        fs.writeFileSync(backupPath, content, 'utf-8');
-      } catch {}
-    }
-
-    // Atomic write via temp file + rename to prevent corruption or partial writes
-    const tempPath = `${filePath}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    fs.writeFileSync(tempPath, content, 'utf-8');
-    fs.renameSync(tempPath, filePath);
-
-    try {
-      const stat = fs.statSync(filePath);
-      memoryFileCache.set(filename, { mtimeMs: stat.mtimeMs, data });
-    } catch {}
-  } catch (err) {
-    console.error(`Error writing ${filename}:`, err);
-  }
+  safeWriteDataFile(filename, data);
 }
 
 // ----------------------------------------------------

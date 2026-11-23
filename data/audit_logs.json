@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "entity_type": "site_adjustment",
+    "entity_id": "mle_1795413057068_db74q",
+    "user_id": "adminsh",
+    "user_name": "Admin SH",
+    "action": "ADD_LEDGER_ENTRY",
+    "updated_values": {
+      "id": "mle_1795413057068_db74q",
+      "customer_id": "0eae3aab-c1b1-494d-a3d8-5c9c4a486c27",
+      "customer_name": "Elevation",
+      "date": "2026-11-23",
+      "particulars": "By HDFC BANK-50200003880041",
+      "payment_type": "Receipt",
+      "voucher_no": "REC-1001",
+      "debit": 0,
+      "credit": 25000,
+      "site_name": "Site 1",
+      "created_at": "2026-11-23T05:50:57.068Z",
+      "created_by": "Admin SH"
+    },
+    "reason": "Manual ledger entry [Receipt] REC-1001 - ₹25,000",
+    "id": "audit_1795413057073_mzda3",
+    "timestamp": "2026-11-23T05:50:57.073Z"
+  },
+  {
+    "entity_type": "site_adjustment",
+    "entity_id": "mle_1795412938863_79iaj",
+    "user_id": "adminsh",
+    "user_name": "Admin SH",
+    "action": "ADD_LEDGER_ENTRY",
+    "updated_values": {
+      "id": "mle_1795412938863_79iaj",
+      "customer_id": "0eae3aab-c1b1-494d-a3d8-5c9c4a486c27",
+      "customer_name": "Elevation",
+      "date": "2026-11-23",
+      "particulars": "By Cash Received on site",
+      "payment_type": "Receipt",
+      "voucher_no": "REC-9999",
+      "debit": 0,
+      "credit": 15000,
+      "site_name": "Site 1",
+      "created_at": "2026-11-23T05:48:58.863Z",
+      "created_by": "Admin SH"
+    },
+    "reason": "Manual ledger entry [Receipt] REC-9999 - ₹15,000",
+    "id": "audit_1795412938887_z41dh",
+    "timestamp": "2026-11-23T05:48:58.888Z"
+  }
+]

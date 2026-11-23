@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession } from '@/lib/server-auth';
 import { cleanTallyParticulars } from '@/lib/utils';
+import { syncFromFirestoreIfCold } from '@/lib/server-storage';
+import { deleteDocFromFirestoreRest } from '@/lib/server-firestore';
 import {
   computeCustomerLedger,
   addManualLedgerEntry,
@@ -25,6 +27,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    await syncFromFirestoreIfCold('manual_ledger_entries.json', []);
+    await syncFromFirestoreIfCold('payments.json', []);
+    await syncFromFirestoreIfCold('customers.json', []);
+
     const result = computeCustomerLedger(customerId, {
       customerName,
       siteId,
@@ -428,6 +434,11 @@ export async function DELETE(req: NextRequest) {
       },
       userLabel
     );
+
+    const delTarget = targetManualId || targetId;
+    if (delTarget) {
+      deleteDocFromFirestoreRest('manual_ledger_entries', String(delTarget).trim().toLowerCase()).catch(() => {});
+    }
 
     return NextResponse.json({ success: res.success, deletedType: res.deletedType });
   } catch (err: any) {

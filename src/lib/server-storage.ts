@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { saveDocToFirestoreRest, fetchDocFromFirestoreRest } from './server-firestore';
+import {
+  saveDocToFirestoreRest,
+  fetchDocFromFirestoreRest,
+  fetchCollectionDocsFromFirestoreRest,
+} from './server-firestore';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const TMP_DATA_DIR = path.join('/tmp', 'showhouse_data');
@@ -23,13 +27,49 @@ function ensureDirSafe(dirPath: string): boolean {
 ensureDirSafe(DATA_DIR);
 ensureDirSafe(TMP_DATA_DIR);
 
-const FIRESTORE_SYNC_MAP: Record<string, { collection: string; docId: string; wrapAs?: string }> = {
+interface SyncConfig {
+  collection: string;
+  docId: string;
+  wrapAs?: string;
+  saveIndividualToCollection?: string;
+  idField?: string;
+}
+
+const FIRESTORE_SYNC_MAP: Record<string, SyncConfig> = {
   'admin_credentials.json': { collection: 'auth_config', docId: 'admin_credentials' },
   'security_config.json': { collection: 'auth_config', docId: 'security_config' },
-  'employees.json': { collection: 'auth_config', docId: 'employees', wrapAs: 'list' },
+  'employees.json': {
+    collection: 'auth_config',
+    docId: 'employees',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'employees',
+    idField: 'username',
+  },
   'settings.json': { collection: 'settings', docId: 'business_profile' },
   'security_audit_logs.json': { collection: 'auth_config', docId: 'security_audit_logs', wrapAs: 'list' },
-  'customers.json': { collection: 'accounting', docId: 'customers', wrapAs: 'list' },
+  'customers.json': {
+    collection: 'customers',
+    docId: 'all_customers',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'customers',
+    idField: 'id',
+  },
+  'manual_ledger_entries.json': {
+    collection: 'manual_ledger_entries',
+    docId: 'all_entries',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'manual_ledger_entries',
+    idField: 'id',
+  },
+  'payments.json': {
+    collection: 'payments',
+    docId: 'all_payments',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'payments',
+    idField: 'id',
+  },
+  'goods_returns.json': { collection: 'goods_returns', docId: 'all_returns', wrapAs: 'list' },
+  'site_adjustments.json': { collection: 'site_adjustments', docId: 'all_adjustments', wrapAs: 'list' },
 };
 
 /**
@@ -71,10 +111,27 @@ export function safeWriteDataFile<T = any>(filename: string, data: T): boolean {
   if (mapping) {
     const payload = mapping.wrapAs
       ? { [mapping.wrapAs]: data, count: Array.isArray(data) ? data.length : 1 }
-      : (typeof data === 'object' && data !== null ? data : { value: data });
+      : typeof data === 'object' && data !== null
+      ? data
+      : { value: data };
+
+    // Primary document or aggregate bundle save
     saveDocToFirestoreRest(mapping.collection, mapping.docId, payload).catch((syncErr) => {
-      console.warn(`[server-storage] Cloud Firestore REST sync warning for ${filename}:`, syncErr);
+      console.warn(`[server-storage] Firestore REST sync warning for ${filename}:`, syncErr);
     });
+
+    // Save individual documents in top-level collection so they are visible in Firebase Console
+    if (mapping.saveIndividualToCollection && Array.isArray(data)) {
+      data.forEach((item: any) => {
+        if (item && typeof item === 'object') {
+          const rawId = mapping.idField ? item[mapping.idField] : item.id || item.username;
+          if (rawId) {
+            const docId = String(rawId).trim().toLowerCase();
+            saveDocToFirestoreRest(mapping.saveIndividualToCollection!, docId, item).catch(() => {});
+          }
+        }
+      });
+    }
   }
 
   return writtenSuccessfully || true;
@@ -145,17 +202,36 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
   }
 
   try {
+    // 1. Try bundle doc
     const remote = await fetchDocFromFirestoreRest(mapping.collection, mapping.docId);
     if (remote) {
-      const data = mapping.wrapAs && Array.isArray(remote[mapping.wrapAs])
-        ? remote[mapping.wrapAs]
-        : remote;
+      const data =
+        mapping.wrapAs && Array.isArray(remote[mapping.wrapAs])
+          ? remote[mapping.wrapAs]
+          : remote;
       inMemoryCache.set(filename, data);
       try {
         ensureDirSafe(TMP_DATA_DIR);
         fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
       } catch {}
       return data as T;
+    }
+
+    // 2. If bundle doc not found, try collection query
+    if (mapping.saveIndividualToCollection) {
+      const colDocs = await fetchCollectionDocsFromFirestoreRest(mapping.saveIndividualToCollection);
+      if (colDocs && colDocs.length > 0) {
+        // filter out 'all_entries' or 'all_payments' meta docs
+        const items = colDocs.filter((d) => d.id !== 'all_entries' && d.id !== 'all_payments' && d.id !== 'all_returns');
+        if (items.length > 0) {
+          inMemoryCache.set(filename, items);
+          try {
+            ensureDirSafe(TMP_DATA_DIR);
+            fs.writeFileSync(tmpPath, JSON.stringify(items, null, 2), 'utf-8');
+          } catch {}
+          return items as T;
+        }
+      }
     }
   } catch (err) {
     console.warn(`[server-storage] Firestore hydration warning for ${filename}:`, err);

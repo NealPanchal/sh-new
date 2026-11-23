@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession } from '@/lib/server-auth';
 import { getAllCustomers, saveCustomers, recordAuditLog } from '@/lib/server-accounting';
+import { syncFromFirestoreIfCold } from '@/lib/server-storage';
 import { Customer } from '@/types';
 
 export async function GET(req: NextRequest) {
   const session = getAuthenticatedSession(req);
+  await syncFromFirestoreIfCold('customers.json', []);
   const { searchParams } = new URL(req.url);
   const search = (searchParams.get('search') || '').toLowerCase().trim();
   const creator = (searchParams.get('creator') || '').toLowerCase().trim();

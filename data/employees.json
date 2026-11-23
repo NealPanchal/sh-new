@@ -27,7 +27,7 @@
     "name": "Neal",
     "phone": "+91 93248 69306",
     "password": "showhouse@2026!",
-    "role": "admin",
+    "role": "employee",
     "is_active": true,
     "is_banned": false,
     "po_prefix": "PO NP"
