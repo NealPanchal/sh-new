@@ -331,7 +331,7 @@ function CreateChallanContent() {
     }
 
     const newItems: ChallanItemFormData[] = targetRates.map((m) => {
-      const desc = m.particulars?.trim() || [m.code, m.company_name, m.room ? `(${m.room})` : ''].filter(Boolean).join(' ');
+      const desc = m.particulars?.trim() || [m.code, m.room ? `(${m.room})` : ''].filter(Boolean).join(' ') || 'Laminate Finish';
       return {
         product_id: '',
         item_description: desc,

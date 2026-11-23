@@ -6,7 +6,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Quotation, BusinessProfile } from '@/types';
-import { formatDateIndian, formatPhone } from '@/lib/utils';
+import { formatDateIndian, formatPhone, cleanChallanItemDescription } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 
 function formatAmountNum(amount: number | null | undefined): string {
@@ -156,9 +156,13 @@ export function exportQuotationToPDF(quotation: Quotation, profile?: BusinessPro
 
   const items = quotation.items || [];
   const allTableRows: (string | number)[][] = items.map((it, idx) => {
-    let desc = (it.item_description || '').toUpperCase();
-    if (it.brand) desc += ` [ ${it.brand.toUpperCase()} ]`;
-    if (it.colour_finish) desc += ` - ${it.colour_finish.toUpperCase()}`;
+    let desc = cleanChallanItemDescription(it.item_description, it.brand).toUpperCase();
+    if (it.colour_finish) {
+      const cleanFinish = cleanChallanItemDescription(it.colour_finish, it.brand).toUpperCase();
+      if (cleanFinish && !desc.includes(cleanFinish)) {
+        desc += ` - ${cleanFinish}`;
+      }
+    }
     if (it.size) desc += ` ( ${it.size} )`;
 
     const unitStr = it.unit === 'running ft' ? 'RFT' : (it.unit || 'Sheets').toUpperCase();

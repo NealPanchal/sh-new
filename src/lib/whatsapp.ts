@@ -4,7 +4,7 @@
  */
 
 import { Challan, BusinessProfile, ChallanItem, CustomerMaterialRate, Quotation } from '@/types';
-import { getWhatsAppNumber, formatDateIndian } from '@/lib/utils';
+import { getWhatsAppNumber, formatDateIndian, cleanChallanItemDescription } from '@/lib/utils';
 import { downloadChallanPDF, getChallanPDFBlob } from '@/lib/pdf';
 
 interface ShareOptions {
@@ -65,7 +65,8 @@ export function generateShareMessage(
       const lineAmt = item.amount ? Number(item.amount) : (lineRate ? lineRate * item.quantity : null);
       const rateInfo = lineRate ? ` @ ₹${lineRate.toLocaleString('en-IN')}` : '';
       const amtInfo = lineAmt ? ` = ₹${lineAmt.toLocaleString('en-IN')}` : '';
-      message += `${idx + 1}. ${item.item_description} (${item.quantity} ${item.unit})${rateInfo}${amtInfo}\n`;
+      const cleanDesc = cleanChallanItemDescription(item.item_description, item.brand);
+      message += `${idx + 1}. ${cleanDesc} (${item.quantity} ${item.unit})${rateInfo}${amtInfo}\n`;
     });
   }
 
@@ -161,7 +162,8 @@ export function generatePIShareMessage(
       const lineAmt = item.amount ? Number(item.amount) : (lineRate ? lineRate * item.quantity : null);
       const rateInfo = lineRate ? ` @ ₹${lineRate.toLocaleString('en-IN')}` : '';
       const amtInfo = lineAmt ? ` = ₹${lineAmt.toLocaleString('en-IN')}` : '';
-      message += `${idx + 1}. ${item.item_description} (${item.quantity} ${item.unit})${rateInfo}${amtInfo}\n`;
+      const cleanDesc = cleanChallanItemDescription(item.item_description, item.brand);
+      message += `${idx + 1}. ${cleanDesc} (${item.quantity} ${item.unit})${rateInfo}${amtInfo}\n`;
     });
   }
 
@@ -268,7 +270,8 @@ export function generateBillShareMessage(
     challan.items.forEach((it, idx) => {
       const lineRate = it.rate ? Number(it.rate) : null;
       const rateInfo = lineRate ? ` @ ₹${lineRate.toLocaleString('en-IN')}` : '';
-      msg += `${idx + 1}. ${it.item_description} (${it.quantity} ${it.unit})${rateInfo}\n`;
+      const cleanDesc = cleanChallanItemDescription(it.item_description, it.brand);
+      msg += `${idx + 1}. ${cleanDesc} (${it.quantity} ${it.unit})${rateInfo}\n`;
     });
   }
 
@@ -316,7 +319,8 @@ export function generateDeliveryConfirmationMessage(
   if (challan.items && challan.items.length > 0) {
     msg += `\n*Items Delivered:*\n`;
     challan.items.forEach((item, idx) => {
-      msg += `${idx + 1}. ${item.item_description} (${item.quantity} ${item.unit})\n`;
+      const cleanDesc = cleanChallanItemDescription(item.item_description, item.brand);
+      msg += `${idx + 1}. ${cleanDesc} (${item.quantity} ${item.unit})\n`;
     });
   }
 
@@ -766,7 +770,8 @@ export function generateQuotationWhatsAppMessage(
     const qtyStr = `${item.quantity} ${item.unit || 'sheets'}`;
     const rateStr = `₹${Number(item.rate || 0).toLocaleString('en-IN')}`;
     const amtStr = `₹${Number(item.amount || (item.quantity * item.rate) || 0).toLocaleString('en-IN')}`;
-    msg += `${idx + 1}. *${item.item_description}*\n`;
+    const cleanDesc = cleanChallanItemDescription(item.item_description, item.brand);
+    msg += `${idx + 1}. *${cleanDesc}*\n`;
     msg += `   • Qty: ${qtyStr}  |  Rate: ${rateStr}\n`;
     msg += `   • Amount: *${amtStr}*\n\n`;
   });

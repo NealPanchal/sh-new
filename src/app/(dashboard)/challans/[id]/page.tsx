@@ -624,7 +624,7 @@ export default function ChallanDetailPage() {
             <button
               onClick={handlePrintWithoutRate}
               className="btn-secondary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-2xs"
-              title="Print Delivery Slip without Rate or Prices (Item, Brand, Quantity & Unit only)"
+              title="Print Delivery Slip without Rate or Prices (A4 format - Description, Quantity & Unit only)"
             >
               <Printer size={14} className="text-amber-700" />
               <span>Print (No Rate)</span>

@@ -375,9 +375,14 @@
     width: 100% !important;
   }
 
+  .print\:break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
   @page {
-    margin: 8mm;
-    size: auto;
+    margin: 8mm 10mm;
+    size: A4 portrait;
   }
 }
 

@@ -245,3 +245,54 @@ export function cleanTallyParticulars(text: string | null | undefined, isDebit: 
   return isDebit ? `To ${clean}` : `By ${clean}`;
 }
 
+/**
+ * Strips internal supplier / vendor / company names from challan line item descriptions
+ * (e.g. "[ SHIV SHAKTI ]", "[ SHARNAM ]", "[ ZURICH ]", "(SHIV SHAKTI)")
+ * while preserving valid room names, discounts, and item specifications.
+ */
+export function cleanChallanItemDescription(rawDesc?: string | null, brand?: string | null): string {
+  if (!rawDesc) return '';
+  let cleaned = rawDesc.trim();
+
+  // If a specific brand is passed, remove variations like [BRAND], [ BRAND ], (BRAND), ( BRAND )
+  if (brand && brand.trim()) {
+    const escapedBrand = brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    cleaned = cleaned.replace(new RegExp(`\\[\\s*${escapedBrand}\\s*\\]`, 'gi'), '');
+    cleaned = cleaned.replace(new RegExp(`\\(\\s*${escapedBrand}\\s*\\)`, 'gi'), '');
+    cleaned = cleaned.replace(new RegExp(`\\s*[-|/]\\s*${escapedBrand}\\s*[-|/]?\\s*`, 'gi'), ' ');
+  }
+
+  // Strip generic bracketed company/vendor names: e.g. [ SHIV SHAKTI ], [ SHARNAM ], [ ZURICH ]
+  // Negative lookahead (?!\s*(?:disc|discount|qty|unit)[:\s]) ensures discount brackets like [ Disc: -10% ] are kept
+  cleaned = cleaned.replace(/\[(?!\s*(?:disc|discount|qty|unit)[:\s])[^\]]{2,50}\]/gi, '');
+
+  // Strip known internal suppliers if bracketed or separated by hyphens/pipes
+  const knownSuppliers = [
+    'SHIV\\s*SHAKTI',
+    'SHARNAM',
+    'ZURICH',
+    'ROYAL\\s*OAK',
+    'CENTURY',
+    'GREENLAM',
+    'MERINO',
+    'ROYALE\\s*TOUCHE',
+    'SUNDEK',
+  ];
+  for (const sup of knownSuppliers) {
+    cleaned = cleaned.replace(new RegExp(`\\[\\s*${sup}\\s*\\]`, 'gi'), '');
+    cleaned = cleaned.replace(new RegExp(`\\(\\s*${sup}\\s*\\)`, 'gi'), '');
+    cleaned = cleaned.replace(new RegExp(`\\s*[-|]\\s*${sup}\\s*[-|]\\s*`, 'gi'), ' - ');
+  }
+
+  // Clean up punctuation artifacts: double hyphens, trailing/leading hyphens, extra whitespace
+  cleaned = cleaned
+    .replace(/\s+-\s+-\s+/g, ' - ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^\s*[-|/]\s*/, '')
+    .replace(/\s*[-|/]\s*$/, '')
+    .trim();
+
+  return cleaned;
+}
+
+

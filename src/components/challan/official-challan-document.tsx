@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Challan, BusinessProfile } from '@/types';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, cleanChallanItemDescription } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
@@ -102,9 +102,13 @@ export function OfficialChallanDocument({
         </thead>
         <tbody className="divide-y divide-black/30">
           {itemList.map((item, idx) => {
-            let desc = (item.item_description || '').toUpperCase();
-            if (item.brand) desc += ` [ ${item.brand.toUpperCase()} ]`;
-            if (item.colour_finish) desc += ` - ${item.colour_finish.toUpperCase()}`;
+            let desc = cleanChallanItemDescription(item.item_description, item.brand).toUpperCase();
+            if (item.colour_finish) {
+              const cleanFinish = cleanChallanItemDescription(item.colour_finish, item.brand).toUpperCase();
+              if (cleanFinish && !desc.includes(cleanFinish)) {
+                desc += ` - ${cleanFinish}`;
+              }
+            }
             if (item.size) desc += ` ( ${item.size} )`;
             if (item.discount_amount && Number(item.discount_amount) > 0) {
               const discText =
@@ -178,7 +182,10 @@ export function OfficialChallanDocument({
 
   // Reusable Bottom Framed Box (Appears on BOTH Page 1 and Page 2 when multi-page)
   const renderBottomFramedBox = () => (
-    <div className="mt-4 border border-black grid grid-cols-1 md:grid-cols-12 text-black text-xs">
+    <div
+      className="mt-4 border border-black grid grid-cols-1 md:grid-cols-12 text-black text-xs print:break-inside-avoid"
+      style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
+    >
       {/* Left Column (col-span-7) */}
       <div className="md:col-span-7 border-b md:border-b-0 md:border-r border-black flex flex-col justify-between">
         {/* Sub-row: Banking Info + Payment QR */}

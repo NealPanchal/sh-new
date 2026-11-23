@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Challan, BusinessProfile } from '@/types';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, cleanChallanItemDescription } from '@/lib/utils';
 import { MapPin, Phone, Mail } from 'lucide-react';
 import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
 
@@ -252,10 +252,10 @@ export function DeliveryMemoBill({
               return (
                 <div key={idx} className="grid grid-cols-12 min-h-[30px] items-center text-xs">
                   <div className="col-span-6 px-2 py-1 border-r border-surface-300 font-medium text-surface-900 truncate">
-                    {item.item_description}
-                    {[item.brand, item.colour_finish].filter(Boolean).length > 0 && (
+                    {cleanChallanItemDescription(item.item_description, item.brand)}
+                    {item.colour_finish && (
                       <span className="text-[10px] text-surface-500 ml-1">
-                        ({[item.brand, item.colour_finish].filter(Boolean).join(' · ')})
+                        ({cleanChallanItemDescription(item.colour_finish, item.brand)})
                       </span>
                     )}
                   </div>
