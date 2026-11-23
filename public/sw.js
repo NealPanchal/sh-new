@@ -1,5 +1,5 @@
 // Showhouse Progressive Web App Service Worker
-const CACHE_NAME = 'showhouse-pwa-v5';
+const CACHE_NAME = 'showhouse-pwa-v7';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/favicon.png',
@@ -43,7 +43,7 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Fetch: Pass-through for APIs, cache for static icons/assets, pure network-first for pages
+// Fetch: Pass-through for APIs and Navigation, cache-first only for static icons/assets
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -53,34 +53,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Never intercept API routes or authentication flows
+  // 1. NEVER intercept HTML page navigations - let browser handle network & redirects natively
+  // This completely eliminates "This page couldn't load" browser offline screens
+  if (request.mode === 'navigate') {
+    return;
+  }
+
+  // 2. Never intercept API routes or authentication flows
   if (url.pathname.startsWith('/api/')) {
     return;
   }
 
-  // Navigation / HTML Pages: Always network-first with cache-bust to ensure Add-to-Home-Screen app stays real-time
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request, { cache: 'no-cache' })
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return networkResponse;
-        })
-        .catch(() => {
-          return caches.match(request);
-        })
-    );
-    return;
-  }
-
-  // Static assets (images, icons, fonts): Cache-first with network revalidation
+  // 3. Static assets (images, icons, fonts): Cache-first with network fallback
   if (
     url.pathname.startsWith('/icons/') ||
     url.pathname.endsWith('.png') ||
     url.pathname.endsWith('.jpg') ||
+    url.pathname.endsWith('.jpeg') ||
     url.pathname.endsWith('.svg') ||
     url.pathname.endsWith('.ico')
   ) {
@@ -93,7 +82,7 @@ self.addEventListener('fetch', (event) => {
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return networkResponse;
-        });
+        }).catch(() => cachedResponse);
       })
     );
     return;

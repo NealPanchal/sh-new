@@ -284,8 +284,8 @@ export default function SettingsPage() {
     }
   };
 
-  const handleChangeAdminPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleChangeAdminPassword = async (e?: React.FormEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!adminNewPassword || adminNewPassword.length < 6) {
       showToast('New password must be at least 6 characters long', 'error');
       return;
@@ -1249,7 +1249,7 @@ export default function SettingsPage() {
             </span>
           </div>
 
-          <form onSubmit={handleChangeAdminPassword} className="space-y-4 pt-1">
+          <div className="space-y-4 pt-1">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {/* Admin Username */}
               <div>
@@ -1259,7 +1259,6 @@ export default function SettingsPage() {
                   value={adminUsername}
                   onChange={(e) => setAdminUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ''))}
                   placeholder="adminsh"
-                  required
                   className="input font-mono text-xs font-bold text-surface-900 bg-surface-50 w-full"
                 />
                 <span className="text-[10px] text-surface-400 mt-1 block">Default: adminsh</span>
@@ -1321,7 +1320,6 @@ export default function SettingsPage() {
                     value={adminNewPassword}
                     onChange={(e) => setAdminNewPassword(e.target.value)}
                     placeholder="Min. 6 characters"
-                    required
                     minLength={6}
                     className="input text-xs pr-8 w-full font-mono"
                   />
@@ -1346,7 +1344,6 @@ export default function SettingsPage() {
                     value={adminConfirmPassword}
                     onChange={(e) => setAdminConfirmPassword(e.target.value)}
                     placeholder="Repeat new password"
-                    required
                     minLength={6}
                     className="input text-xs pr-8 w-full font-mono"
                   />
@@ -1377,7 +1374,8 @@ export default function SettingsPage() {
               </div>
 
               <button
-                type="submit"
+                type="button"
+                onClick={handleChangeAdminPassword}
                 disabled={
                   savingAdminPassword ||
                   !adminNewPassword ||
@@ -1391,7 +1389,7 @@ export default function SettingsPage() {
                 <span>{savingAdminPassword ? 'Updating...' : 'Change Admin Password'}</span>
               </button>
             </div>
-          </form>
+          </div>
         </div>
 
         {/* Security Suite & Login Audit Trail */}
