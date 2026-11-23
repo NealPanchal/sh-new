@@ -345,7 +345,7 @@ export function setAdminCredentials(username: string, password: string, phone?: 
   // 1. Safe write (in-memory + /tmp + cwd/data if writable)
   safeWriteDataFile('admin_credentials.json', payload);
   // 2. Dual sync to Cloud Firestore REST API
-  saveDocToFirestoreRest('auth_config', 'admin_credentials', payload).catch(() => {});
+  saveDocToFirestoreRest('auth_config', 'admin_credentials', payload).catch(() => { });
   // 3. Update active memory cache
   cachedAdminCreds = payload;
   return payload;
@@ -369,7 +369,7 @@ export async function setAdminCredentialsAsync(
   await safeWriteDataFileAsync('admin_credentials.json', payload);
   try {
     await saveDocToFirestoreRest('auth_config', 'admin_credentials', payload);
-  } catch {}
+  } catch { }
   cachedAdminCreds = payload;
   return payload;
 }

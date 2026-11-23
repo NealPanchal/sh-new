@@ -216,26 +216,24 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
     let totDr = 0;
     let totCr = 0;
 
-    // Only render Opening Balance row if customer has a non-zero opening balance
-    if (openingBalance !== 0) {
-      const opDate = customer.created_at
-        ? formatTallyDate(customer.created_at)
-        : (fromDate ? formatTallyDate(fromDate) : '');
-      const isDr = openingBalance > 0;
-      const opAmount = Math.abs(openingBalance);
+    // Always render Opening Balance row at the head of the statement table before any challans
+    const opDate = customer.created_at
+      ? formatTallyDate(customer.created_at)
+      : (fromDate ? formatTallyDate(fromDate) : '');
+    const isDr = openingBalance >= 0;
+    const opAmount = Math.abs(openingBalance);
 
-      if (isDr) totDr += opAmount;
-      else totCr += opAmount;
+    if (isDr) totDr += opAmount;
+    else totCr += opAmount;
 
-      tableData.push([
-        opDate,
-        isDr ? 'To Opening Balance' : 'By Opening Balance',
-        '',
-        '',
-        isDr ? formatAmount(opAmount) : '',
-        !isDr ? formatAmount(opAmount) : '',
-      ]);
-    }
+    tableData.push([
+      opDate,
+      isDr ? 'To Opening Balance' : 'By Opening Balance',
+      '',
+      '',
+      isDr ? (opAmount > 0 ? formatAmount(opAmount) : '0.00') : '',
+      !isDr ? (opAmount > 0 ? formatAmount(opAmount) : '0.00') : '',
+    ]);
 
     entries.forEach((entry) => {
       const isDr = (Number(entry.debit) || 0) > 0;

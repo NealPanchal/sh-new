@@ -103,10 +103,27 @@ export function OfficialChallanDocument({
           {itemList.map((item, idx) => {
             let desc = '';
             if (isOffice) {
+              let cleanDesc = (item.item_description || '').trim();
+              let roomStr = '';
+              const roomMatch = cleanDesc.match(/^\s*\[\s*([^\]]+)\s*\]\s*/);
+              if (roomMatch) {
+                roomStr = `[ ${roomMatch[1].trim().toUpperCase()} ]`;
+                cleanDesc = cleanDesc.substring(roomMatch[0].length).trim();
+              }
+
+              let codeStr = item.product_id ? item.product_id.trim().toUpperCase() : '';
+              if (!codeStr) {
+                const codeMatch = cleanDesc.match(/\s+(?:(?:lam(?:inate)?|finish|shade)\s+)?([A-Za-z]{0,3}\s*[-/]?\s*\d+[A-Za-z0-9\s\-/()]*|[A-Za-z]{1,4}\s*[-]\s*[A-Za-z0-9]+)$/i);
+                if (codeMatch) {
+                  codeStr = codeMatch[1].trim().toUpperCase();
+                  cleanDesc = cleanDesc.substring(0, cleanDesc.lastIndexOf(codeMatch[0])).trim();
+                }
+              }
+
               const brandStr = item.brand ? `[ ${item.brand.trim().toUpperCase()} ]` : '';
-              const codeStr = item.product_id ? `(Code: ${item.product_id.trim().toUpperCase()})` : '';
-              const baseDesc = (item.item_description || '').trim().toUpperCase();
-              desc = [baseDesc, brandStr, codeStr].filter(Boolean).join(' ');
+              const codeBadge = codeStr ? `[ CODE: ${codeStr} ]` : '';
+
+              desc = [roomStr, cleanDesc.toUpperCase(), codeBadge, brandStr].filter(Boolean).join(' ');
               if (item.colour_finish) {
                 const finishStr = item.colour_finish.trim().toUpperCase();
                 if (finishStr && !desc.includes(finishStr)) {
@@ -261,11 +278,27 @@ export function OfficialChallanDocument({
         {/* Totals Table */}
         {hideRate ? (
           <div className="divide-y divide-black text-xs font-bold">
-            <div className="flex justify-between p-2">
+            <div className="flex justify-between p-1.5 sm:p-2">
               <span>SUB TOTAL</span>
               <span className="font-mono"></span>
             </div>
-            <div className="flex justify-between p-2.5 text-xs sm:text-sm font-black bg-surface-100/90 border-t border-black">
+            <div className="flex justify-between p-1.5 sm:p-2">
+              <span>TRANSPORTATION CHARGES</span>
+              <span className="font-mono"></span>
+            </div>
+            <div className="flex justify-between p-1.5 sm:p-2">
+              <span>LOADING / UNLOADING CHARGES</span>
+              <span className="font-mono"></span>
+            </div>
+            <div className="flex justify-between p-1.5 sm:p-2">
+              <span>CGST 9%</span>
+              <span className="font-mono"></span>
+            </div>
+            <div className="flex justify-between p-1.5 sm:p-2">
+              <span>SGST 9%</span>
+              <span className="font-mono"></span>
+            </div>
+            <div className="flex justify-between p-2 text-xs sm:text-sm font-black bg-surface-100/90 border-t border-black">
               <span>GRAND TOTAL</span>
               <span className="font-mono"></span>
             </div>

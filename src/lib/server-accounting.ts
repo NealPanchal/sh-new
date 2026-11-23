@@ -148,6 +148,11 @@ export function saveCustomers(custs: Customer[]): void {
   writeJsonFile('customers.json', custs, true);
 }
 
+export async function saveCustomersAsync(custs: Customer[]): Promise<boolean> {
+  const { safeWriteDataFileAsync } = await import('@/lib/server-storage');
+  return safeWriteDataFileAsync('customers.json', custs);
+}
+
 export function getCustomerSites(): CustomerSite[] {
   return readJsonFile<CustomerSite[]>('customer_sites.json', []);
 }

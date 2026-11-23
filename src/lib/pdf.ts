@@ -12,7 +12,7 @@ import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 
 export interface PDFOptions {
   challan: Challan;
-  items: ChallanItem[];
+  items?: ChallanItem[];
   profile: BusinessProfile;
   documentType?: 'PROFORMA INVOICE' | 'DELIVERY CHALLAN';
   employeePhone?: string;
@@ -214,7 +214,7 @@ export function generateChallanPDF({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(isA4 ? 8.8 : 7.6);
   doc.setTextColor(...blackColor);
-  doc.text(profile.legal_name || 'Showhouse Concept & Design LLP', boxX, detailsY);
+  doc.text(profile?.legal_name || 'Showhouse Concept & Design LLP', boxX, detailsY);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(isA4 ? 8.0 : 7.0);
@@ -225,7 +225,7 @@ export function generateChallanPDF({
     'Phone : 022 2538 7683',
     'Mobile : +91 93248 69306',
     'Email : forshowhouse@gmail.com',
-    `GST : ${profile.gstin || '27ACMF53838C1ZY'}`,
+    `GST : ${profile?.gstin || '27ACMF53838C1ZY'}`,
   ];
 
   let rightDetailY = detailsY + (isA4 ? 3.6 : 3.2);
@@ -240,12 +240,13 @@ export function generateChallanPDF({
   // ----------------------------------------------------
   // 3. ITEMS PREPARATION & CALCULATIONS
   // ----------------------------------------------------
+  const itemList = items && items.length > 0 ? items : (challan.items || []);
   const transportCharges = Number(challan.transportation_charges) || 0;
   const loadingCharges = Number(challan.loading_charges) || 0;
   const applyGst = Boolean(challan.apply_gst);
   const applyAdditional9 = Boolean(challan.apply_additional_9);
 
-  const itemsSubtotal = items.reduce(
+  const itemsSubtotal = itemList.reduce(
     (sum, it) =>
       sum +
       (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
@@ -266,14 +267,32 @@ export function generateChallanPDF({
     ? [12, 92, 28, 28, 30] // Total = 190mm
     : [8, 63, 20, 21, 22]; // Total = 134mm
 
-  const allTableRows: (string | number)[][] = items.map((item, idx) => {
+  const allTableRows: (string | number)[][] = itemList.map((item, idx) => {
     let desc = '';
     if (isOfficeCopy) {
-      // Internal Office / Warehouse copy: include vendor brand [ BRAND ] and item code (Code: ...)
+      // Internal Office / Warehouse copy: include vendor brand [ BRAND ] and item code [ CODE: ... ]
+      let cleanDesc = (item.item_description || '').trim();
+      let roomStr = '';
+      const roomMatch = cleanDesc.match(/^\s*\[\s*([^\]]+)\s*\]\s*/);
+      if (roomMatch) {
+        roomStr = `[ ${roomMatch[1].trim().toUpperCase()} ]`;
+        cleanDesc = cleanDesc.substring(roomMatch[0].length).trim();
+      }
+
+      let codeStr = item.product_id ? item.product_id.trim().toUpperCase() : '';
+      if (!codeStr) {
+        // Extract embedded code pattern (e.g. EV 50, 614, 40 A HYBRID, 604, 134, B 131-B, I 20(B)(D))
+        const codeMatch = cleanDesc.match(/\s+(?:(?:lam(?:inate)?|finish|shade)\s+)?([A-Za-z]{0,3}\s*[-/]?\s*\d+[A-Za-z0-9\s\-/()]*|[A-Za-z]{1,4}\s*[-]\s*[A-Za-z0-9]+)$/i);
+        if (codeMatch) {
+          codeStr = codeMatch[1].trim().toUpperCase();
+          cleanDesc = cleanDesc.substring(0, cleanDesc.lastIndexOf(codeMatch[0])).trim();
+        }
+      }
+
       const brandStr = item.brand ? `[ ${item.brand.trim().toUpperCase()} ]` : '';
-      const codeStr = item.product_id ? `(Code: ${item.product_id.trim().toUpperCase()})` : '';
-      const baseDesc = (item.item_description || '').trim().toUpperCase();
-      desc = [baseDesc, brandStr, codeStr].filter(Boolean).join(' ');
+      const codeBadge = codeStr ? `[ CODE: ${codeStr} ]` : '';
+
+      desc = [roomStr, cleanDesc.toUpperCase(), codeBadge, brandStr].filter(Boolean).join(' ');
       if (item.colour_finish) {
         const finishStr = item.colour_finish.trim().toUpperCase();
         if (finishStr && !desc.includes(finishStr)) {
@@ -558,7 +577,7 @@ export function generateChallanPDF({
       // Delivery Slip / No-Rate: Matches standard layout with blank amount boxes for hand writing
       const rightAmountColWidth = isA4 ? 26 : 21;
       const renderTotalRow = (label: string, value: string, isGrandTotal = false) => {
-        const rowH = isGrandTotal ? (isA4 ? 5.8 : 5.0) : (isA4 ? 4.4 : 3.8);
+        const rowH = isGrandTotal ? (isA4 ? 5.2 : 4.6) : (isA4 ? 4.0 : 3.5);
         if (isGrandTotal) {
           doc.setFillColor(235, 238, 242);
           doc.rect(rightX, totalsY, rightColWidth, rowH, 'F');
@@ -569,11 +588,11 @@ export function generateChallanPDF({
         doc.line(rightX + rightColWidth - rightAmountColWidth, totalsY, rightX + rightColWidth - rightAmountColWidth, totalsY + rowH);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(isGrandTotal ? (isA4 ? 8.2 : 7.2) : (isA4 ? 7.2 : 6.3));
+        doc.setFontSize(isGrandTotal ? (isA4 ? 8.0 : 7.0) : (isA4 ? 6.8 : 6.0));
         doc.setTextColor(...blackColor);
-        doc.text(label, rightX + 2.5, totalsY + (isGrandTotal ? (isA4 ? 4.0 : 3.5) : (isA4 ? 3.1 : 2.7)));
+        doc.text(label, rightX + 2.5, totalsY + (isGrandTotal ? (isA4 ? 3.6 : 3.2) : (isA4 ? 2.8 : 2.5)));
         if (value) {
-          doc.text(value, rightX + rightColWidth - 2.0, totalsY + (isGrandTotal ? (isA4 ? 4.0 : 3.5) : (isA4 ? 3.1 : 2.7)), {
+          doc.text(value, rightX + rightColWidth - 2.0, totalsY + (isGrandTotal ? (isA4 ? 3.6 : 3.2) : (isA4 ? 2.8 : 2.5)), {
             align: 'right',
           });
         }
@@ -582,6 +601,10 @@ export function generateChallanPDF({
       };
 
       renderTotalRow('SUB TOTAL', '');
+      renderTotalRow('TRANSPORTATION CHARGES', '');
+      renderTotalRow('LOADING / UNLOADING CHARGES', '');
+      renderTotalRow('CGST 9%', '');
+      renderTotalRow('SGST 9%', '');
       renderTotalRow('GRAND TOTAL', '', true);
 
       // Authorized Signatory Box below Grand Total (Right Column)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession } from '@/lib/server-auth';
-import { getAllCustomers, saveCustomers, recordAuditLog } from '@/lib/server-accounting';
+import { getAllCustomers, saveCustomers, saveCustomersAsync, recordAuditLog } from '@/lib/server-accounting';
 import { syncFromFirestoreIfCold } from '@/lib/server-storage';
 import { Customer } from '@/types';
 
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
   const operatorUsername = session?.username || 'admin';
 
   try {
+    await syncFromFirestoreIfCold('customers.json', []);
     const body = await req.json();
     const {
       id,
@@ -152,7 +153,7 @@ export async function POST(req: NextRequest) {
       customers.push(record);
     }
 
-    saveCustomers(customers);
+    await saveCustomersAsync(customers);
 
     recordAuditLog({
       entity_type: 'customer',

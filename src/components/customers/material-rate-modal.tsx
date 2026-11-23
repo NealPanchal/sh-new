@@ -26,6 +26,26 @@ interface MaterialRateModalProps {
   onSaved?: (rates: CustomerMaterialRate[]) => void;
 }
 
+const STANDARD_ROOM_OPTIONS = [
+  'Living Room',
+  'Master Bedroom',
+  'Bed Room 1',
+  'Bed Room 2',
+  'Kids Room',
+  'Parents Room',
+  'Guest Bedroom',
+  'Kitchen',
+  'Dining Area',
+  'Office / Study',
+  'Balcony',
+  'Common / Inner',
+  'Safety Door',
+  'Ceiling',
+  'Passage / Lobby',
+  'Pooja Room',
+  'Bathroom',
+];
+
 export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateModalProps) {
   const { updateCustomer, profile, showToast } = useApp();
   const currentUser = getCurrentUser();
@@ -354,15 +374,41 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
                             {sites.length === 0 && <option value="Site 1">Site 1</option>}
                           </select>
                         </td>
-                        <td className="p-1.5">
-                          <input
-                            type="text"
-                            list="room-options"
-                            value={r.room}
-                            onChange={(e) => handleUpdateRow(r.id, 'room', e.target.value)}
-                            placeholder="e.g. Living Room"
-                            className="input text-xs py-1 px-2 font-medium"
-                          />
+                        <td className="p-1.5 min-w-[140px]">
+                          <div className="space-y-1">
+                            <select
+                              value={STANDARD_ROOM_OPTIONS.includes(r.room) ? r.room : (r.room ? 'custom' : '')}
+                              onChange={(e) => {
+                                if (e.target.value === 'custom') {
+                                  // Switch to custom room input
+                                  if (STANDARD_ROOM_OPTIONS.includes(r.room)) {
+                                    handleUpdateRow(r.id, 'room', '');
+                                  }
+                                } else {
+                                  handleUpdateRow(r.id, 'room', e.target.value);
+                                }
+                              }}
+                              className="input text-xs py-1 px-1.5 font-bold text-surface-900 bg-white border border-surface-300 w-full"
+                            >
+                              <option value="" disabled>Select Room / Area...</option>
+                              {STANDARD_ROOM_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                              <option value="custom">✏️ Custom / Other Room...</option>
+                            </select>
+                            {(!STANDARD_ROOM_OPTIONS.includes(r.room) || r.room === '') && (
+                              <input
+                                type="text"
+                                list="room-options"
+                                value={r.room}
+                                onChange={(e) => handleUpdateRow(r.id, 'room', e.target.value)}
+                                placeholder="Type room name..."
+                                className="input text-xs py-1 px-2 font-medium bg-amber-50/70 border border-amber-300 w-full"
+                              />
+                            )}
+                          </div>
                         </td>
                         <td className="p-1.5">
                           <input

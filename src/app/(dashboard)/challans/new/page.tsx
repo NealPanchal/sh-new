@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { getTodayISO, cn, formatCurrency, formatDate } from '@/lib/utils';
 import { UNIT_OPTIONS } from '@/lib/validations';
-import { ChallanItemFormData, UnitType, Customer, Product, CustomerSite, CustomerCreditStatus, Challan, Quotation } from '@/types';
+import { ChallanItemFormData, UnitType, Customer, Product, CustomerSite, CustomerCreditStatus, Challan, Quotation, CustomerMaterialRate } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { downloadChallanPDF, printChallanPDF } from '@/lib/pdf';
 import { openWhatsApp, generateShareMessage, shareChallanViaWhatsApp, resolveCustomerPhone } from '@/lib/whatsapp';
@@ -118,6 +118,7 @@ function CreateChallanContent() {
   const [transportCharges, setTransportCharges] = useState('');
   const [loadingCharges, setLoadingCharges] = useState('');
   const [applyGst, setApplyGst] = useState(false);
+  const [showAgreedRatesMatrix, setShowAgreedRatesMatrix] = useState(true);
   const [applyAdditional9, setApplyAdditional9] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -208,14 +209,20 @@ function CreateChallanContent() {
   };
 
   const matchedCustomer = useMemo(() => {
+    const qName = customerName.trim().toLowerCase();
     return (
       customers.find(
         (c) =>
           (selectedCustomerId && c.id === selectedCustomerId) ||
-          c.business_name.toLowerCase() === customerName.trim().toLowerCase()
+          (qName && (
+            (c.business_name && c.business_name.toLowerCase() === qName) ||
+            (c.name && c.name.toLowerCase() === qName) ||
+            (c.contact_person && c.contact_person.toLowerCase() === qName) ||
+            (c.phone && customerPhone && c.phone.replace(/\D/g, '') === customerPhone.replace(/\D/g, ''))
+          ))
       ) || null
     );
-  }, [customers, selectedCustomerId, customerName]);
+  }, [customers, selectedCustomerId, customerName, customerPhone]);
 
   // Customer Previous Closing Balance Engine
   const [customerClosingBalance, setCustomerClosingBalance] = useState<number | null>(null);
@@ -331,11 +338,15 @@ function CreateChallanContent() {
     }
 
     const newItems: ChallanItemFormData[] = targetRates.map((m) => {
-      const desc = m.particulars?.trim() || [m.code, m.room ? `(${m.room})` : ''].filter(Boolean).join(' ') || 'Laminate Finish';
+      const roomPrefix = m.room ? `[ ${m.room.toUpperCase()} ] ` : '';
+      const partStr = m.particulars?.trim() || m.material?.trim() || 'Laminate Finish';
+      const codePart = m.code ? ` ${m.code.trim()}` : '';
+      const desc = `${roomPrefix}${partStr}${codePart}`.trim();
+
       return {
-        product_id: '',
+        product_id: m.code ? m.code.trim() : '',
         item_description: desc,
-        brand: m.company_name || '',
+        brand: m.company_name ? m.company_name.trim() : '',
         colour_finish: m.room || '',
         size: '',
         unit: 'sheets',
@@ -356,6 +367,41 @@ function CreateChallanContent() {
       `Loaded ${newItems.length} agreed material(s) for ${selectedSiteName ? `${matchedCustomer.business_name} (${selectedSiteName})` : matchedCustomer.business_name} with pre-agreed rates. Enter quantities to proceed!`,
       'success'
     );
+  };
+
+  const handleAddSingleAgreedMaterial = (m: CustomerMaterialRate) => {
+    const roomPrefix = m.room ? `[ ${m.room.toUpperCase()} ] ` : '';
+    const partStr = m.particulars?.trim() || m.material?.trim() || 'Laminate Finish';
+    const codePart = m.code ? ` ${m.code.trim()}` : '';
+    const desc = `${roomPrefix}${partStr}${codePart}`.trim();
+
+    const newItem: ChallanItemFormData = {
+      product_id: m.code ? m.code.trim() : '',
+      item_description: desc,
+      brand: m.company_name ? m.company_name.trim() : '',
+      colour_finish: m.room || '',
+      size: '',
+      unit: 'sheets',
+      quantity: '1',
+      rate: m.rate ? String(m.rate) : '',
+      discount_type: 'percent',
+      discount_value: '',
+      discount_amount: '',
+      amount: m.rate ? String(m.rate) : '',
+      length: '',
+      width: '',
+      dimension_unit: 'ft',
+      calculated_sqft: '',
+    };
+
+    setItems((prev) => {
+      if (prev.length === 1 && !prev[0].item_description.trim() && !prev[0].rate) {
+        return [newItem];
+      }
+      return [...prev, newItem];
+    });
+
+    showToast(`Added ${m.particulars || m.code || 'agreed material'} @ ₹${m.rate}`, 'success');
   };
 
   const findCustomerMaterialRate = (desc: string, prodId?: string, brand?: string | null): number | null => {
@@ -1266,41 +1312,97 @@ function CreateChallanContent() {
 
           {/* Customer Agreed Materials Matrix Auto-Fetch Banner (4 Columns: Room, Code, Company, Rate) */}
           {matchedCustomer?.material_rates && matchedCustomer.material_rates.length > 0 && (
-            <div className="sm:col-span-12 p-3 bg-blue-50/90 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-              <div className="flex items-start gap-2">
-                <Layers size={16} className="text-blue-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold text-blue-950 flex items-center gap-1.5">
-                    <span>Customer Agreed Materials Configured</span>
-                    <span className="px-1.5 py-0.2 bg-blue-200 text-blue-800 rounded font-black text-[10px]">
-                      {matchedCustomer.material_rates.length} {matchedCustomer.material_rates.length === 1 ? 'Item' : 'Items'}
+            <div className="sm:col-span-12 p-3 bg-blue-50/90 border border-blue-200 rounded-xl space-y-2.5 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <Layers size={16} className="text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-blue-950 flex items-center gap-1.5">
+                      <span>Agreed Materials &amp; Locked Rates for {matchedCustomer.business_name}</span>
+                      <span className="px-1.5 py-0.2 bg-blue-200 text-blue-800 rounded font-black text-[10px]">
+                        {matchedCustomer.material_rates.length} {matchedCustomer.material_rates.length === 1 ? 'Rate' : 'Rates'}
+                      </span>
                     </span>
-                  </span>
-                  <p className="text-[11px] text-blue-800 mt-0.5">
-                    Room / Code / Company matrix with locked party rates:{' '}
-                    <span className="font-semibold text-blue-900">
-                      {matchedCustomer.material_rates
-                        .map((m) => `${m.code || m.company_name} (${m.room || 'General'}) @ ₹${m.rate}`)
-                        .slice(0, 3)
-                        .join(' · ')}
-                      {matchedCustomer.material_rates.length > 3 ? ' ...' : ''}
+                    <p className="text-[11px] text-blue-800 mt-0.5">
+                      Click <strong className="text-blue-950 font-bold">&quot;+ Add&quot;</strong> on any item below or auto-fill all items into the challan.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setShowAgreedRatesMatrix((prev) => !prev)}
+                    className="py-1 px-2.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-100 text-blue-800 text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    {showAgreedRatesMatrix ? 'Hide Table ▲' : `View ${matchedCustomer.material_rates.length} Rates ▼`}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleLoadCustomerAgreedMaterials}
+                    className="btn-primary py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shrink-0 shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                    title="Auto-fill items with locked rates and leave quantity blank"
+                  >
+                    <Layers size={13} />
+                    <span>
+                      {selectedSiteName
+                        ? `⚡ Auto-Fill ${selectedSiteName} Items`
+                        : '⚡ Auto-Fill All Agreed Items'}
                     </span>
-                  </p>
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleLoadCustomerAgreedMaterials}
-                className="btn-primary py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shrink-0 self-start sm:self-auto shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
-                title="Auto-fill items with locked rates and leave quantity blank"
-              >
-                <Layers size={13} />
-                <span>
-                  {selectedSiteName
-                    ? `⚡ Auto-Fetch ${selectedSiteName} Materials`
-                    : '⚡ Auto-Fetch Agreed Materials'}
-                </span>
-              </button>
+
+              {/* Collapsible Interactive Materials Matrix Table */}
+              {showAgreedRatesMatrix && (
+                <div className="overflow-x-auto rounded-lg border border-blue-200 bg-white shadow-2xs mt-1 max-h-56 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-blue-100/70 text-[10px] font-bold text-blue-900 uppercase border-b border-blue-200 sticky top-0 z-10">
+                      <tr>
+                        <th className="px-3 py-1.5">Room / Area</th>
+                        <th className="px-3 py-1.5">Material / Description</th>
+                        <th className="px-3 py-1.5">Code</th>
+                        <th className="px-3 py-1.5">Company / Brand</th>
+                        <th className="px-3 py-1.5 text-right">Agreed Rate</th>
+                        <th className="px-3 py-1.5 text-center w-20">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-blue-100 font-medium">
+                      {matchedCustomer.material_rates.map((m, mIdx) => (
+                        <tr key={m.id || mIdx} className="hover:bg-blue-50/60 transition-colors">
+                          <td className="px-3 py-1.5 font-bold text-surface-800">
+                            {m.room || 'General'}
+                          </td>
+                          <td className="px-3 py-1.5 text-surface-900 font-semibold">
+                            {m.particulars || m.material || 'Laminate Finish'}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono text-blue-900 font-bold">
+                            {m.code ? <span className="bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[11px]">{m.code}</span> : '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-surface-700">
+                            {m.company_name ? <span className="text-[11px] font-semibold">{m.company_name}</span> : '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono font-black text-[#ea580c]">
+                            ₹{Number(m.rate).toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleAddSingleAgreedMaterial(m)}
+                              className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-2xs inline-flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
+                              title="Add this material to challan"
+                            >
+                              <Plus size={11} />
+                              <span>Add</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

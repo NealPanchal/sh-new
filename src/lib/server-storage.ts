@@ -11,6 +11,7 @@ const TMP_DATA_DIR = path.join('/tmp', 'showhouse_data');
 
 // In-memory cache for ultra-fast, serverless-safe data access across Lambda invocations
 const inMemoryCache = new Map<string, any>();
+const firestoreHydrated = new Set<string>();
 
 function ensureDirSafe(dirPath: string): boolean {
   try {
@@ -82,6 +83,7 @@ export function safeWriteDataFile<T = any>(filename: string, data: T): boolean {
 
   // 1. Keep in memory cache
   inMemoryCache.set(filename, data);
+  firestoreHydrated.add(filename);
 
   const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
   let writtenSuccessfully = false;
@@ -147,6 +149,7 @@ export async function safeWriteDataFileAsync<T = any>(filename: string, data: T)
 
   // 1. Keep in memory cache
   inMemoryCache.set(filename, data);
+  firestoreHydrated.add(filename);
 
   const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
   let writtenSuccessfully = false;
@@ -251,6 +254,7 @@ export function safeReadDataFile<T = any>(filename: string, fallback: T): T {
  */
 export function invalidateDataCache(filename: string): void {
   inMemoryCache.delete(filename);
+  firestoreHydrated.delete(filename);
 }
 
 /**
@@ -260,50 +264,83 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
   const mapping = FIRESTORE_SYNC_MAP[filename];
   if (!mapping) return safeReadDataFile(filename, fallback);
 
-  if (inMemoryCache.has(filename)) {
+  // If already hydrated from Firestore during this process life, return memory cache
+  if (firestoreHydrated.has(filename) && inMemoryCache.has(filename)) {
     return inMemoryCache.get(filename);
   }
 
-  const tmpPath = path.join(TMP_DATA_DIR, filename);
-  if (fs.existsSync(tmpPath)) {
-    return safeReadDataFile(filename, fallback);
-  }
-
   try {
-    // 1. Try bundle doc
-    const remote = await fetchDocFromFirestoreRest(mapping.collection, mapping.docId);
-    if (remote) {
-      const data =
-        mapping.wrapAs && Array.isArray(remote[mapping.wrapAs])
-          ? remote[mapping.wrapAs]
-          : remote;
-      inMemoryCache.set(filename, data);
-      try {
-        ensureDirSafe(TMP_DATA_DIR);
-        fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-      } catch {}
-      return data as T;
-    }
-
-    // 2. If bundle doc not found, try collection query
+    // 1. If mapping saves individual items to a collection, query the individual collection documents first
     if (mapping.saveIndividualToCollection) {
-      const colDocs = await fetchCollectionDocsFromFirestoreRest(mapping.saveIndividualToCollection);
-      if (colDocs && colDocs.length > 0) {
-        // filter out 'all_entries' or 'all_payments' meta docs
-        const items = colDocs.filter((d) => d.id !== 'all_entries' && d.id !== 'all_payments' && d.id !== 'all_returns');
-        if (items.length > 0) {
-          inMemoryCache.set(filename, items);
-          try {
-            ensureDirSafe(TMP_DATA_DIR);
-            fs.writeFileSync(tmpPath, JSON.stringify(items, null, 2), 'utf-8');
-          } catch {}
-          return items as T;
-        }
+      const [colDocs, remoteBundle] = await Promise.all([
+        fetchCollectionDocsFromFirestoreRest(mapping.saveIndividualToCollection).catch(() => []),
+        fetchDocFromFirestoreRest(mapping.collection, mapping.docId).catch(() => null),
+      ]);
+
+      const keyField = mapping.idField || 'id';
+      const mergedMap = new Map<string, any>();
+
+      // A. Populate from individual docs (excluding meta documents like all_customers, all_entries)
+      if (Array.isArray(colDocs)) {
+        colDocs.forEach((doc) => {
+          if (!doc || typeof doc !== 'object') return;
+          const docId = String(doc.id || '').trim();
+          if (docId.startsWith('all_')) return;
+          const k = String(doc[keyField] || doc.id || '').trim().toLowerCase();
+          if (k) mergedMap.set(k, doc);
+        });
+      }
+
+      // B. Supplement from bundle doc if any items were not individually listed
+      if (remoteBundle) {
+        const bundleList = mapping.wrapAs && Array.isArray(remoteBundle[mapping.wrapAs])
+          ? remoteBundle[mapping.wrapAs]
+          : Array.isArray(remoteBundle)
+          ? remoteBundle
+          : [];
+
+        bundleList.forEach((item: any) => {
+          if (!item || typeof item !== 'object') return;
+          const k = String(item[keyField] || item.id || item.username || '').trim().toLowerCase();
+          if (k && !mergedMap.has(k)) {
+            mergedMap.set(k, item);
+          }
+        });
+      }
+
+      if (mergedMap.size > 0) {
+        const consolidated = Array.from(mergedMap.values());
+        inMemoryCache.set(filename, consolidated);
+        firestoreHydrated.add(filename);
+        try {
+          ensureDirSafe(TMP_DATA_DIR);
+          const tmpPath = path.join(TMP_DATA_DIR, filename);
+          fs.writeFileSync(tmpPath, JSON.stringify(consolidated, null, 2), 'utf-8');
+        } catch {}
+        return consolidated as T;
+      }
+    } else {
+      // 2. Single document mapping (e.g. settings/business_profile, auth_config/admin_credentials)
+      const remote = await fetchDocFromFirestoreRest(mapping.collection, mapping.docId);
+      if (remote) {
+        const data =
+          mapping.wrapAs && Array.isArray(remote[mapping.wrapAs])
+            ? remote[mapping.wrapAs]
+            : remote;
+        inMemoryCache.set(filename, data);
+        firestoreHydrated.add(filename);
+        try {
+          ensureDirSafe(TMP_DATA_DIR);
+          const tmpPath = path.join(TMP_DATA_DIR, filename);
+          fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+        } catch {}
+        return data as T;
       }
     }
   } catch (err) {
     console.warn(`[server-storage] Firestore hydration warning for ${filename}:`, err);
   }
 
-  return safeReadDataFile(filename, fallback);
+  const localFallback = safeReadDataFile(filename, fallback);
+  return localFallback;
 }

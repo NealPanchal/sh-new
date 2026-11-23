@@ -216,7 +216,7 @@ function MasterPartyLedgerContent() {
   const searchParams = useSearchParams();
   const paramParty = searchParams.get('party') || searchParams.get('customerId') || searchParams.get('customer');
 
-  const { customers: contextCustomers, challans: contextChallans, deleteChallan, updateChallan } = useApp();
+  const { customers: contextCustomers, challans: contextChallans, deleteChallan, updateChallan, updateCustomer } = useApp();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'ledger' | 'sites' | 'credit' | 'tally'>('ledger');
 
@@ -263,6 +263,9 @@ function MasterPartyLedgerContent() {
 
   // Modal dialog states
   const [showAddSiteModal, setShowAddSiteModal] = useState(false);
+  const [editingOpeningBalance, setEditingOpeningBalance] = useState(false);
+  const [tempOpeningBalance, setTempOpeningBalance] = useState('');
+  const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteOpening, setNewSiteOpening] = useState('0');
   const [newSiteCredit, setNewSiteCredit] = useState('0');
@@ -3231,30 +3234,91 @@ function MasterPartyLedgerContent() {
                   ) : (
                     /* Standard Customer Continuous Ledger View */
                     <>
-                      {/* Opening Balance Row: Only show if customer has non-zero opening balance */}
-                      {Number(ledgerData.openingBalance) !== 0 && (
-                        <tr className="bg-surface-50 font-bold">
-                          <td className="py-2 px-3 text-center font-bold text-surface-400 border border-surface-200">1</td>
-                          <td className="py-2 px-3 text-center text-surface-600 whitespace-nowrap border border-surface-200">
-                            {selectedCustomer?.created_at
-                              ? formatDateDisplay(selectedCustomer.created_at)
-                              : (fromDate ? formatDateDisplay(fromDate) : '—')}
-                          </td>
-                          <td className="py-2 px-3 text-surface-950 font-bold border border-surface-200">
-                            <span className="mr-6">{Number(ledgerData.openingBalance) >= 0 ? 'To' : 'By'}</span>
-                            <span>Opening Balance</span>
-                          </td>
-                          <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
-                          <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
-                            {Number(ledgerData.openingBalance) >= 0 ? formatAmountDisplay(ledgerData.openingBalance) : ''}
-                          </td>
-                          <td className="py-2 px-3 text-right font-mono text-surface-900 border border-surface-200">
-                            {Number(ledgerData.openingBalance) < 0 ? formatAmountDisplay(Math.abs(ledgerData.openingBalance)) : ''}
-                          </td>
-                          <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
-                        </tr>
-                      )}
+                      {/* Opening Balance Row: Always displayed as Row 1 before any challan transactions */}
+                      <tr className="bg-surface-50/90 font-bold border-b border-surface-200">
+                        <td className="py-2 px-3 text-center font-bold text-surface-400 border border-surface-200">1</td>
+                        <td className="py-2 px-3 text-center text-surface-600 whitespace-nowrap border border-surface-200">
+                          {selectedCustomer?.created_at
+                            ? formatDateDisplay(selectedCustomer.created_at)
+                            : (fromDate ? formatDateDisplay(fromDate) : '—')}
+                        </td>
+                        <td className="py-2 px-3 text-surface-950 font-bold border border-surface-200">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <span className="mr-6">{Number(ledgerData.openingBalance) < 0 ? 'By' : 'To'}</span>
+                              <span>Opening Balance</span>
+                            </div>
+                            {isAdminUser && !editingOpeningBalance && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTempOpeningBalance(String(ledgerData.openingBalance || ''));
+                                  setEditingOpeningBalance(true);
+                                }}
+                                className="text-[10px] text-primary-600 hover:text-primary-800 underline font-semibold cursor-pointer print:hidden px-1.5 py-0.5 rounded bg-primary-50 hover:bg-primary-100"
+                                title="Click to adjust customer opening balance"
+                              >
+                                Edit Opening Balance
+                              </button>
+                            )}
+                          </div>
+                          {editingOpeningBalance && (
+                            <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-white border border-primary-200 rounded-md print:hidden">
+                              <span className="text-[11px] font-bold text-surface-600">Opening Balance ₹:</span>
+                              <input
+                                type="number"
+                                step="any"
+                                value={tempOpeningBalance}
+                                onChange={(e) => setTempOpeningBalance(e.target.value)}
+                                placeholder="0.00"
+                                className="input text-xs py-0.5 px-2 font-mono w-28 bg-surface-50"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                disabled={savingOpeningBalance}
+                                onClick={async () => {
+                                  if (!selectedCustomer) return;
+                                  const val = Number(tempOpeningBalance) || 0;
+                                  setSavingOpeningBalance(true);
+                                  try {
+                                    updateCustomer(selectedCustomer.id, { opening_balance: val });
+                                    setLedgerData((prev) => ({
+                                      ...prev,
+                                      openingBalance: val,
+                                    }));
+                                    setEditingOpeningBalance(false);
+                                    showToast(`Opening Balance saved as ₹${val.toLocaleString('en-IN')}`, 'success');
+                                  } catch {
+                                    showToast('Failed to save opening balance', 'error');
+                                  } finally {
+                                    setSavingOpeningBalance(false);
+                                  }
+                                }}
+                                className="px-2 py-0.5 text-[11px] font-bold bg-primary-600 text-white rounded hover:bg-primary-700 cursor-pointer"
+                              >
+                                {savingOpeningBalance ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingOpeningBalance(false)}
+                                className="px-1.5 py-0.5 text-[11px] font-medium text-surface-500 hover:text-surface-700 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
+                        <td className="py-2 px-3 text-center text-surface-400 border border-surface-200">—</td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
+                          {Number(ledgerData.openingBalance) >= 0 ? formatAmountDisplay(ledgerData.openingBalance) : ''}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-surface-900 border border-surface-200">
+                          {Number(ledgerData.openingBalance) < 0 ? formatAmountDisplay(Math.abs(ledgerData.openingBalance)) : ''}
+                        </td>
+                        <td className="py-2 px-3 border border-surface-200 print:hidden"></td>
+                      </tr>
 
                       {/* Transaction Rows */}
                       {displayEntries.length === 0 ? (
@@ -3267,7 +3331,7 @@ function MasterPartyLedgerContent() {
                         displayEntries.map((e, idx) => (
                           <tr key={e.id} className="hover:bg-surface-50/80 transition-colors">
                             <td className="py-2 px-3 text-center font-bold text-surface-500 border border-surface-200">
-                              {(Number(ledgerData.openingBalance) !== 0 ? 1 : 0) + idx + 1}
+                              {idx + 2}
                             </td>
                             <td className="py-2 px-3 text-center text-surface-600 whitespace-nowrap border border-surface-200">
                               {formatDateDisplay(e.date)}
