@@ -299,6 +299,7 @@ export async function verifySessionWithServer(): Promise<boolean> {
     const token = getClientAuthToken();
     const res = await fetch('/api/auth/session', {
       cache: 'no-store',
+      credentials: 'same-origin',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) {

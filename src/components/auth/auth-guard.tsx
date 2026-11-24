@@ -25,16 +25,22 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     let isCancelled = false;
     const timeout = setTimeout(() => {
       if (!isCancelled) {
-        setAuthorized(false);
-        router.replace('/login');
+        if (isAdminAuthenticated()) {
+          setAuthorized(true);
+        } else {
+          setAuthorized(false);
+          router.replace('/login');
+        }
       }
-    }, 2000);
+    }, 5000);
 
     verifySessionWithServer()
       .then((isAuthed) => {
         clearTimeout(timeout);
         if (isCancelled) return;
         if (isAuthed) {
+          setAuthorized(true);
+        } else if (isAdminAuthenticated()) {
           setAuthorized(true);
         } else {
           setAuthorized(false);
@@ -44,8 +50,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       .catch(() => {
         clearTimeout(timeout);
         if (!isCancelled) {
-          setAuthorized(false);
-          router.replace('/login');
+          if (isAdminAuthenticated()) {
+            setAuthorized(true);
+          } else {
+            setAuthorized(false);
+            router.replace('/login');
+          }
         }
       });
 

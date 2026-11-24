@@ -418,3 +418,31 @@ body {
   transform: scale(0.98);
 }
 
+/* iOS Safe Area Padding for Standalone / Add to Home Screen */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Standalone iOS Display Mode Fixes */
+@media all and (display-mode: standalone) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, select {
+    -webkit-user-select: auto;
+    user-select: auto;
+  }
+}
+
+
