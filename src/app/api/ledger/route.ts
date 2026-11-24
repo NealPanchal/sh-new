@@ -33,7 +33,65 @@ export async function GET(req: NextRequest) {
       syncFromFirestoreIfCold('goods_returns.json', []),
     ]);
 
-    // Overall summary across all parties
+    const session = getAuthenticatedSession(req);
+    const isEmployee = session?.role === 'employee';
+
+    // Strict employee customer segregation: employee only sees their own assigned/created customers
+    if (isEmployee) {
+      const { getAllCustomers } = await import('@/lib/server-accounting');
+      const allCusts = getAllCustomers();
+      const uName = (session.name || '').toLowerCase().trim();
+      const uUser = (session.username || '').toLowerCase().trim();
+      const uId = ((session as any).id || session.username || '').toLowerCase().trim();
+
+      const myCustomers = allCusts.filter((c) => {
+        const cr = (c.created_by || '').toLowerCase().trim();
+        const crN = (c.creator_name || '').toLowerCase().trim();
+        const uid = (c.user_id || '').toLowerCase().trim();
+        return (
+          (uUser && (cr === uUser || uid === uUser)) ||
+          (uName && (cr.includes(uName) || crN.includes(uName) || uid.includes(uName))) ||
+          (uId && uid === uId)
+        );
+      });
+
+      // Employee overall ledger summary -> strictly filtered to their own customers
+      if (summary === 'all' || customerId === 'all') {
+        const myCustIds = new Set(myCustomers.map((c) => c.id));
+        const myCustNames = new Set(myCustomers.map((c) => (c.name || c.business_name || '').toLowerCase().trim()));
+        const fullSummary = computeAllPartiesLedgerSummary();
+        const filteredParties = (fullSummary.parties || []).filter((p: any) =>
+          myCustIds.has(p.customer_id) ||
+          myCustNames.has((p.customer_name || '').toLowerCase().trim())
+        );
+        const filteredSummary = {
+          ...fullSummary,
+          parties: filteredParties,
+          totalCustomers: filteredParties.length,
+          totalReceivable: filteredParties.reduce((sum: number, p: any) => sum + Math.max(0, p.net_balance), 0),
+          totalPayable: filteredParties.reduce((sum: number, p: any) => sum + Math.abs(Math.min(0, p.net_balance)), 0),
+        };
+        return NextResponse.json({ success: true, allPartiesSummary: filteredSummary });
+      }
+
+      // Check if specific customer belongs to this employee
+      if (customerId) {
+        const belongs = myCustomers.some(
+          (c) =>
+            c.id === customerId ||
+            (c.name && c.name.toLowerCase().trim() === customerId.toLowerCase().trim()) ||
+            (c.business_name && c.business_name.toLowerCase().trim() === customerId.toLowerCase().trim())
+        );
+        if (!belongs) {
+          return NextResponse.json(
+            { success: false, error: 'Access denied: Employees can only view their own assigned customers ledger' },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    // Overall summary across all parties (Admin / Full access)
     if (summary === 'all' || customerId === 'all') {
       const summaryResult = computeAllPartiesLedgerSummary();
       return NextResponse.json({ success: true, allPartiesSummary: summaryResult });

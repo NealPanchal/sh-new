@@ -491,14 +491,43 @@ function MasterPartyLedgerContent() {
       const token = getClientAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-      // Overall Summary for All Parties
+      // Overall Summary for Parties
       if (selectedCustomerId === 'all') {
         try {
           const res = await fetch('/api/ledger?summary=all', { headers });
           if (res.ok) {
             const d = await res.json();
             if (d.success && d.allPartiesSummary) {
-              setAllPartiesData(d.allPartiesSummary);
+              let summ = d.allPartiesSummary;
+              if (currentUser?.role === 'employee') {
+                const uName = (currentUser.name || '').toLowerCase().trim();
+                const uUser = (currentUser.username || '').toLowerCase().trim();
+                const uId = (currentUser.id || '').toLowerCase().trim();
+                const myCusts = (customersRef.current || []).filter((c) => {
+                  const cr = (c.created_by || '').toLowerCase().trim();
+                  const crN = (c.creator_name || '').toLowerCase().trim();
+                  const uid = (c.user_id || '').toLowerCase().trim();
+                  return (
+                    (uUser && (cr === uUser || uid === uUser)) ||
+                    (uName && (cr.includes(uName) || crN.includes(uName) || uid.includes(uName))) ||
+                    (uId && uid === uId)
+                  );
+                });
+                const myCustIds = new Set(myCusts.map((c) => c.id));
+                const myCustNames = new Set(myCusts.map((c) => (c.name || c.business_name || '').toLowerCase().trim()));
+                const filteredParties = (summ.parties || []).filter((p: any) =>
+                  myCustIds.has(p.customer_id) ||
+                  myCustNames.has((p.customer_name || '').toLowerCase().trim())
+                );
+                summ = {
+                  ...summ,
+                  parties: filteredParties,
+                  totalCustomers: filteredParties.length,
+                  totalReceivable: filteredParties.reduce((sum: number, p: any) => sum + Math.max(0, p.net_balance), 0),
+                  totalPayable: filteredParties.reduce((sum: number, p: any) => sum + Math.abs(Math.min(0, p.net_balance)), 0),
+                };
+              }
+              setAllPartiesData(summ);
             }
           }
         } catch (err) {
@@ -2370,8 +2399,23 @@ function MasterPartyLedgerContent() {
 
   const isEmployee = currentUser?.role === 'employee';
 
-  // Overall ledger view: employees and admin have full overall parties ledger view
-  const visibleCustomers = customers;
+  // Strict employee customer filtering: employees can ONLY see their own assigned/created customers
+  const visibleCustomers = useMemo(() => {
+    if (!isEmployee || !currentUser) return customers;
+    const uName = (currentUser.name || '').toLowerCase().trim();
+    const uUser = (currentUser.username || '').toLowerCase().trim();
+    const uId = (currentUser.id || '').toLowerCase().trim();
+    return customers.filter((c) => {
+      const cr = (c.created_by || '').toLowerCase().trim();
+      const crN = (c.creator_name || '').toLowerCase().trim();
+      const uid = (c.user_id || '').toLowerCase().trim();
+      return (
+        (uUser && (cr === uUser || uid === uUser)) ||
+        (uName && (cr.includes(uName) || crN.includes(uName) || uid.includes(uName))) ||
+        (uId && uid === uId)
+      );
+    });
+  }, [customers, isEmployee, currentUser]);
 
   return (
     <div className="pb-20 max-w-7xl mx-auto select-none print:p-0 print:m-0 print:max-w-none">
@@ -2719,7 +2763,7 @@ function MasterPartyLedgerContent() {
             className="input text-xs py-1.5 px-2.5 font-bold text-surface-900 bg-surface-50 border-surface-300 rounded-lg min-w-[210px]"
           >
             <option value="all">
-              📊 All Parties (Overall Filter & Total Calculation)
+              {isEmployee ? `📊 My Assigned Parties (${visibleCustomers.length})` : '📊 All Parties (Overall Filter & Total Calculation)'}
             </option>
             {visibleCustomers.length === 0 ? (
               <option value="">No parties assigned</option>
@@ -2773,10 +2817,12 @@ function MasterPartyLedgerContent() {
                 </div>
                 <div>
                   <h1 className="text-lg sm:text-xl font-black text-surface-950 tracking-tight">
-                    Master Party Ledger &amp; Total Calculation
+                    {isEmployee ? `My Parties Ledger & Total Calculation (${visibleCustomers.length})` : 'Master Party Ledger & Total Calculation'}
                   </h1>
                   <p className="text-xs text-surface-500">
-                    Consolidated financial summary across all parties. Click on any party to open their detailed ledger.
+                    {isEmployee
+                      ? `Consolidated financial summary for your assigned parties (${currentUser?.name || currentUser?.username}). Click on any party to open their detailed ledger.`
+                      : 'Consolidated financial summary across all parties. Click on any party to open their detailed ledger.'}
                   </p>
                 </div>
               </div>
