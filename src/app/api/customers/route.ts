@@ -156,7 +156,13 @@ export async function POST(req: NextRequest) {
           const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
           const raw = (mr.particulars || mr.material || mr.id || '').trim();
           const cleanParticulars = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim().toLowerCase();
-          return `${siteKey}::${cleanParticulars}`;
+          let r = (mr.room || 'general').trim().toLowerCase();
+          const bracketMatch = raw.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
+          if (bracketMatch && r === 'general') {
+            r = bracketMatch[1].trim().toLowerCase();
+          }
+          const cKey = (mr.code || '').trim().toLowerCase();
+          return `${siteKey}::${r}::${cleanParticulars}::${cKey}`;
         };
         prevRates.forEach((mr: any) => {
           if (mr && (mr.particulars || mr.material || mr.rate)) {

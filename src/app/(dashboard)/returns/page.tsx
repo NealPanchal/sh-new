@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Printer,
   ChevronDown,
+  BookOpen,
 } from 'lucide-react';
 import { GoodsReturn, Challan } from '@/types';
 import { getClientAuthToken, getCurrentUser } from '@/lib/auth';
@@ -471,6 +472,14 @@ export default function GoodsReturnsPage() {
                         >
                           View Note
                         </button>
+                        <Link
+                          href={`/ledger?customerId=${encodeURIComponent(ret.customer_id)}`}
+                          className="px-2.5 py-1 text-xs font-bold text-[#ea580c] bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-md transition-colors inline-flex items-center gap-1"
+                          title="View Credit Note entry in Party Ledger"
+                        >
+                          <BookOpen size={12} />
+                          <span>Ledger</span>
+                        </Link>
                         <Link
                           href={`/challans/new?returnId=${ret.id}`}
                           className="px-2.5 py-1 text-xs font-bold text-white bg-[#ea580c] hover:bg-[#c2410c] rounded-md transition-colors inline-flex items-center gap-1 shadow-2xs"

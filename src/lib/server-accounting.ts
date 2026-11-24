@@ -2157,8 +2157,14 @@ export function checkCustomerCreditStatus(
   customer: Customer,
   allChallans?: Challan[]
 ): CustomerCreditStatus {
-  const creditDays = Number(customer.credit_days) || 45;
-  const creditLimit = Number(customer.credit_limit) || 200000;
+  const isNoCredit =
+    customer.credit_status === 'no_credit' ||
+    customer.credit_days === 0 ||
+    (customer.credit_limit !== undefined && Number(customer.credit_limit) === 0);
+
+  // If No Credit customer, policy strictly allows max 3 days before alert & billing block
+  const creditDays = isNoCredit ? 3 : (Number(customer.credit_days) || 45);
+  const creditLimit = isNoCredit ? 0 : (Number(customer.credit_limit) || 200000);
   const ledger = computeCustomerLedger(customer.id, { allChallans, customers: [customer] });
 
   const totalOutstanding = ledger.closingBalance;
@@ -2199,7 +2205,7 @@ export function checkCustomerCreditStatus(
   }
 
   const isOverdue = maxDaysOverdue > creditDays;
-  const isOverLimit = creditLimit > 0 && totalOutstanding > creditLimit;
+  const isOverLimit = !isNoCredit && creditLimit > 0 && totalOutstanding > creditLimit;
   const hasException = hasActiveCreditException(customer.id);
 
   let isBlocked = false;
@@ -2209,12 +2215,17 @@ export function checkCustomerCreditStatus(
     isBlocked = true;
     blockReason = customer.credit_block_reason || 'Manually blocked by administration';
   } else if (!hasException) {
-    if (isOverdue && isOverLimit) {
+    if (isNoCredit && totalOutstanding > 0 && maxDaysOverdue > 3) {
+      isBlocked = true;
+      blockReason = `NO CREDIT ALERT: Payment pending for ${maxDaysOverdue} days (> 3 days cash/advance limit). Outstanding: ₹${totalOutstanding.toLocaleString('en-IN')}`;
+    } else if (isOverdue && isOverLimit) {
       isBlocked = true;
       blockReason = `Overdue payment (${maxDaysOverdue} days > ${creditDays} days limit) & Outstanding (₹${totalOutstanding.toLocaleString('en-IN')}) exceeds credit limit (₹${creditLimit.toLocaleString('en-IN')})`;
     } else if (isOverdue) {
       isBlocked = true;
-      blockReason = `Overdue payment: ${maxDaysOverdue} days since order on ${oldestOverdueDate} (allowed ${creditDays} days)`;
+      blockReason = isNoCredit
+        ? `NO CREDIT ALERT: Payment pending for ${maxDaysOverdue} days (> 3 days cash/advance limit)`
+        : `Overdue payment: ${maxDaysOverdue} days since order on ${oldestOverdueDate} (allowed ${creditDays} days)`;
     } else if (isOverLimit) {
       isBlocked = true;
       blockReason = `Credit limit exceeded: Outstanding ₹${totalOutstanding.toLocaleString('en-IN')} exceeds limit ₹${creditLimit.toLocaleString('en-IN')}`;
@@ -2232,6 +2243,7 @@ export function checkCustomerCreditStatus(
     daysOverdue: maxDaysOverdue,
     isOverLimit,
     isBlocked,
+    isNoCredit,
     blockReason: isBlocked ? blockReason : undefined,
     hasException,
   };

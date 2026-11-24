@@ -63,7 +63,7 @@ function StatusBadge({ status }: { status: ChallanStatus }) {
   };
 
   const statusLabels: Partial<Record<ChallanStatus, string>> = {
-    pending: '⏳ Pending',
+    pending: '💾 Saved',
     approved: '✓ Signed Copy Received',
     out_for_delivery: '📦 Out for Delivery',
     delivered: '🚚 Delivered',
@@ -962,6 +962,18 @@ export default function ChallansPage() {
                       </td>
                       <td>
                         <StatusBadge status={challan.status} />
+                        {(challan as any).returned_amount ? (
+                          <div className="mt-0.5">
+                            <Link
+                              href="/returns"
+                              className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 hover:bg-purple-100"
+                              title="Goods Return recorded against this challan"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span>↩ Return: -₹{Number((challan as any).returned_amount).toLocaleString('en-IN')}</span>
+                            </Link>
+                          </div>
+                        ) : null}
                       </td>
                       <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">

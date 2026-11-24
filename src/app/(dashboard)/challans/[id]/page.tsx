@@ -793,8 +793,30 @@ export default function ChallanDetailPage() {
           <Building2 size={14} />
           <span>Office Copy (Brand & Code)</span>
         </button>
-
       </div>
+
+      {/* Goods Return Recorded Banner */}
+      {Boolean((challan as any).returned_amount) && (
+        <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between gap-3 text-xs print:hidden shadow-2xs">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 bg-purple-600 text-white rounded-lg font-bold">↩ Goods Return</span>
+            <div>
+              <span className="font-bold text-purple-900">
+                Goods Return recorded: -₹{Number((challan as any).returned_amount).toLocaleString('en-IN')}
+              </span>
+              <span className="text-purple-700 ml-2 font-medium">
+                (Credited to Party Ledger balance)
+              </span>
+            </div>
+          </div>
+          <Link
+            href="/returns"
+            className="px-2.5 py-1 bg-white hover:bg-purple-100 text-purple-700 font-bold border border-purple-300 rounded-lg shadow-2xs transition-colors"
+          >
+            View in Goods Returns →
+          </Link>
+        </div>
+      )}
 
       {/* Challan Revision & Modification Audit Trail (Shown on Challan, NOT in Ledger) */}
       {challan.revision_history && challan.revision_history.length > 0 && (

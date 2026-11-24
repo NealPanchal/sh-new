@@ -21,10 +21,12 @@ import { shareQuotationViaWhatsApp } from '@/lib/whatsapp';
 import { exportQuotationToPDF } from '@/lib/pdf-quotation';
 import { Quotation } from '@/types';
 import { getCurrentUser } from '@/lib/auth';
+import { QuotationViewModal } from '@/components/quotations/quotation-view-modal';
 
 export default function QuotationsPage() {
   const { quotations, deleteQuotation, profile, showToast } = useApp();
   const [search, setSearch] = useState('');
+  const [viewingQuotation, setViewingQuotation] = useState<Quotation | null>(null);
   const currentUser = useMemo(() => getCurrentUser(), []);
   const isEmp = currentUser?.role === 'employee';
 
@@ -208,6 +210,16 @@ export default function QuotationsPage() {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {/* View Quotation Preview */}
+                        <button
+                          type="button"
+                          onClick={() => setViewingQuotation(q)}
+                          className="p-1.5 rounded-lg text-surface-600 bg-surface-100 hover:bg-surface-200 border border-surface-300 cursor-pointer"
+                          title="View Quotation Details"
+                        >
+                          <Eye size={13} />
+                        </button>
+
                         {/* WhatsApp Send */}
                         <button
                           type="button"
@@ -255,6 +267,14 @@ export default function QuotationsPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Quotation View Modal */}
+      {viewingQuotation && (
+        <QuotationViewModal
+          quotation={viewingQuotation}
+          onClose={() => setViewingQuotation(null)}
+        />
       )}
     </div>
   );

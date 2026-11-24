@@ -568,6 +568,7 @@ export interface CustomerCreditStatus {
   daysOverdue?: number;
   isOverLimit?: boolean;
   isBlocked: boolean;
+  isNoCredit?: boolean;
   blockReason?: string;
   hasException?: boolean;
   hasActiveException?: boolean;

@@ -380,6 +380,11 @@ export default function CreditControlPage() {
                       <Link href={`/customers/${st.customerId}`} className="hover:text-primary-600">
                         {st.customerName}
                       </Link>
+                      {st.isNoCredit && (
+                        <span className="ml-2 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                          NO CREDIT (3-Day Limit)
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-black text-zinc-900">
                       {formatCurrency(st.totalOutstanding)}

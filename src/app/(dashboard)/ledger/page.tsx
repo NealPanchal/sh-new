@@ -972,9 +972,17 @@ function MasterPartyLedgerContent() {
     };
   }, [customers, contextCustomers, selectedCustomerId]);
 
-  // Filtered entries by search input
+  // Filtered entries by site and search input
   const displayEntries = useMemo(() => {
     let list = ledgerData.entries || [];
+    if (siteFilter && siteFilter !== 'all') {
+      const sf = siteFilter.trim().toLowerCase();
+      list = list.filter((e) => {
+        const sName = (e.site_name || '').trim().toLowerCase();
+        const part = (e.particulars || '').toLowerCase();
+        return sName === sf || sName.includes(sf) || part.includes(sf);
+      });
+    }
     if (searchChallanNo.trim()) {
       const q = searchChallanNo.trim().toLowerCase();
       list = list.filter(
@@ -984,7 +992,21 @@ function MasterPartyLedgerContent() {
       );
     }
     return list;
-  }, [ledgerData.entries, searchChallanNo]);
+  }, [ledgerData.entries, siteFilter, searchChallanNo]);
+
+  // Site-specific summary metrics when site filter is active
+  const siteFilteredSummary = useMemo(() => {
+    if (siteFilter === 'all') return null;
+    const siteDebits = displayEntries.reduce((sum, e) => sum + (Number(e.debit) || 0), 0);
+    const siteCredits = displayEntries.reduce((sum, e) => sum + (Number(e.credit) || 0), 0);
+    return {
+      siteName: siteFilter,
+      totalDebit: siteDebits,
+      totalCredit: siteCredits,
+      balance: siteDebits - siteCredits,
+      entryCount: displayEntries.length,
+    };
+  }, [siteFilter, displayEntries]);
 
   // Filtered list of all parties in Overall Summary mode
   const filteredAllParties = useMemo(() => {
@@ -1150,9 +1172,14 @@ function MasterPartyLedgerContent() {
     return list;
   }, [availableCustomerTransactions]);
 
-  // Unique available sites for filter dropdown (deduplicated across ledger sites and customer challans)
+  // Unique available sites for filter dropdown (deduplicated across customer profile sites, ledger sites, and challans)
   const availableSites = useMemo(() => {
     const set = new Set<string>();
+    if (Array.isArray(selectedCustomer?.sites)) {
+      selectedCustomer.sites.forEach((s) => {
+        if (s.site_name && s.site_name.trim()) set.add(s.site_name.trim());
+      });
+    }
     (ledgerData.sites || []).forEach((s) => {
       if (s.site_name && s.site_name.trim()) set.add(s.site_name.trim());
     });
@@ -1163,7 +1190,7 @@ function MasterPartyLedgerContent() {
       }
     });
     return Array.from(set);
-  }, [ledgerData.sites, customerChallans]);
+  }, [selectedCustomer?.sites, ledgerData.sites, customerChallans]);
 
   // Split entries into Period 1 (Feb 2024) and Period 2 (Apr 2024 onwards) if R K Sales
   const isRKSales =
@@ -3318,6 +3345,31 @@ function MasterPartyLedgerContent() {
           {/* ============================================================ */}
           {/* LEDGER TRANSACTION TABLE                                     */}
           {/* ============================================================ */}
+          {siteFilteredSummary && (
+            <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <span className="p-1.5 bg-[#ea580c] text-white rounded-lg text-xs font-bold shrink-0">📍 Site Filter</span>
+                <div>
+                  <div className="text-xs font-black text-surface-900">
+                    Showing entries for site: <span className="text-[#ea580c] font-bold">{siteFilteredSummary.siteName}</span> ({siteFilteredSummary.entryCount} {siteFilteredSummary.entryCount === 1 ? 'entry' : 'entries'})
+                  </div>
+                  <div className="text-[11px] text-surface-600 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 font-mono">
+                    <span>Site Debits: <b>₹{siteFilteredSummary.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b></span>
+                    <span>Site Credits: <b>₹{siteFilteredSummary.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b></span>
+                    <span>Site Net Balance: <b className={siteFilteredSummary.balance > 0 ? "text-rose-700 font-bold" : "text-emerald-700 font-bold"}>₹{siteFilteredSummary.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b></span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSiteFilter('all')}
+                className="text-xs font-bold text-orange-700 hover:text-orange-900 bg-white border border-orange-300 rounded-lg px-2.5 py-1 shadow-2xs hover:bg-orange-50 cursor-pointer"
+              >
+                ✕ Clear (View All Sites)
+              </button>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl border border-surface-200 shadow-2xs overflow-hidden">
             {/* Mobile Scroll Hint Banner */}
             <div className="sm:hidden px-3 py-1.5 bg-amber-50/70 border-b border-amber-200/50 flex items-center justify-between text-[11px] text-amber-800 font-medium">

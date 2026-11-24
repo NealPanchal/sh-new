@@ -303,7 +303,7 @@ export default function DeliveryManagementPage() {
       await updateChallan(challan.id, updatedChallanData);
 
       const statusLabels: Record<string, string> = {
-        pending: 'Pending',
+        pending: 'Saved',
         out_for_delivery: 'Out for Delivery (In Transit)',
         delivered: 'Delivered',
         approved: 'Approve — Signed Copy Received',
@@ -450,11 +450,11 @@ export default function DeliveryManagementPage() {
           )}
         >
           <div className="flex items-center justify-between text-amber-700 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Pending Delivery</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Saved Challans</span>
             <Clock size={16} />
           </div>
           <div className="text-2xl font-black text-surface-900">{stats.pending}</div>
-          <div className="text-[10px] text-amber-600 font-medium mt-0.5">Awaiting dispatch</div>
+          <div className="text-[10px] text-amber-600 font-medium mt-0.5">Saved & Awaiting dispatch</div>
         </button>
 
         {/* Out for Delivery Card */}
@@ -544,7 +544,7 @@ export default function DeliveryManagementPage() {
                   : 'text-surface-600 hover:text-surface-900'
               )}
             >
-              Pending ({stats.pending})
+              Saved ({stats.pending})
             </button>
             <button
               type="button"
@@ -814,7 +814,7 @@ export default function DeliveryManagementPage() {
                                   : "bg-amber-50 text-amber-800 border-amber-300"
                               )}
                             >
-                              <option value="pending">Pending</option>
+                              <option value="pending">Saved</option>
                               <option value="out_for_delivery">Out for Delivery</option>
                               <option value="delivered">Delivered</option>
                               <option value="approved">Approve — Signed Copy Received</option>

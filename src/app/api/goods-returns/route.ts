@@ -153,6 +153,27 @@ export async function POST(req: NextRequest) {
 
     addGoodsReturn(newReturn);
 
+    // Update original challan with return tracking
+    try {
+      const { saveAllChallans } = await import('@/lib/server-accounting');
+      const challanIdx = challans.findIndex((c) => c.id === challan_id);
+      if (challanIdx >= 0) {
+        const orig = challans[challanIdx];
+        const prevRetAmt = Number((orig as any).returned_amount) || 0;
+        const newRetAmt = prevRetAmt + Math.round(totalAmt * 100) / 100;
+        const prevRetIds = Array.isArray((orig as any).return_ids) ? (orig as any).return_ids : [];
+        (orig as any).has_returns = true;
+        (orig as any).returned_amount = newRetAmt;
+        (orig as any).return_ids = [...prevRetIds, newReturn.id];
+        (orig as any).last_return_number = newReturn.return_number;
+        (orig as any).last_return_date = newReturn.return_date;
+        challans[challanIdx] = orig;
+        saveAllChallans(challans);
+      }
+    } catch (e) {
+      console.error('Error updating challan with return tracking:', e);
+    }
+
     // Record Audit Log
     recordAuditLog({
       entity_type: 'goods_return',

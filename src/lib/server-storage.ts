@@ -326,9 +326,12 @@ function normalizeAndMergeWithLocal(filename: string, remoteData: any): any {
         // Intelligently merge material rates: union all distinct materials, keeping latest rate
         const rateMap = new Map<string, any>();
         const getRateKey = (mr: any) => {
+          if (mr.id) return mr.id;
           const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
-          const matKey = (mr.particulars || mr.material || mr.id || '').trim().toLowerCase();
-          return `${siteKey}::${matKey}`;
+          const roomKey = (mr.room || 'general').trim().toLowerCase();
+          const matKey = (mr.particulars || mr.material || '').trim().toLowerCase();
+          const codeKey = (mr.code || '').trim().toLowerCase();
+          return `${siteKey}::${roomKey}::${matKey}::${codeKey}`;
         };
         (Array.isArray(existing.material_rates) ? existing.material_rates : []).forEach((mr: any) => {
           if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);

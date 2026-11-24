@@ -22,10 +22,12 @@ import {
   FileSpreadsheet,
   ArrowRight,
   ExternalLink,
+  Eye,
 } from 'lucide-react';
 import { formatPhone, formatDateIndian, cn } from '@/lib/utils';
 import { CustomerFormModal } from '@/components/customers/customer-form-modal';
 import { QuotationModal } from '@/components/quotations/quotation-modal';
+import { QuotationViewModal } from '@/components/quotations/quotation-view-modal';
 import { SiteModal } from '@/components/customers/site-modal';
 import { MaterialRateModal } from '@/components/customers/material-rate-modal';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
@@ -57,6 +59,7 @@ export default function CustomerDetailPage() {
   const [activeChallanSiteFilter, setActiveChallanSiteFilter] = useState<string>('all');
   const [showQuotationModal, setShowQuotationModal] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
+  const [viewingQuotation, setViewingQuotation] = useState<Quotation | null>(null);
   const [showSiteModal, setShowSiteModal] = useState(false);
   const [editingSite, setEditingSite] = useState<CustomerSite | null>(null);
 
@@ -111,14 +114,15 @@ export default function CustomerDetailPage() {
     const map = new Map<string, CustomerMaterialRate>();
     const getKey = (mr: CustomerMaterialRate) => {
       const sKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
+      const rKey = (mr.room || 'general').trim().toLowerCase();
       const rawPart = (mr.particulars || mr.material || '').trim();
       const cleanParticulars = rawPart.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim().toLowerCase();
-      return `${sKey}::${cleanParticulars}`;
+      const cKey = (mr.code || '').trim().toLowerCase();
+      return `${sKey}::${rKey}::${cleanParticulars}::${cKey}`;
     };
 
     raw.forEach((mr) => {
       const key = getKey(mr);
-      const prev = map.get(key);
       const rawPart = (mr.particulars || mr.material || '').trim();
       const cleanParticulars = rawPart.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
       let room = mr.room || 'General';
@@ -127,46 +131,16 @@ export default function CustomerDetailPage() {
         room = bracketMatch[1].trim();
       }
 
-      if (prev) {
-        const preferredRoom =
-          mr.room && mr.room !== 'General'
-            ? mr.room
-            : prev.room && prev.room !== 'General'
-            ? prev.room
-            : room;
-        map.set(key, {
-          ...prev,
-          particulars: cleanParticulars || prev.particulars,
-          material: cleanParticulars || prev.material,
-          room: preferredRoom,
-          code: mr.code || prev.code || '',
-          company_name: mr.company_name || prev.company_name || 'Showhouse',
-          rate: Number(mr.rate) || Number(prev.rate) || 0,
-        });
-      } else {
-        map.set(key, {
-          ...mr,
-          particulars: cleanParticulars || mr.particulars,
-          material: cleanParticulars || mr.material,
-          room: room,
-        });
-      }
+      map.set(key, {
+        ...mr,
+        particulars: (cleanParticulars || mr.particulars || mr.material || undefined) as string | undefined,
+        material: cleanParticulars || mr.material || mr.particulars || undefined,
+        room,
+      });
     });
 
     return Array.from(map.values());
   }, [customer?.material_rates]);
-
-  useEffect(() => {
-    if (
-      customer &&
-      Array.isArray(customer.material_rates) &&
-      customer.material_rates.length > materialRates.length
-    ) {
-      updateCustomer(customer.id, {
-        material_rates: materialRates,
-      });
-    }
-  }, [customer?.id, customer?.material_rates?.length, materialRates.length, updateCustomer]);
 
   const displayedRates: CustomerMaterialRate[] = useMemo(() => {
     if (activeSiteFilter === 'all') return materialRates;
@@ -582,6 +556,15 @@ export default function CustomerDetailPage() {
                       <div className="flex items-center gap-1.5 pt-2 border-t border-surface-200">
                         <button
                           type="button"
+                          onClick={() => setViewingQuotation(q)}
+                          className="py-1.5 px-2 text-[11px] font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 rounded-lg flex items-center justify-center gap-1 cursor-pointer"
+                          title="View Quotation Details"
+                        >
+                          <Eye size={11} />
+                          <span>View</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleShareQuotationWhatsApp(q)}
                           className="flex-1 py-1.5 px-2 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-1 cursor-pointer"
                           title="Share via WhatsApp"
@@ -667,6 +650,16 @@ export default function CustomerDetailPage() {
                           </td>
                           <td className="p-2.5 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              {/* View Quotation Preview */}
+                              <button
+                                type="button"
+                                onClick={() => setViewingQuotation(q)}
+                                className="p-1.5 rounded-lg text-surface-600 bg-surface-100 hover:bg-surface-200 border border-surface-300 cursor-pointer"
+                                title="View Quotation Details"
+                              >
+                                <Eye size={13} />
+                              </button>
+
                               {/* WhatsApp Share */}
                               <button
                                 type="button"
@@ -1132,6 +1125,14 @@ export default function CustomerDetailPage() {
         <MaterialRateModal
           customer={customer}
           onClose={() => setShowRateModal(false)}
+        />
+      )}
+
+      {/* View Quotation Preview Modal */}
+      {viewingQuotation && (
+        <QuotationViewModal
+          quotation={viewingQuotation}
+          onClose={() => setViewingQuotation(null)}
         />
       )}
     </div>

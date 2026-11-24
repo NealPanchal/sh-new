@@ -120,7 +120,13 @@ export async function POST(req: NextRequest) {
           const sKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
           const raw = (mr.particulars || mr.material || '').trim();
           const cleanParticulars = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim().toLowerCase();
-          return `${sKey}::${cleanParticulars}`;
+          let r = (mr.room || 'general').trim().toLowerCase();
+          const bracketMatch = raw.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
+          if (bracketMatch && r === 'general') {
+            r = bracketMatch[1].trim().toLowerCase();
+          }
+          const cKey = (mr.code || '').trim().toLowerCase();
+          return `${sKey}::${r}::${cleanParticulars}::${cKey}`;
         };
 
         existingRates.forEach((mr: any) => {
@@ -175,8 +181,10 @@ export async function POST(req: NextRequest) {
           const sId = q.site_id || null;
           const sName = q.site_name || null;
           const sKey = (sName || sId || '').trim().toLowerCase();
+          const rKey = (extractedRoom || 'General').toLowerCase();
           const mKey = desc.toLowerCase();
-          const key = `${sKey}::${mKey}`;
+          const cKey = (it.colour_finish || '').trim().toLowerCase();
+          const key = `${sKey}::${rKey}::${mKey}::${cKey}`;
 
           const prev = rateMap.get(key);
           if (prev) {
