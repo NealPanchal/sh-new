@@ -105,8 +105,68 @@ export default function CustomerDetailPage() {
   }, [customerId]);
 
   const materialRates: CustomerMaterialRate[] = useMemo(() => {
-    return Array.isArray(customer?.material_rates) ? customer.material_rates : [];
+    const raw = Array.isArray(customer?.material_rates) ? customer.material_rates : [];
+    if (raw.length === 0) return [];
+
+    const map = new Map<string, CustomerMaterialRate>();
+    const getKey = (mr: CustomerMaterialRate) => {
+      const sKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
+      const rawPart = (mr.particulars || mr.material || '').trim();
+      const cleanParticulars = rawPart.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim().toLowerCase();
+      return `${sKey}::${cleanParticulars}`;
+    };
+
+    raw.forEach((mr) => {
+      const key = getKey(mr);
+      const prev = map.get(key);
+      const rawPart = (mr.particulars || mr.material || '').trim();
+      const cleanParticulars = rawPart.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
+      let room = mr.room || 'General';
+      const bracketMatch = rawPart.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
+      if (bracketMatch && room === 'General') {
+        room = bracketMatch[1].trim();
+      }
+
+      if (prev) {
+        const preferredRoom =
+          mr.room && mr.room !== 'General'
+            ? mr.room
+            : prev.room && prev.room !== 'General'
+            ? prev.room
+            : room;
+        map.set(key, {
+          ...prev,
+          particulars: cleanParticulars || prev.particulars,
+          material: cleanParticulars || prev.material,
+          room: preferredRoom,
+          code: mr.code || prev.code || '',
+          company_name: mr.company_name || prev.company_name || 'Showhouse',
+          rate: Number(mr.rate) || Number(prev.rate) || 0,
+        });
+      } else {
+        map.set(key, {
+          ...mr,
+          particulars: cleanParticulars || mr.particulars,
+          material: cleanParticulars || mr.material,
+          room: room,
+        });
+      }
+    });
+
+    return Array.from(map.values());
   }, [customer?.material_rates]);
+
+  useEffect(() => {
+    if (
+      customer &&
+      Array.isArray(customer.material_rates) &&
+      customer.material_rates.length > materialRates.length
+    ) {
+      updateCustomer(customer.id, {
+        material_rates: materialRates,
+      });
+    }
+  }, [customer?.id, customer?.material_rates?.length, materialRates.length, updateCustomer]);
 
   const displayedRates: CustomerMaterialRate[] = useMemo(() => {
     if (activeSiteFilter === 'all') return materialRates;

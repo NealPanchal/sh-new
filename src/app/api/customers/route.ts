@@ -154,27 +154,63 @@ export async function POST(req: NextRequest) {
         const rateMap = new Map<string, any>();
         const getRateKey = (mr: any) => {
           const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
-          const matKey = (mr.particulars || mr.material || mr.id || '').trim().toLowerCase();
-          return `${siteKey}::${matKey}`;
+          const raw = (mr.particulars || mr.material || mr.id || '').trim();
+          const cleanParticulars = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim().toLowerCase();
+          return `${siteKey}::${cleanParticulars}`;
         };
         prevRates.forEach((mr: any) => {
-          if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);
+          if (mr && (mr.particulars || mr.material || mr.rate)) {
+            const k = getRateKey(mr);
+            const raw = (mr.particulars || mr.material || '').trim();
+            const clean = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
+            let room = mr.room || 'General';
+            const bracketMatch = raw.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
+            if (bracketMatch && room === 'General') {
+              room = bracketMatch[1].trim();
+            }
+            rateMap.set(k, {
+              ...mr,
+              particulars: clean || mr.particulars,
+              material: clean || mr.material,
+              room,
+            });
+          }
         });
         material_rates.forEach((mr: any) => {
           if (mr && (mr.particulars || mr.material || mr.rate)) {
             const k = getRateKey(mr);
             const prev = rateMap.get(k);
+            const raw = (mr.particulars || mr.material || '').trim();
+            const clean = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
+            let incomingRoom = mr.room || 'General';
+            const bracketMatch = raw.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
+            if (bracketMatch && incomingRoom === 'General') {
+              incomingRoom = bracketMatch[1].trim();
+            }
+
             if (!prev) {
-              rateMap.set(k, mr);
+              rateMap.set(k, {
+                ...mr,
+                particulars: clean || mr.particulars,
+                material: clean || mr.material,
+                room: incomingRoom,
+              });
             } else {
+              const preferredRoom =
+                (prev.room && prev.room !== 'General')
+                  ? prev.room
+                  : (incomingRoom && incomingRoom !== 'General')
+                  ? incomingRoom
+                  : 'General';
               rateMap.set(k, {
                 ...prev,
                 ...mr,
-                particulars: mr.particulars || prev.particulars || mr.material || prev.material,
-                material: mr.material || prev.material || mr.particulars || prev.particulars,
-                company_name: mr.company_name || prev.company_name || '',
+                particulars: clean || mr.particulars || prev.particulars,
+                material: clean || mr.material || prev.material,
+                company_name: mr.company_name || prev.company_name || 'Showhouse',
                 rate: Number(mr.rate) || Number(prev.rate) || 0,
-                room: mr.room || prev.room || 'General',
+                room: preferredRoom,
+                code: mr.code || prev.code || '',
               });
             }
           }
