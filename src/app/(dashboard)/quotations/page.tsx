@@ -205,7 +205,7 @@ export default function QuotationsPage() {
                             : 'bg-amber-100 text-amber-800 border-amber-200'
                         )}
                       >
-                        {q.status || 'draft'}
+                        {q.status === 'draft' || !q.status ? 'SAVED' : q.status.toUpperCase()}
                       </span>
                     </td>
                     <td className="p-3 text-right">

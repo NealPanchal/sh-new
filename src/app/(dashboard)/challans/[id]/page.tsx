@@ -39,6 +39,7 @@ import {
   downloadInternalChallanPDF,
   printInternalChallanPDF,
 } from '@/lib/pdf';
+import { ChallanGoodsReturnModal } from '@/components/challans/challan-goods-return-modal';
 import {
   openWhatsApp,
   generateShareMessage,
@@ -81,6 +82,7 @@ export default function ChallanDetailPage() {
   const [phoneInput, setPhoneInput] = useState('');
   const [viewMode, setViewMode] = useState<'challan' | 'pi' | 'office'>('challan');
   const [activeDocType, setActiveDocType] = useState<'DELIVERY CHALLAN' | 'PROFORMA INVOICE'>('DELIVERY CHALLAN');
+  const [showGoodsReturnModal, setShowGoodsReturnModal] = useState(false);
 
   // Payment Received Modal State
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -619,15 +621,16 @@ export default function ChallanDetailPage() {
               <span>Payment Received</span>
             </button>
 
-            {/* Goods Return shortcut */}
-            <Link
-              href="/returns"
-              className="btn-secondary py-1.5 px-3 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap"
+            {/* Goods Return Modal Trigger */}
+            <button
+              type="button"
+              onClick={() => setShowGoodsReturnModal(true)}
+              className="btn-secondary py-1.5 px-3 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow-2xs"
               title="Record Goods Return against this challan"
             >
               <RotateCcw size={14} />
               <span>Goods Return</span>
-            </Link>
+            </button>
 
 
 
@@ -1069,6 +1072,14 @@ export default function ChallanDetailPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Goods Return Modal */}
+      {showGoodsReturnModal && challan && (
+        <ChallanGoodsReturnModal
+          challan={challan}
+          onClose={() => setShowGoodsReturnModal(false)}
+        />
       )}
     </div>
   );

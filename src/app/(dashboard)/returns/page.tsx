@@ -23,8 +23,10 @@ import {
 import { GoodsReturn, Challan } from '@/types';
 import { getClientAuthToken, getCurrentUser } from '@/lib/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { useApp } from '@/lib/context';
 
 export default function GoodsReturnsPage() {
+  const { showToast } = useApp();
   const [returns, setReturns] = useState<GoodsReturn[]>([]);
   const [challans, setChallans] = useState<Challan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -212,6 +214,7 @@ export default function GoodsReturnsPage() {
         return_date: returnDate,
         reason: returnRemarks ? `${returnReason}: ${returnRemarks}` : returnReason,
         items: itemsToReturn,
+        auto_create_challan: true,
       };
 
       const res = await fetch('/api/goods-returns', {
@@ -234,8 +237,11 @@ export default function GoodsReturnsPage() {
       setReturnRemarks('');
       await fetchInitialData();
 
-      if (createChallanAfter && data.returnRecord?.id) {
-        router.push(`/challans/new?returnId=${data.returnRecord.id}`);
+      if (data.replacementChallan?.id) {
+        showToast(`✓ Goods return recorded! Replacement challan ${data.replacementChallan.challan_number} created automatically.`, 'success');
+        router.push(`/challans/${data.replacementChallan.id}`);
+      } else {
+        showToast('✓ Goods return recorded and credited to party ledger in RED!', 'success');
       }
     } catch (err: any) {
       setSubmitError(err.message || 'Network error recording goods return');
@@ -789,7 +795,7 @@ export default function GoodsReturnsPage() {
                 </>
               )}
 
-              <div className="pt-2 border-t border-surface-100 flex flex-col sm:flex-row justify-end gap-2">
+              <div className="pt-2 border-t border-surface-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -800,18 +806,9 @@ export default function GoodsReturnsPage() {
                 <button
                   type="submit"
                   disabled={submitting || modalReturnTotalQty === 0}
-                  className="btn-secondary py-2 px-4 text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? 'Recording...' : 'Confirm Return & Update Ledger'}
-                </button>
-                <button
-                  type="button"
-                  disabled={submitting || modalReturnTotalQty === 0}
-                  onClick={(e) => handleCreateReturn(e, true)}
                   className="btn-primary py-2 px-5 text-xs font-bold shadow-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white cursor-pointer"
                 >
-                  <Plus size={14} />
-                  <span>Confirm &amp; Create New Challan ➔</span>
+                  {submitting ? 'Confirming...' : 'Confirm Return'}
                 </button>
               </div>
             </form>

@@ -186,7 +186,120 @@ export async function POST(req: NextRequest) {
       reason: `Processed goods return of ${totalQty} units (₹${totalAmt.toLocaleString('en-IN')}) against Challan ${challan_number}`,
     });
 
-    return NextResponse.json({ success: true, returnRecord: newReturn });
+    // Auto-create Replacement Challan if requested (per user specification: Confirm creates new replacement challan with same returned details)
+    let replacementChallan: any = null;
+    if (body.auto_create_challan !== false) {
+      try {
+        const { saveAllChallans } = await import('@/lib/server-accounting');
+        const { saveChallanToFirestoreRest } = await import('@/lib/server-firestore');
+        const allChallans = getAllChallans();
+
+        // Month prefix for challan numbering: SH/MM/XXX
+        const targetDate = new Date();
+        const monthPadded = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const prefix = 'SH/';
+        const monthPattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${monthPadded}\\/(\\d+)$`, 'i');
+
+        let maxSeq = 0;
+        allChallans.forEach((c) => {
+          if (!c.is_deleted && c.challan_number) {
+            const m = c.challan_number.match(monthPattern);
+            if (m && m[1]) {
+              const n = parseInt(m[1], 10);
+              if (!isNaN(n) && n > maxSeq) maxSeq = n;
+            }
+          }
+        });
+
+        let nextSeq = maxSeq + 1;
+        while (
+          allChallans.some(
+            (c) =>
+              c.challan_number === `${prefix}${monthPadded}/${String(nextSeq).padStart(3, '0')}` &&
+              !c.is_deleted
+          )
+        ) {
+          nextSeq++;
+        }
+        const nextChallanNumber = `${prefix}${monthPadded}/${String(nextSeq).padStart(3, '0')}`;
+
+        const replacementItems = validatedItems.map((vi, idx) => ({
+          id: `ch_item_${Date.now()}_${idx + 1}`,
+          serial_number: idx + 1,
+          item_description: vi.item_description,
+          unit: vi.unit || 'sheets',
+          quantity: vi.return_quantity,
+          rate: vi.rate,
+          amount: vi.return_amount,
+          created_at: new Date().toISOString(),
+        }));
+
+        const subtotal = validatedItems.reduce((acc, it) => acc + (it.return_amount || 0), 0);
+        const applyGst = Boolean((originalChallan as any).apply_additional_9 || (originalChallan as any).cgst_amount);
+        const cgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+        const sgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+        const totalAmount = Math.round((subtotal + cgst + sgst) * 100) / 100;
+
+        const replId = `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        replacementChallan = {
+          id: replId,
+          user_id: session.username || 'adminsh',
+          challan_number: nextChallanNumber,
+          document_type: originalChallan.document_type || 'both',
+          challan_date: newReturn.return_date,
+          customer_id: newReturn.customer_id,
+          customer_name: newReturn.customer_name,
+          customer_phone: originalChallan.customer_phone || '',
+          customer_address: originalChallan.customer_address || '',
+          customer_gstin: originalChallan.customer_gstin || null,
+          delivery_address: originalChallan.delivery_address || null,
+          site_id: newReturn.site_id,
+          site_name: newReturn.site_name,
+          reference_number: `REPL/${originalChallan.challan_number}`,
+          notes: `Replacement for returned goods under ${newReturn.return_number} (Ref: ${originalChallan.challan_number})`,
+          prepared_by: session.name || 'Vrushank',
+          created_by: session.username || 'admin',
+          status: 'pending',
+          delivery_status: 'saved',
+          share_status: 'not_shared',
+          is_delivered: false,
+          total_quantity: totalQty,
+          subtotal_amount: subtotal,
+          cgst_amount: cgst,
+          sgst_amount: sgst,
+          total_amount: totalAmount,
+          items: replacementItems,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        allChallans.unshift(replacementChallan);
+        saveAllChallans(allChallans);
+
+        // Firestore REST dual persistence
+        try {
+          await saveChallanToFirestoreRest(replacementChallan);
+        } catch (fErr) {
+          console.warn('Firestore replacement challan save note:', fErr);
+        }
+
+        // Record Audit Log for replacement challan
+        recordAuditLog({
+          entity_type: 'challan',
+          entity_id: replacementChallan.id,
+          reference_no: replacementChallan.challan_number,
+          user_id: session.username,
+          user_name: session.name,
+          action: 'CREATE',
+          updated_values: replacementChallan,
+          reason: `Auto-created replacement challan for Goods Return ${newReturn.return_number} against Challan ${challan_number}`,
+        });
+      } catch (challanErr) {
+        console.error('Error auto-creating replacement challan for return:', challanErr);
+      }
+    }
+
+    return NextResponse.json({ success: true, returnRecord: newReturn, replacementChallan });
   } catch (err: any) {
     console.error('Error creating goods return:', err);
     return NextResponse.json({ success: false, error: err.message || 'Server error' }, { status: 500 });

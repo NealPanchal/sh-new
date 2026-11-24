@@ -256,7 +256,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       site_id: selectedSiteId || null,
       site_name: selectedSiteName || null,
       delivery_address: deliveryAddress || null,
-      status: andShareWhatsApp ? 'sent' : 'draft',
+      status: andShareWhatsApp ? 'sent' : 'saved',
       total_quantity: totalQuantity,
       subtotal_amount: subtotal,
       transportation_charges: parsedTransport,

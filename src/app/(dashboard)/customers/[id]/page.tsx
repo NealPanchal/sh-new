@@ -102,7 +102,7 @@ export default function CustomerDetailPage() {
             store.syncQuotations(data.quotations);
           }
         }
-      } catch {}
+      } catch { }
     };
     fetchQuotations();
   }, [customerId]);
@@ -178,7 +178,7 @@ export default function CustomerDetailPage() {
     });
     fetch(`/api/sites?id=${encodeURIComponent(siteId)}`, {
       method: 'DELETE',
-    }).catch(() => {});
+    }).catch(() => { });
     showToast(`Removed ${siteName}`, 'info');
   };
 
@@ -535,13 +535,13 @@ export default function CustomerDetailPage() {
                             q.status === 'converted'
                               ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                               : q.status === 'approved'
-                              ? 'bg-green-100 text-green-800 border-green-300'
-                              : q.status === 'sent'
-                              ? 'bg-blue-100 text-blue-800 border-blue-200'
-                              : 'bg-amber-100 text-amber-800 border-amber-200'
+                                ? 'bg-green-100 text-green-800 border-green-300'
+                                : q.status === 'sent'
+                                  ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                  : 'bg-amber-100 text-amber-800 border-amber-200'
                           )}
                         >
-                          {q.status}
+                          {q.status === 'draft' || !q.status ? 'SAVED' : q.status}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-[11px] text-surface-500">
@@ -639,13 +639,13 @@ export default function CustomerDetailPage() {
                                 q.status === 'converted'
                                   ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                   : q.status === 'approved'
-                                  ? 'bg-green-100 text-green-800 border-green-300'
-                                  : q.status === 'sent'
-                                  ? 'bg-blue-100 text-blue-800 border-blue-200'
-                                  : 'bg-amber-100 text-amber-800 border-amber-200'
+                                    ? 'bg-green-100 text-green-800 border-green-300'
+                                    : q.status === 'sent'
+                                      ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                      : 'bg-amber-100 text-amber-800 border-amber-200'
                               )}
                             >
-                              {q.status}
+                              {q.status === 'draft' || !q.status ? 'SAVED' : q.status}
                             </span>
                           </td>
                           <td className="p-2.5 text-right">

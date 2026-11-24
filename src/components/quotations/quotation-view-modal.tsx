@@ -68,7 +68,7 @@ export function QuotationViewModal({ quotation, onClose }: QuotationViewModalPro
                       : 'bg-amber-100 text-amber-800 border-amber-200'
                   )}
                 >
-                  {isConverted ? 'CONVERTED' : (quotation.status || 'SAVED')}
+                  {isConverted ? 'CONVERTED' : (quotation.status === 'draft' ? 'SAVED' : (quotation.status || 'SAVED').toUpperCase())}
                 </span>
               </div>
               <p className="text-[11px] text-surface-500">

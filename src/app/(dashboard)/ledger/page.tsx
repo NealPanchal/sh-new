@@ -2537,14 +2537,21 @@ function MasterPartyLedgerContent() {
                 </tr>
                 {displayEntries.map((e) => {
                   const isDr = (Number(e.debit) || 0) > 0;
+                  const isGoodsReturn =
+                    e.voucher_type === 'goods_return' ||
+                    e.source_type === 'goods_return' ||
+                    (e.particulars && /goods return/i.test(e.particulars));
                   return (
-                    <tr key={e.id} className="leading-snug">
+                    <tr key={e.id} className={cn("leading-snug", isGoodsReturn && "text-red-600 font-bold")}>
                       <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.date ? formatDateDisplay(e.date) : ''}</td>
-                      <td className="py-0.5 px-1.5 text-left">{cleanTallyParticulars(e.particulars, isDr)}</td>
+                      <td className={cn("py-0.5 px-1.5 text-left", isGoodsReturn && "text-red-600 font-bold")}>
+                        {cleanTallyParticulars(e.particulars, isDr)}
+                        {isGoodsReturn && <span className="ml-1 text-[9px] uppercase font-bold text-red-700">[RETURN]</span>}
+                      </td>
                       <td className="py-0.5 px-1.5 text-left whitespace-nowrap">{e.payment_type || (isDr ? 'Sales GST' : 'Receipt')}</td>
-                      <td className="py-0.5 px-1.5 text-center">{e.reference || ''}</td>
+                      <td className={cn("py-0.5 px-1.5 text-center font-mono", isGoodsReturn && "text-red-600 font-bold")}>{e.reference || ''}</td>
                       <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.debit) > 0 ? formatAmountDisplay(e.debit) : ''}</td>
-                      <td className="py-0.5 px-1.5 text-right font-mono">{Number(e.credit) > 0 ? formatAmountDisplay(e.credit) : ''}</td>
+                      <td className={cn("py-0.5 px-1.5 text-right font-mono", isGoodsReturn && "text-red-600 font-bold")}>{Number(e.credit) > 0 ? formatAmountDisplay(e.credit) : ''}</td>
                     </tr>
                   );
                 })}
@@ -3789,17 +3796,31 @@ function MasterPartyLedgerContent() {
                           </td>
                         </tr>
                       ) : (
-                        displayEntries.map((e, idx) => (
-                          <tr key={e.id} className="hover:bg-surface-50/80 transition-colors">
+                        displayEntries.map((e, idx) => {
+                          const isGoodsReturn =
+                            e.voucher_type === 'goods_return' ||
+                            e.source_type === 'goods_return' ||
+                            (e.particulars && /goods return/i.test(e.particulars)) ||
+                            (e.payment_type && /goods return/i.test(e.payment_type));
+
+                          return (
+                          <tr key={e.id} className={cn("hover:bg-surface-50/80 transition-colors", isGoodsReturn && "bg-red-50/30 hover:bg-red-50/60")}>
                             <td className="py-2 px-3 text-center font-bold text-surface-500 border border-surface-200">
                               {idx + 2}
                             </td>
                             <td className="py-2 px-3 text-center text-surface-600 whitespace-nowrap border border-surface-200">
                               {formatDateDisplay(e.date)}
                             </td>
-                            <td className="py-2 px-3 font-semibold text-surface-900 border border-surface-200">
+                            <td className={cn("py-2 px-3 font-semibold border border-surface-200", isGoodsReturn ? "text-red-600 font-bold" : "text-surface-900")}>
                               <div className="flex items-center justify-between gap-1.5">
-                                <span>{cleanTallyParticulars(e.particulars, (Number(e.debit) || 0) > 0)}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span>{cleanTallyParticulars(e.particulars, (Number(e.debit) || 0) > 0)}</span>
+                                  {isGoodsReturn && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 shadow-2xs whitespace-nowrap">
+                                      CREDIT NOTE
+                                    </span>
+                                  )}
+                                </div>
                                 {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
                                   <button
                                     type="button"
@@ -3827,14 +3848,17 @@ function MasterPartyLedgerContent() {
                                 {e.challan_id ? (
                                   <Link
                                     href={`/challans/${e.challan_id}`}
-                                    className="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
+                                    className={cn(
+                                      "hover:underline inline-flex items-center gap-1",
+                                      isGoodsReturn ? "text-red-600 hover:text-red-800 font-bold" : "text-primary-600 hover:text-primary-800"
+                                    )}
                                     title="Open official challan"
                                   >
                                     <span>{e.reference}</span>
                                     <ExternalLink size={10} className="opacity-70" />
                                   </Link>
                                 ) : (
-                                  <span className="text-surface-700">{e.reference}</span>
+                                  <span className={isGoodsReturn ? "text-red-600 font-bold" : "text-surface-700"}>{e.reference}</span>
                                 )}
                                 {e.is_paid && e.debit > 0 && (
                                   <PaidRubberStamp size="xs" title="PAID" color="emerald" angle={-4} />
@@ -3844,8 +3868,12 @@ function MasterPartyLedgerContent() {
                             <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
                               {formatAmountDisplay(e.debit)}
                             </td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-surface-900 border border-surface-200">
-                              {formatAmountDisplay(e.credit)}
+                            <td className={cn("py-2 px-3 text-right font-mono font-bold border border-surface-200", isGoodsReturn ? "text-red-600 font-bold bg-red-50/50" : "text-surface-900")}>
+                              {isGoodsReturn && Number(e.credit) > 0 ? (
+                                <span className="text-red-600 font-bold">-{formatAmountDisplay(e.credit)}</span>
+                              ) : (
+                                formatAmountDisplay(e.credit)
+                              )}
                             </td>
                             <td className="py-2 px-3 text-center border border-surface-200 print:hidden">
                               {isAdminUser ? (
@@ -3872,7 +3900,8 @@ function MasterPartyLedgerContent() {
                               )}
                             </td>
                           </tr>
-                        ))
+                        );
+                        })
                       )}
 
                       {/* Subtotal Row */}

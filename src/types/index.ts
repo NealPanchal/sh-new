@@ -17,7 +17,7 @@ export type UnitType = 'sheets' | 'pieces' | 'boxes' | 'bundles' | 'sq.ft' | 'ru
 
 export type UserRole = 'admin' | 'accountant' | 'employee';
 
-export type QuotationStatus = 'draft' | 'sent' | 'approved' | 'converted';
+export type QuotationStatus = 'saved' | 'draft' | 'sent' | 'approved' | 'converted';
 
 export interface QuotationItem {
   id: string;

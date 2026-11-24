@@ -478,7 +478,7 @@ function CreateQuotationContent() {
         site_id: selectedSiteId || undefined,
         site_name: selectedSiteName || undefined,
         delivery_address: deliveryAddress.trim() || undefined,
-        status: 'draft',
+        status: 'saved',
         total_quantity: totalQuantity,
         subtotal_amount: subtotalAmount,
         transportation_charges: parsedTransport,
