@@ -157,7 +157,10 @@ export function ChallanGoodsReturnModal({
       }
 
       showToast(
-        `✓ Return recorded! New replacement challan ${data.replacementChallan?.challan_number || ''} created & added to Ledger Credit Note in RED!`,
+        `✓ Goods return recorded! Credit note added to Party Ledger in RED.` +
+          (data.replacementChallan?.challan_number
+            ? ` Delivered materials challan ${data.replacementChallan.challan_number} created with remaining delivered items.`
+            : ''),
         'success'
       );
 

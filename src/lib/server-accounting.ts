@@ -833,8 +833,9 @@ export interface ManualLedgerEntry {
   customer_name?: string;
   date: string;
   particulars: string;
-  payment_type: 'Receipt' | 'Sales GST' | 'Payment' | 'Journal' | 'Goods Return';
+  payment_type: 'Receipt' | 'Sales GST' | 'Payment' | 'Journal' | 'Goods Return' | string;
   voucher_no: string;
+  voucher_type?: string;
   debit: number;
   credit: number;
   site_name?: string;
@@ -919,20 +920,68 @@ export function deletePayment(id: string): boolean {
 }
 
 // ----------------------------------------------------
-// 3. GOODS RETURNS
+// 3. GOODS RETURNS (PERSISTENT & LEDGER-SYNCED)
 // ----------------------------------------------------
 export function getGoodsReturns(): GoodsReturn[] {
-  return readJsonFile<GoodsReturn[]>('goods_returns.json', []);
+  let list = readJsonFile<GoodsReturn[]>('goods_returns.json', []);
+  if (!Array.isArray(list)) list = [];
+  return list;
 }
 
 export function saveGoodsReturns(returns: GoodsReturn[]): void {
   writeJsonFile('goods_returns.json', returns, true);
+  try {
+    const raw = JSON.stringify(returns, null, 2);
+    const pPath = path.join(process.cwd(), 'data', 'goods_returns.json');
+    fs.writeFileSync(pPath, raw, 'utf-8');
+  } catch {}
 }
 
 export function addGoodsReturn(goodsReturn: GoodsReturn): GoodsReturn {
   const returns = getGoodsReturns();
-  returns.push(goodsReturn);
+  const existingIdx = returns.findIndex(
+    (r) => r.id === goodsReturn.id || (r.return_number && r.return_number === goodsReturn.return_number)
+  );
+  if (existingIdx >= 0) {
+    returns[existingIdx] = goodsReturn;
+  } else {
+    returns.unshift(goodsReturn);
+  }
   saveGoodsReturns(returns);
+
+  // Auto-record Credit Note in manual ledger entries so it is permanently stored across all views
+  try {
+    const retAmt = Number(goodsReturn.total_return_amount) || 0;
+    if (retAmt > 0) {
+      const vchId = `vch_gr_${goodsReturn.id}`;
+      const manualEntries = getManualLedgerEntries();
+      const mIdx = manualEntries.findIndex((m) => m.id === vchId || m.voucher_no === goodsReturn.return_number);
+      const creditNoteEntry: ManualLedgerEntry = {
+        id: vchId,
+        customer_id: goodsReturn.customer_id,
+        customer_name: goodsReturn.customer_name,
+        site_name: goodsReturn.site_name || undefined,
+        date: goodsReturn.return_date || new Date().toISOString().slice(0, 10),
+        particulars: `By Goods Return [${goodsReturn.challan_number}]`,
+        voucher_no: goodsReturn.return_number,
+        voucher_type: 'goods_return',
+        payment_type: 'Goods Return',
+        debit: 0,
+        credit: retAmt,
+        reason: goodsReturn.reason,
+        created_at: goodsReturn.created_at || new Date().toISOString(),
+      };
+      if (mIdx >= 0) {
+        manualEntries[mIdx] = creditNoteEntry;
+      } else {
+        manualEntries.unshift(creditNoteEntry);
+      }
+      saveManualLedgerEntries(manualEntries);
+    }
+  } catch (mErr) {
+    console.warn('Error recording goods return credit note into manual entries:', mErr);
+  }
+
   return goodsReturn;
 }
 
@@ -942,6 +991,17 @@ export function deleteGoodsReturn(id: string): boolean {
   if (idx < 0) return false;
   returns.splice(idx, 1);
   saveGoodsReturns(returns);
+
+  // Also remove linked manual ledger entry if present
+  try {
+    const manualEntries = getManualLedgerEntries();
+    const vchId = `vch_gr_${id}`;
+    const surviving = manualEntries.filter((m) => m.id !== vchId);
+    if (surviving.length !== manualEntries.length) {
+      saveManualLedgerEntries(surviving);
+    }
+  } catch {}
+
   return true;
 }
 

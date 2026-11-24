@@ -118,6 +118,10 @@ export default function ChallanDetailPage() {
     remarks?: string
   ) => {
     if (!challan) return;
+    if (isEmp) {
+      showToast('Staff can only view delivery status and cannot change it.', 'error');
+      return;
+    }
     try {
       setUpdatingDelivery(true);
       const now = new Date().toISOString();

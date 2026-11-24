@@ -199,6 +199,10 @@ export default function DeliveryManagementPage() {
 
   // Handler: 1-Click Mark as Delivered
   const handleMarkAsDelivered = async (challan: Challan) => {
+    if (currentUser?.role === 'employee') {
+      showToast('Staff are not authorized to change delivery status (View Only).', 'error');
+      return;
+    }
     try {
       setUpdatingId(challan.id);
       const targetPhone = resolveCustomerPhone(challan, customers, challans);
@@ -258,6 +262,10 @@ export default function DeliveryManagementPage() {
 
   // Handler: Mark Out for Delivery (In Transit)
   const handleMarkOutForDelivery = async (challan: Challan) => {
+    if (currentUser?.role === 'employee') {
+      showToast('Staff are not authorized to change delivery status (View Only).', 'error');
+      return;
+    }
     try {
       setUpdatingId(challan.id);
       await updateChallanStatus(challan.id, 'out_for_delivery');
@@ -280,6 +288,10 @@ export default function DeliveryManagementPage() {
     newStatus: ChallanStatus,
     confirmed?: boolean
   ) => {
+    if (currentUser?.role === 'employee') {
+      showToast('Staff are not authorized to change delivery status (View Only).', 'error');
+      return;
+    }
     try {
       setUpdatingId(challan.id);
       if (newStatus === 'approved' || confirmed === true) {
@@ -771,6 +783,53 @@ export default function DeliveryManagementPage() {
 
                       {/* Delivery Status & Dropdown (Checkbox + 7 Status Options) */}
                       <td className="py-3 px-3 align-top min-w-[210px]">
+                        {currentUser?.role === 'employee' ? (
+                          <div className="space-y-1 bg-surface-50 p-2 rounded-lg border border-surface-200">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={cn(
+                                  "px-2 py-1 rounded-md border text-xs font-bold inline-block shadow-2xs",
+                                  isApproved
+                                    ? "bg-indigo-50 text-indigo-800 border-indigo-300"
+                                    : isDelivered
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                    : isOut
+                                    ? "bg-blue-50 text-blue-800 border-blue-300"
+                                    : c.status === 'partially_delivered'
+                                    ? "bg-teal-50 text-teal-800 border-teal-300"
+                                    : c.status === 'cancelled'
+                                    ? "bg-rose-50 text-rose-800 border-rose-300"
+                                    : c.status === 'goods_returned'
+                                    ? "bg-purple-50 text-purple-800 border-purple-300"
+                                    : "bg-amber-50 text-amber-800 border-amber-300"
+                                )}
+                              >
+                                {isApproved
+                                  ? 'Approve — Signed Copy Received'
+                                  : isDelivered
+                                  ? 'Delivered'
+                                  : isOut
+                                  ? 'Out for Delivery'
+                                  : c.status === 'partially_delivered'
+                                  ? 'Partially Delivered'
+                                  : c.status === 'cancelled'
+                                  ? 'Cancelled'
+                                  : c.status === 'goods_returned'
+                                  ? 'Goods Returned'
+                                  : 'Saved'}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-zinc-400 font-semibold italic">
+                              🔒 View Only (Staff Access)
+                            </div>
+                            {(isApproved || isDelivered) && (
+                              <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 pt-0.5">
+                                <CheckCircle2 size={11} className="text-emerald-600" />
+                                <span>In Party Ledger ✓</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
                         <div className="space-y-1.5 bg-surface-50/80 p-2 rounded-lg border border-surface-200">
                           {/* [ ] Mark as Approved Checkbox */}
                           <label className="flex items-center gap-2 cursor-pointer font-bold text-zinc-900 select-none text-xs">
@@ -837,10 +896,34 @@ export default function DeliveryManagementPage() {
                             </div>
                           )}
                         </div>
+                        )}
                       </td>
 
                       {/* Actions */}
                       <td className="py-3 px-3 align-top text-right whitespace-nowrap">
+                        {currentUser?.role === 'employee' ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Link
+                              href={`/challans/${c.id}`}
+                              className="py-1 px-2.5 bg-surface-100 hover:bg-surface-200 text-surface-800 font-bold rounded-lg text-xs flex items-center gap-1 border border-surface-300 transition-colors"
+                              title="View official challan details"
+                            >
+                              <Eye size={12} />
+                              <span>View</span>
+                            </Link>
+                            {targetPhone && (
+                              <button
+                                type="button"
+                                onClick={() => handleResendWhatsApp(c)}
+                                className="py-1 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-xs flex items-center gap-1.5 border border-emerald-200 transition-colors cursor-pointer"
+                                title="Share delivery confirmation on WhatsApp"
+                              >
+                                <Send size={12} />
+                                <span>WhatsApp</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
                         <div className="flex items-center justify-end gap-1.5">
                           {!isApproved ? (
                             <>
@@ -956,6 +1039,7 @@ export default function DeliveryManagementPage() {
                             <Eye size={14} />
                           </button>
                         </div>
+                        )}
                       </td>
                     </tr>
                   );

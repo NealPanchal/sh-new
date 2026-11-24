@@ -75,7 +75,13 @@ const FIRESTORE_SYNC_MAP: Record<string, SyncConfig> = {
     saveIndividualToCollection: 'payments',
     idField: 'id',
   },
-  'goods_returns.json': { collection: 'goods_returns', docId: 'all_returns', wrapAs: 'list' },
+  'goods_returns.json': {
+    collection: 'goods_returns',
+    docId: 'all_returns',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'goods_returns',
+    idField: 'id',
+  },
   'site_adjustments.json': { collection: 'site_adjustments', docId: 'all_adjustments', wrapAs: 'list' },
   'quotations.json': {
     collection: 'quotations',
@@ -409,6 +415,45 @@ function normalizeAndMergeWithLocal(filename: string, remoteData: any): any {
     for (const rs of remoteList) {
       if (!rs || !rs.id) continue;
       map.set(rs.id, rs);
+    }
+    return Array.from(map.values());
+  }
+
+  if (filename === 'goods_returns.json') {
+    const local = safeReadDataFile<any[]>('goods_returns.json', []);
+    const remoteList = Array.isArray(remoteData) ? remoteData : [];
+    const map = new Map<string, any>();
+    for (const r of local) {
+      if (r && (r.id || r.return_number)) map.set(r.id || r.return_number, r);
+    }
+    for (const r of remoteList) {
+      if (!r || !(r.id || r.return_number)) continue;
+      const key = r.id || r.return_number;
+      if (!map.has(key)) {
+        map.set(key, r);
+      } else {
+        const existing = map.get(key);
+        map.set(key, { ...existing, ...r });
+      }
+    }
+    return Array.from(map.values());
+  }
+
+  if (filename === 'manual_ledger_entries.json') {
+    const local = safeReadDataFile<any[]>('manual_ledger_entries.json', []);
+    const remoteList = Array.isArray(remoteData) ? remoteData : [];
+    const map = new Map<string, any>();
+    for (const e of local) {
+      if (e && e.id) map.set(e.id, e);
+    }
+    for (const re of remoteList) {
+      if (!re || !re.id) continue;
+      if (!map.has(re.id)) {
+        map.set(re.id, re);
+      } else {
+        const existing = map.get(re.id);
+        map.set(re.id, { ...existing, ...re });
+      }
     }
     return Array.from(map.values());
   }

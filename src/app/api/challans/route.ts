@@ -361,6 +361,20 @@ export async function POST(req: NextRequest) {
             { status: 403 }
           );
         }
+
+        // Staff members can only view delivery status and cannot modify it
+        if (
+          validChallan.status !== challans[idx].status ||
+          (body.delivery_status && body.delivery_status !== (challans[idx] as any).delivery_status)
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Permission denied. Staff members can only view delivery status and cannot change it.',
+            },
+            { status: 403 }
+          );
+        }
       }
 
       // If Admin edits an approved challan, record an audit log (Requirement 3)

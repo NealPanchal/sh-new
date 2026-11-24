@@ -2368,6 +2368,22 @@ function MasterPartyLedgerContent() {
 
   const isEmployee = currentUser?.role === 'employee';
 
+  // Strict employee customer filtering: employees can only see their own assigned customers
+  const visibleCustomers = useMemo(() => {
+    if (!isEmployee) return customers;
+    const uName = (currentUser?.name || '').toLowerCase().trim();
+    const uUser = (currentUser?.username || '').toLowerCase().trim();
+    return customers.filter((c) => {
+      const cr = (c.created_by || '').toLowerCase();
+      const crN = (c.creator_name || '').toLowerCase();
+      const uId = (c.user_id || '').toLowerCase();
+      return (
+        (uUser && (cr === uUser || uId === uUser)) ||
+        (uName && (cr.includes(uName) || crN.includes(uName) || uId.includes(uName)))
+      );
+    });
+  }, [customers, isEmployee, currentUser]);
+
   return (
     <div className="pb-20 max-w-7xl mx-auto select-none print:p-0 print:m-0 print:max-w-none">
       {/* ============================================================ */}
@@ -2713,11 +2729,13 @@ function MasterPartyLedgerContent() {
             }}
             className="input text-xs py-1.5 px-2.5 font-bold text-surface-900 bg-surface-50 border-surface-300 rounded-lg min-w-[210px]"
           >
-            <option value="all">📊 All Parties (Overall Filter &amp; Total Calculation)</option>
-            {customers.length === 0 ? (
-              <option value="">No parties yet</option>
+            <option value="all">
+              {isEmployee ? `📊 My Parties (${visibleCustomers.length})` : '📊 All Parties (Overall Filter & Total Calculation)'}
+            </option>
+            {visibleCustomers.length === 0 ? (
+              <option value="">No parties assigned</option>
             ) : (
-              customers.map((c) => {
+              visibleCustomers.map((c) => {
                 const custTitle = c.name || c.business_name || 'Customer';
                 const showComp =
                   c.company_name &&
