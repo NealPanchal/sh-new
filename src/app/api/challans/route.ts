@@ -290,8 +290,9 @@ export async function GET(req: NextRequest) {
     list = list.filter((c) => {
       const prep = (c.prepared_by || '').toLowerCase();
       const cr = (c.created_by || '').toLowerCase();
-      return (uName && (prep.includes(uName) || cr.includes(uName))) ||
-             (uUser && (prep === uUser || cr === uUser));
+      const uid = ((c as any).user_id || '').toLowerCase();
+      return (uName && (prep.includes(uName) || cr.includes(uName) || uid.includes(uName))) ||
+             (uUser && (prep === uUser || cr === uUser || uid === uUser));
     });
   }
 

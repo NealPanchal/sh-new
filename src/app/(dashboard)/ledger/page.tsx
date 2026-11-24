@@ -666,6 +666,8 @@ function MasterPartyLedgerContent() {
             credit: Number(lme.credit) || 0,
             running_balance: 0,
             challan_id: lme.challan_id || undefined,
+            replacement_challan_id: (lme as any).replacement_challan_id || undefined,
+            replacement_challan_number: (lme as any).replacement_challan_number || undefined,
             is_paid: !isLmeDebit,
           });
         }
@@ -3838,6 +3840,16 @@ function MasterPartyLedgerContent() {
                                       CREDIT NOTE
                                     </span>
                                   )}
+                                  {isGoodsReturn && (e.replacement_challan_id || e.replacement_challan_number) && (
+                                    <Link
+                                      href={`/challans/${e.replacement_challan_id || e.challan_id}`}
+                                      className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-white text-red-700 border border-red-300 hover:bg-red-50 hover:underline inline-flex items-center gap-1 shadow-2xs whitespace-nowrap"
+                                      title="Open Goods Return Challan"
+                                    >
+                                      <span>➔ {e.replacement_challan_number || 'Return Challan'}</span>
+                                      <ExternalLink size={8} />
+                                    </Link>
+                                  )}
                                 </div>
                                 {(e.last_updated || e.reason || (e.revision_history && e.revision_history.length > 0)) && (
                                   <button
@@ -3862,21 +3874,39 @@ function MasterPartyLedgerContent() {
                               )}
                             </td>
                             <td className="py-2 px-3 text-center font-mono font-bold border border-surface-200">
-                              <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                                {e.challan_id ? (
+                              <div className="flex flex-col items-center justify-center gap-1">
+                                {isGoodsReturn ? (
+                                  <>
+                                    <Link
+                                      href={`/challans/${e.replacement_challan_id || e.challan_id}`}
+                                      className="text-red-600 hover:text-red-800 font-bold hover:underline inline-flex items-center gap-1 text-[11px]"
+                                      title={e.replacement_challan_id ? "Open Goods Return Challan" : "Open Original Challan"}
+                                    >
+                                      <span>{e.reference}</span>
+                                      <ExternalLink size={10} className="opacity-70" />
+                                    </Link>
+                                    {e.replacement_challan_number && (
+                                      <Link
+                                        href={`/challans/${e.replacement_challan_id}`}
+                                        className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 inline-flex items-center gap-0.5 transition-colors"
+                                        title={`Open replacement challan ${e.replacement_challan_number}`}
+                                      >
+                                        <span>➔ {e.replacement_challan_number}</span>
+                                        <ExternalLink size={8} className="opacity-70" />
+                                      </Link>
+                                    )}
+                                  </>
+                                ) : e.challan_id ? (
                                   <Link
                                     href={`/challans/${e.challan_id}`}
-                                    className={cn(
-                                      "hover:underline inline-flex items-center gap-1",
-                                      isGoodsReturn ? "text-red-600 hover:text-red-800 font-bold" : "text-primary-600 hover:text-primary-800"
-                                    )}
+                                    className="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
                                     title="Open official challan"
                                   >
                                     <span>{e.reference}</span>
                                     <ExternalLink size={10} className="opacity-70" />
                                   </Link>
                                 ) : (
-                                  <span className={isGoodsReturn ? "text-red-600 font-bold" : "text-surface-700"}>{e.reference}</span>
+                                  <span className="text-surface-700">{e.reference}</span>
                                 )}
                                 {e.is_paid && e.debit > 0 && (
                                   <PaidRubberStamp size="xs" title="PAID" color="emerald" angle={-4} />

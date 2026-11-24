@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Challan, BusinessProfile } from '@/types';
-import { formatPhone, cleanChallanItemDescription, extractItemOfficeDetails } from '@/lib/utils';
+import { formatPhone, cleanChallanItemDescription, extractItemOfficeDetails, cn } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
@@ -433,10 +433,31 @@ export function OfficialChallanDocument({
             </div>
           </div>
 
-          {/* Right: Blue Pill Box & Document Metadata */}
+          {/* Right: Pill Box & Document Metadata */}
           <div className="text-right flex flex-col items-end">
-            <div className="border-2 border-[#2B5EA7] rounded-xl px-5 sm:px-7 py-1 bg-[#FCFEFF] text-[#2B5EA7] font-bold text-xs sm:text-sm tracking-wider uppercase inline-block text-center shadow-2xs">
-              {isOffice ? 'DELIVERY CHALLAN (OFFICE COPY)' : hideRate ? 'DELIVERY SLIP' : isPI ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN'}
+            <div
+              className={cn(
+                "border-2 rounded-xl px-5 sm:px-7 py-1 font-bold text-xs sm:text-sm tracking-wider uppercase inline-block text-center shadow-2xs",
+                Boolean((challan as any)?.is_goods_return) ||
+                  challan.status === 'goods_returned' ||
+                  Boolean(challan.reference_number && challan.reference_number.toUpperCase().includes('REPL/')) ||
+                  Boolean(challan.notes && /goods return|replacement/i.test(challan.notes))
+                  ? "border-red-600 bg-red-50 text-red-600 font-black"
+                  : "border-[#2B5EA7] bg-[#FCFEFF] text-[#2B5EA7]"
+              )}
+            >
+              {Boolean((challan as any)?.is_goods_return) ||
+              challan.status === 'goods_returned' ||
+              Boolean(challan.reference_number && challan.reference_number.toUpperCase().includes('REPL/')) ||
+              Boolean(challan.notes && /goods return|replacement/i.test(challan.notes))
+                ? 'GOODS RETURN'
+                : isOffice
+                ? 'DELIVERY CHALLAN (OFFICE COPY)'
+                : hideRate
+                ? 'DELIVERY SLIP'
+                : isPI
+                ? 'PROFORMA INVOICE'
+                : 'DELIVERY CHALLAN'}
             </div>
 
             <div className="mt-2.5 sm:mt-3 space-y-0.5 text-right font-bold text-[11px] sm:text-xs text-black">
@@ -545,8 +566,29 @@ export function OfficialChallanDocument({
               </div>
 
               <div className="text-right flex flex-col items-end">
-                <div className="border-2 border-[#2B5EA7] rounded-xl px-4 py-0.5 bg-[#FCFEFF] text-[#2B5EA7] font-bold text-xs uppercase tracking-wider">
-                  {isOffice ? 'DELIVERY CHALLAN (OFFICE COPY)' : hideRate ? 'DELIVERY SLIP' : isPI ? 'PROFORMA INVOICE' : 'DELIVERY CHALLAN'}
+                <div
+                  className={cn(
+                    "border-2 rounded-xl px-4 py-0.5 font-bold text-xs uppercase tracking-wider",
+                    Boolean((challan as any)?.is_goods_return) ||
+                      challan.status === 'goods_returned' ||
+                      Boolean(challan.reference_number && challan.reference_number.toUpperCase().includes('REPL/')) ||
+                      Boolean(challan.notes && /goods return|replacement/i.test(challan.notes))
+                      ? "border-red-600 bg-red-50 text-red-600 font-black"
+                      : "border-[#2B5EA7] bg-[#FCFEFF] text-[#2B5EA7]"
+                  )}
+                >
+                  {Boolean((challan as any)?.is_goods_return) ||
+                  challan.status === 'goods_returned' ||
+                  Boolean(challan.reference_number && challan.reference_number.toUpperCase().includes('REPL/')) ||
+                  Boolean(challan.notes && /goods return|replacement/i.test(challan.notes))
+                    ? 'GOODS RETURN'
+                    : isOffice
+                    ? 'DELIVERY CHALLAN (OFFICE COPY)'
+                    : hideRate
+                    ? 'DELIVERY SLIP'
+                    : isPI
+                    ? 'PROFORMA INVOICE'
+                    : 'DELIVERY CHALLAN'}
                 </div>
                 <div className="mt-1.5 font-bold text-[11px] text-black">
                   {isPI ? 'PI NO : ' : 'CHALLAN NO : '}

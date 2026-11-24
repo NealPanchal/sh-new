@@ -150,13 +150,19 @@ export default function DashboardPage() {
     if (isEmp && currentUser) {
       const myName = (currentUser.name || '').trim().toLowerCase();
       const myUser = (currentUser.username || '').trim().toLowerCase();
+      const myId = (currentUser.id || '').trim().toLowerCase();
       list = list.filter((c) => {
-        const creator = (c.created_by || c.prepared_by || '').trim().toLowerCase();
+        const creator = (c.created_by || '').trim().toLowerCase();
+        const prep = (c.prepared_by || '').trim().toLowerCase();
+        const uid = ((c as any).user_id || '').trim().toLowerCase();
         return (
           creator === myName ||
           creator === myUser ||
-          (myName && creator.includes(myName)) ||
-          (myUser && creator.includes(myUser))
+          prep === myName ||
+          prep === myUser ||
+          (myName && (creator.includes(myName) || prep.includes(myName))) ||
+          (myUser && (creator.includes(myUser) || prep.includes(myUser))) ||
+          (myId && uid === myId)
         );
       });
     }
@@ -208,6 +214,27 @@ export default function DashboardPage() {
     const curYearMonth = new Date().toISOString().substring(0, 7);
     return accessibleChallans
       .filter((c) => (c.challan_date || c.created_at || '').startsWith(curYearMonth) && c.status !== 'cancelled' && c.status !== 'void')
+      .reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0);
+  }, [accessibleChallans]);
+
+  // Employee Personal Sales (Total amount across all challans created/prepared by the employee)
+  const employeeTotalSales = useMemo(() => {
+    return accessibleChallans
+      .filter((c) => c.status !== 'cancelled' && c.status !== 'void')
+      .reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0);
+  }, [accessibleChallans]);
+
+  const employeeMonthSales = useMemo(() => {
+    const curYearMonth = new Date().toISOString().substring(0, 7);
+    return accessibleChallans
+      .filter((c) => (c.challan_date || c.created_at || '').startsWith(curYearMonth) && c.status !== 'cancelled' && c.status !== 'void')
+      .reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0);
+  }, [accessibleChallans]);
+
+  const employeeTodaySales = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return accessibleChallans
+      .filter((c) => (c.challan_date || c.created_at || '').startsWith(today) && c.status !== 'cancelled' && c.status !== 'void')
       .reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0);
   }, [accessibleChallans]);
 
@@ -287,18 +314,37 @@ export default function DashboardPage() {
 
       {/* Compact Stat Cards (Clickable Direct Filters) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-        <Link
-          href="/challans"
-          className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs hover:border-surface-400 transition-colors block"
-          title="View all challans"
-        >
-          <div className="text-[10px] sm:text-xs font-semibold text-surface-500 uppercase tracking-wider truncate">
-            Total Challans
-          </div>
-          <div className="text-xl sm:text-3xl font-extrabold text-surface-900 mt-1">
-            {stats.totalChallans}
-          </div>
-        </Link>
+        {isEmp ? (
+          <Link
+            href="/challans"
+            className="card p-3 sm:p-4 bg-emerald-50/70 border border-emerald-300 shadow-xs hover:border-emerald-500 transition-colors block"
+            title="My total sales generated"
+          >
+            <div className="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider truncate flex items-center justify-between">
+              <span>My Total Sales</span>
+              <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 py-0.2 rounded font-bold">All Time</span>
+            </div>
+            <div className="text-lg sm:text-2xl font-black text-emerald-700 mt-1 truncate">
+              {formatCurrency(employeeTotalSales)}
+            </div>
+            <div className="text-[10px] text-emerald-700 font-semibold mt-0.5 truncate">
+              {stats.totalChallans} challans total
+            </div>
+          </Link>
+        ) : (
+          <Link
+            href="/challans"
+            className="card p-3 sm:p-4 bg-white border border-surface-200 shadow-xs hover:border-surface-400 transition-colors block"
+            title="View all challans"
+          >
+            <div className="text-[10px] sm:text-xs font-semibold text-surface-500 uppercase tracking-wider truncate">
+              Total Challans
+            </div>
+            <div className="text-xl sm:text-3xl font-extrabold text-surface-900 mt-1">
+              {stats.totalChallans}
+            </div>
+          </Link>
+        )}
 
         <Link
           href="/challans?filter=today"
@@ -306,11 +352,16 @@ export default function DashboardPage() {
           title="View today's challans"
         >
           <div className="text-[10px] sm:text-xs font-semibold text-surface-500 uppercase tracking-wider truncate">
-            Today
+            {isEmp ? "Today's Sales" : "Today"}
           </div>
-          <div className="text-xl sm:text-3xl font-extrabold text-emerald-600 mt-1">
-            {stats.challansToday}
+          <div className="text-lg sm:text-2xl font-black text-emerald-600 mt-1 truncate">
+            {isEmp ? formatCurrency(employeeTodaySales) : stats.challansToday}
           </div>
+          {isEmp && (
+            <div className="text-[10px] text-surface-500 font-medium mt-0.5">
+              {stats.challansToday} challan{stats.challansToday === 1 ? '' : 's'}
+            </div>
+          )}
         </Link>
 
         <Link
@@ -319,27 +370,107 @@ export default function DashboardPage() {
           title={`View this month (${stats.thisMonthName || 'Current'}) challans`}
         >
           <div className="text-[10px] sm:text-xs font-semibold text-surface-500 uppercase tracking-wider truncate">
-            This Month ({stats.thisMonthName ? stats.thisMonthName.slice(0, 3) : 'Nov'})
+            {isEmp ? `This Month Sales (${stats.thisMonthName ? stats.thisMonthName.slice(0, 3) : 'Nov'})` : `This Month (${stats.thisMonthName ? stats.thisMonthName.slice(0, 3) : 'Nov'})`}
           </div>
-          <div className="text-xl sm:text-3xl font-extrabold text-primary-600 mt-1">
-            {stats.challansThisMonth}
+          <div className="text-lg sm:text-2xl font-black text-primary-600 mt-1 truncate">
+            {isEmp ? formatCurrency(employeeMonthSales) : stats.challansThisMonth}
           </div>
+          {isEmp && (
+            <div className="text-[10px] text-surface-500 font-medium mt-0.5">
+              {stats.challansThisMonth} challan{stats.challansThisMonth === 1 ? '' : 's'}
+            </div>
+          )}
         </Link>
 
         <Link
-          href="/challans?filter=previous_month"
+          href={isEmp ? "/challans" : "/challans?filter=previous_month"}
           className="card p-3 sm:p-4 bg-blue-50/40 border border-blue-200 shadow-xs hover:border-blue-400 transition-colors block"
-          title={`View previous month (${stats.lastMonthName || 'October'}) challans`}
+          title={isEmp ? "View all my challans" : `View previous month (${stats.lastMonthName || 'October'}) challans`}
         >
           <div className="text-[10px] sm:text-xs font-bold text-blue-800 uppercase tracking-wider truncate flex items-center justify-between">
-            <span>Last Month ({stats.lastMonthName ? stats.lastMonthName.slice(0, 3) : 'Oct'})</span>
-            <span className="text-[9px] bg-blue-100 text-blue-700 px-1 py-0.2 rounded font-bold">Prev</span>
+            <span>{isEmp ? "My Challans" : `Last Month (${stats.lastMonthName ? stats.lastMonthName.slice(0, 3) : 'Oct'})`}</span>
+            <span className="text-[9px] bg-blue-100 text-blue-700 px-1 py-0.2 rounded font-bold">{isEmp ? "Active" : "Prev"}</span>
           </div>
           <div className="text-xl sm:text-3xl font-extrabold text-blue-700 mt-1">
-            {stats.challansLastMonth ?? 0}
+            {isEmp ? stats.totalChallans : (stats.challansLastMonth ?? 0)}
           </div>
+          {isEmp && (
+            <div className="text-[10px] text-blue-700 font-medium mt-0.5">
+              Total created
+            </div>
+          )}
         </Link>
       </div>
+
+      {/* Employee Personal Sales Summary */}
+      {isEmp && (
+        <div className="card p-4 bg-gradient-to-r from-emerald-50/70 via-white to-primary-50/50 border border-emerald-200/80 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-surface-100">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-emerald-600 text-white rounded-lg shadow-xs">
+                <TrendingUp size={16} />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-zinc-900 tracking-tight flex items-center gap-2">
+                  <span>My Sales Performance</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    {currentUser?.name || currentUser?.username}
+                  </span>
+                </h2>
+                <span className="text-[10px] text-zinc-500">Live total of all delivery challans created by you</span>
+              </div>
+            </div>
+            <Link
+              href="/challans"
+              className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1"
+            >
+              <span>View My Challans</span>
+              <ArrowRight size={13} />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="bg-white p-3.5 rounded-xl border border-emerald-200/90 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Total Sales (All Time)</span>
+                <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md font-bold">
+                  {accessibleChallans.length} Challans
+                </span>
+              </div>
+              <p className="text-xl sm:text-2xl font-black text-emerald-700 mt-1.5">
+                {formatCurrency(employeeTotalSales)}
+              </p>
+              <span className="text-[10px] text-zinc-500">Sum of all challans generated by you</span>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-surface-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">This Month Sales</span>
+                <span className="text-[9px] bg-primary-100 text-primary-800 px-1.5 py-0.5 rounded-md font-bold">
+                  {stats.challansThisMonth} Challans
+                </span>
+              </div>
+              <p className="text-xl sm:text-2xl font-black text-zinc-900 mt-1.5">
+                {formatCurrency(employeeMonthSales)}
+              </p>
+              <span className="text-[10px] text-zinc-500">Current calendar month billings</span>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-surface-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Today's Sales</span>
+                <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md font-bold">
+                  {stats.challansToday} Challans
+                </span>
+              </div>
+              <p className="text-xl sm:text-2xl font-black text-zinc-900 mt-1.5">
+                {formatCurrency(employeeTodaySales)}
+              </p>
+              <span className="text-[10px] text-zinc-500">Dispatches recorded today</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Showhouse ERP Financial & Accounting Overview (Admin & Accountant Only) */}
       {!isEmp && (

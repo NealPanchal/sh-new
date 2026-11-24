@@ -528,6 +528,8 @@ export interface CustomerLedgerEntry {
   is_paid?: boolean;
   payment_status?: 'paid' | 'partial' | 'unpaid';
   paid_amount?: number;
+  replacement_challan_id?: string;
+  replacement_challan_number?: string;
   created_at?: string;
   cleared_at?: string;
   retention_expires_at?: string;

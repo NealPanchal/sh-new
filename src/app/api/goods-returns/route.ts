@@ -228,50 +228,34 @@ export async function POST(req: NextRequest) {
         }
         const nextChallanNumber = `${prefix}${monthPadded}/${String(nextSeq).padStart(3, '0')}`;
 
-        // Delivered remaining items: original items MINUS returned items
-        const remainingChallanItems: any[] = [];
-        let remainingTotalQty = 0;
-        let remainingSubtotal = 0;
-
-        (originalChallan.items || []).forEach((origItem: any, idx: number) => {
-          const retMatch = validatedItems.find(
-            (vi) => vi.original_item_id === origItem.id || vi.item_description?.trim().toLowerCase() === origItem.item_description?.trim().toLowerCase()
+        // Create replacement / return challan containing the selected returned items
+        const returnChallanItems = validatedItems.map((vi, idx) => {
+          const origItem = (originalChallan.items || []).find(
+            (oi: any) =>
+              oi.id === vi.original_item_id ||
+              oi.item_description?.trim().toLowerCase() === vi.item_description?.trim().toLowerCase()
           );
-          const retQty = retMatch ? Number(retMatch.return_quantity) || 0 : 0;
-          const origQty = Number(origItem.quantity) || 0;
-          const remQty = origQty - retQty;
-
-          if (remQty > 0) {
-            const rate = origItem.rate != null ? Number(origItem.rate) : (retMatch?.rate || 0);
-            const lineAmt = Math.round(remQty * rate * 100) / 100;
-            remainingTotalQty += remQty;
-            remainingSubtotal += lineAmt;
-
-            remainingChallanItems.push({
-              id: `ch_item_${Date.now()}_${idx + 1}`,
-              serial_number: remainingChallanItems.length + 1,
-              item_description: origItem.item_description,
-              brand: origItem.brand || null,
-              colour_finish: origItem.colour_finish || null,
-              size: origItem.size || null,
-              unit: origItem.unit || 'sheets',
-              quantity: remQty,
-              rate: rate,
-              amount: lineAmt,
-              created_at: new Date().toISOString(),
-            });
-          }
+          return {
+            id: `ch_item_${Date.now()}_${idx + 1}`,
+            serial_number: idx + 1,
+            item_description: vi.item_description || origItem?.item_description || 'Returned Item',
+            brand: origItem?.brand || null,
+            colour_finish: origItem?.colour_finish || null,
+            size: origItem?.size || null,
+            unit: vi.unit || origItem?.unit || 'sheets',
+            quantity: vi.return_quantity,
+            rate: vi.rate,
+            amount: vi.return_amount,
+            created_at: new Date().toISOString(),
+          };
         });
 
-        if (remainingChallanItems.length > 0) {
-          const transport = Number((originalChallan as any).transportation_charges) || 0;
-          const loading = Number((originalChallan as any).selection_charges) || 0;
-          const baseSubtotal = remainingSubtotal + transport + loading;
-
+        if (returnChallanItems.length > 0) {
+          const subtotal = totalAmt;
           const applyGst = Boolean((originalChallan as any).apply_additional_9 || (originalChallan as any).cgst_amount);
-          const cgst = applyGst ? Math.round(baseSubtotal * 0.09 * 100) / 100 : 0;
-          const sgst = applyGst ? Math.round(baseSubtotal * 0.09 * 100) / 100 : 0;
-          const totalAmount = Math.round((baseSubtotal + cgst + sgst) * 100) / 100;
+          const cgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+          const sgst = applyGst ? Math.round(subtotal * 0.09 * 100) / 100 : 0;
+          const totalAmount = Math.round((subtotal + cgst + sgst) * 100) / 100;
 
           const replId = `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
           replacementChallan = {
@@ -289,22 +273,23 @@ export async function POST(req: NextRequest) {
             site_id: newReturn.site_id,
             site_name: newReturn.site_name,
             reference_number: `REPL/${originalChallan.challan_number}`,
-            notes: `Delivered material challan for ${originalChallan.challan_number} (Excluding returned items under Return ${newReturn.return_number})`,
+            notes: `Goods Return for ${newReturn.return_number} (Ref: ${originalChallan.challan_number})`,
             prepared_by: session.name || 'Vrushank',
             created_by: session.username || 'admin',
-            status: 'pending',
-            delivery_status: 'saved',
+            status: 'approved',
+            is_goods_return: true,
+            delivery_status: 'delivered',
             share_status: 'not_shared',
-            is_delivered: false,
-            total_quantity: remainingTotalQty,
-            subtotal_amount: remainingSubtotal,
-            transportation_charges: transport || null,
-            selection_charges: loading || null,
+            is_delivered: true,
+            total_quantity: totalQty,
+            subtotal_amount: subtotal,
+            transportation_charges: null,
+            selection_charges: null,
             apply_additional_9: applyGst,
             cgst_amount: cgst,
             sgst_amount: sgst,
             total_amount: totalAmount,
-            items: remainingChallanItems,
+            items: returnChallanItems,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
@@ -312,12 +297,22 @@ export async function POST(req: NextRequest) {
           allChallans.unshift(replacementChallan);
           saveAllChallans(allChallans);
 
-          // Firestore REST dual persistence
+          // Update matching credit note manual entry with new replacement challan details
           try {
-            await saveChallanToFirestoreRest(replacementChallan);
-          } catch (fErr) {
+            const { getManualLedgerEntries, saveManualLedgerEntries } = await import('@/lib/server-accounting');
+            const manualEntries = getManualLedgerEntries();
+            const mIdx = manualEntries.findIndex((m) => m.id === `vch_gr_${newReturn.id}` || m.voucher_no === newReturn.return_number);
+            if (mIdx >= 0) {
+              (manualEntries[mIdx] as any).replacement_challan_id = replacementChallan.id;
+              (manualEntries[mIdx] as any).replacement_challan_number = replacementChallan.challan_number;
+              saveManualLedgerEntries(manualEntries);
+            }
+          } catch {}
+
+          // Dual-sync to Firestore REST non-blockingly
+          saveChallanToFirestoreRest(replacementChallan).catch((fErr) => {
             console.warn('Firestore replacement challan save note:', fErr);
-          }
+          });
 
           // Record Audit Log for replacement challan
           recordAuditLog({
@@ -328,7 +323,7 @@ export async function POST(req: NextRequest) {
             user_name: session.name,
             action: 'CREATE',
             updated_values: replacementChallan,
-            reason: `Created delivered material challan ${replacementChallan.challan_number} excluding returned items against Challan ${challan_number}`,
+            reason: `Created Goods Return replacement challan ${replacementChallan.challan_number} for returned items against Challan ${challan_number}`,
           });
         }
       } catch (challanErr) {

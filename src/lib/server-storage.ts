@@ -588,5 +588,7 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
   }
 
   const localFallback = safeReadDataFile(filename, fallback);
+  inMemoryCache.set(filename, localFallback);
+  firestoreHydrated.add(filename);
   return localFallback;
 }

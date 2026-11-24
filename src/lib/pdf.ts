@@ -181,28 +181,40 @@ export function generateChallanPDF({
   doc.setTextColor(...goldColor);
   doc.text('Decor Studio', margin + (isA4 ? 18 : 15), y + (isA4 ? 10.8 : 8.8));
 
-  // Right Header: Rounded Pill Box ("PROFORMA INVOICE" / "DELIVERY CHALLAN" / "DELIVERY SLIP" / "OFFICE COPY")
+  // Right Header: Rounded Pill Box ("GOODS RETURN" / "PROFORMA INVOICE" / "DELIVERY CHALLAN" / "DELIVERY SLIP" / "OFFICE COPY")
+  const isGoodsReturnChallan =
+    Boolean((challan as any)?.is_goods_return) ||
+    challan.status === 'goods_returned' ||
+    Boolean(challan.reference_number && challan.reference_number.toUpperCase().includes('REPL/')) ||
+    Boolean(challan.notes && /goods return|replacement/i.test(challan.notes));
+
   const isOfficeCopy = Boolean(showBrandAndCode);
-  const titleText = isOfficeCopy
+  const titleText = isGoodsReturnChallan
+    ? 'GOODS RETURN'
+    : isOfficeCopy
     ? 'DELIVERY CHALLAN (OFFICE COPY)'
     : hideRate
     ? 'DELIVERY SLIP'
     : resolvedDocType;
+
   const boxWidth = isA4
-    ? (isOfficeCopy ? 72 : hideRate ? 48 : isPI ? 54 : 58)
-    : (isOfficeCopy ? 60 : hideRate ? 40 : isPI ? 44 : 48);
+    ? (isGoodsReturnChallan ? 54 : isOfficeCopy ? 72 : hideRate ? 48 : isPI ? 54 : 58)
+    : (isGoodsReturnChallan ? 44 : isOfficeCopy ? 60 : hideRate ? 40 : isPI ? 44 : 48);
   const boxHeight = isA4 ? 7.2 : 6.2;
   const boxX = pageWidth - margin - boxWidth;
   const boxY = y;
 
-  doc.setDrawColor(...blueColor);
+  const pillBorderColor: [number, number, number] = isGoodsReturnChallan ? [220, 38, 38] : blueColor;
+  const pillFillColor: [number, number, number] = isGoodsReturnChallan ? [254, 242, 242] : [252, 254, 255];
+
+  doc.setDrawColor(...pillBorderColor);
   doc.setLineWidth(0.5);
-  doc.setFillColor(252, 254, 255);
+  doc.setFillColor(...pillFillColor);
   doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 1.2, 1.2, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(isA4 ? (isOfficeCopy ? 8.2 : 9.8) : (isOfficeCopy ? 7.2 : 8.8));
-  doc.setTextColor(...blueColor);
+  doc.setTextColor(...pillBorderColor);
   doc.text(titleText, boxX + boxWidth / 2, boxY + (isA4 ? 4.9 : 4.3), { align: 'center' });
 
   // Separate Document Number, Staff PO & Date (Right side below pill)

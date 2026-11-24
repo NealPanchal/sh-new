@@ -961,6 +961,7 @@ export function addGoodsReturn(goodsReturn: GoodsReturn): GoodsReturn {
         customer_id: goodsReturn.customer_id,
         customer_name: goodsReturn.customer_name,
         site_name: goodsReturn.site_name || undefined,
+        challan_id: goodsReturn.challan_id,
         date: goodsReturn.return_date || new Date().toISOString().slice(0, 10),
         particulars: `By Goods Return [${goodsReturn.challan_number}]`,
         voucher_no: goodsReturn.return_number,
@@ -1614,6 +1615,8 @@ export function computeCustomerLedger(
     payment_id?: string;
     return_id?: string;
     manual_id?: string;
+    replacement_challan_id?: string;
+    replacement_challan_number?: string;
     is_paid?: boolean;
     paid_amount?: number;
     payment_status?: 'paid' | 'partial' | 'unpaid';
@@ -1868,6 +1871,15 @@ export function computeCustomerLedger(
     const amt = Number(gr.total_return_amount) || 0;
     if (amt > 0) {
       const linkedChallanId = challanLookup.get(gr.challan_number.trim().toLowerCase());
+      const origNo = gr.challan_number.trim().toLowerCase();
+      const rep = challans.find(
+        (c) =>
+          !c.is_deleted &&
+          ((c.reference_number && c.reference_number.trim().toLowerCase() === `repl/${origNo}`) ||
+           (c.notes && c.notes.includes(gr.return_number)) ||
+           (Boolean((c as any).is_goods_return) && c.customer_id === gr.customer_id && (c.notes?.includes(gr.challan_number) || c.reference_number?.includes(gr.challan_number))))
+      );
+
       rawEntries.push({
         date: gr.return_date || gr.created_at,
         particulars: `By Goods Return [${gr.challan_number}]`,
@@ -1880,6 +1892,8 @@ export function computeCustomerLedger(
         credit: amt,
         challan_id: linkedChallanId,
         return_id: gr.id,
+        replacement_challan_id: rep?.id,
+        replacement_challan_number: rep?.challan_number,
         created_at: gr.created_at || gr.return_date,
       });
     }
@@ -2000,6 +2014,8 @@ export function computeCustomerLedger(
       payment_id: item.payment_id,
       return_id: item.return_id,
       manual_id: item.manual_id,
+      replacement_challan_id: item.replacement_challan_id,
+      replacement_challan_number: item.replacement_challan_number,
       is_paid: item.is_paid,
       paid_amount: item.paid_amount,
       payment_status: item.payment_status,

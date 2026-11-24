@@ -25,11 +25,13 @@ export async function GET(req: NextRequest) {
   const typeFilter = searchParams.get('type') || undefined;
 
   try {
-    await syncFromFirestoreIfCold('manual_ledger_entries.json', []);
-    await syncFromFirestoreIfCold('payments.json', []);
-    await syncFromFirestoreIfCold('customers.json', []);
-    await syncFromFirestoreIfCold('challans.json', []);
-    await syncFromFirestoreIfCold('goods_returns.json', []);
+    await Promise.all([
+      syncFromFirestoreIfCold('manual_ledger_entries.json', []),
+      syncFromFirestoreIfCold('payments.json', []),
+      syncFromFirestoreIfCold('customers.json', []),
+      syncFromFirestoreIfCold('challans.json', []),
+      syncFromFirestoreIfCold('goods_returns.json', []),
+    ]);
 
     const session = getAuthenticatedSession(req);
     const isEmployee = session?.role === 'employee';
