@@ -60,6 +60,8 @@ function CreateChallanContent() {
   const preselectedCustomerId = searchParams.get('customerId');
   const preselectedQuotationId = searchParams.get('quotationId');
   const preselectedReturnId = searchParams.get('returnId');
+  const preselectedSite = searchParams.get('site');
+  const preselectedSiteId = searchParams.get('siteId');
   const {
     customers,
     products,
@@ -72,6 +74,7 @@ function CreateChallanContent() {
     getNextStaffPONumber,
     createChallan,
     createCustomer,
+    updateCustomer,
     profile,
     currentUser,
     isEmployee,
@@ -551,9 +554,21 @@ function CreateChallanContent() {
   useEffect(() => {
     if (preselectedCustomerId) {
       const c = getCustomer(preselectedCustomerId);
-      if (c) selectCustomer(c);
+      if (c) {
+        selectCustomer(c);
+        if (preselectedSite) {
+          setSelectedSiteName(preselectedSite);
+          if (preselectedSiteId) setSelectedSiteId(preselectedSiteId);
+          const foundSite = c.sites?.find(
+            (s) =>
+              (preselectedSiteId && s.id === preselectedSiteId) ||
+              (s.site_name && s.site_name.toLowerCase() === preselectedSite.toLowerCase())
+          );
+          if (foundSite?.site_address) setDeliveryAddress(foundSite.site_address);
+        }
+      }
     }
-  }, [preselectedCustomerId, getCustomer]);
+  }, [preselectedCustomerId, preselectedSite, preselectedSiteId, getCustomer]);
 
   // Pre-load from quotation if quotationId is passed in URL
   useEffect(() => {
@@ -878,17 +893,79 @@ function CreateChallanContent() {
         );
         if (existing) {
           finalCustomerId = existing.id;
+          if (selectedSiteName && selectedSiteName !== 'All Sites') {
+            const existingSites = Array.isArray(existing.sites) ? [...existing.sites] : [];
+            const siteExists = existingSites.some(
+              (s) =>
+                (selectedSiteId && s.id === selectedSiteId) ||
+                (s.site_name && s.site_name.toLowerCase() === selectedSiteName.toLowerCase())
+            );
+            if (!siteExists) {
+              updateCustomer(existing.id, {
+                sites: [
+                  ...existingSites,
+                  {
+                    id: selectedSiteId || `site_${existing.id}_${Date.now()}`,
+                    customer_id: existing.id,
+                    site_name: selectedSiteName,
+                    site_address: deliveryAddress.trim() || existing.delivery_address || 'Thane (W)',
+                    is_active: true,
+                    created_at: new Date().toISOString(),
+                  },
+                ],
+              });
+            }
+          }
         } else {
           try {
+            const initialSites =
+              selectedSiteName && selectedSiteName !== 'All Sites'
+                ? [
+                    {
+                      id: selectedSiteId || `site_cust_${Date.now()}`,
+                      customer_id: '',
+                      site_name: selectedSiteName,
+                      site_address: deliveryAddress.trim() || 'Thane (W)',
+                      is_active: true,
+                      created_at: new Date().toISOString(),
+                    },
+                  ]
+                : [];
             const newCust = createCustomer({
               business_name: customerName.trim(),
               phone: customerPhone.trim(),
               delivery_address: deliveryAddress.trim(),
               billing_address: deliveryAddress.trim(),
+              sites: initialSites,
             });
             finalCustomerId = newCust.id;
           } catch {
             // Non-blocking fallback
+          }
+        }
+      } else if (finalCustomerId && selectedSiteName && selectedSiteName !== 'All Sites') {
+        const cust = customers.find((c) => c.id === finalCustomerId);
+        if (cust) {
+          const existingSites = Array.isArray(cust.sites) ? [...cust.sites] : [];
+          const siteExists = existingSites.some(
+            (s) =>
+              (selectedSiteId && s.id === selectedSiteId) ||
+              (s.site_name && s.site_name.toLowerCase() === selectedSiteName.toLowerCase())
+          );
+          if (!siteExists) {
+            updateCustomer(cust.id, {
+              sites: [
+                ...existingSites,
+                {
+                  id: selectedSiteId || `site_${cust.id}_${Date.now()}`,
+                  customer_id: cust.id,
+                  site_name: selectedSiteName,
+                  site_address: deliveryAddress.trim() || cust.delivery_address || 'Thane (W)',
+                  is_active: true,
+                  created_at: new Date().toISOString(),
+                },
+              ],
+            });
           }
         }
       }

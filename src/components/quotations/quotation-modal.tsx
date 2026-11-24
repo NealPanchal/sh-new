@@ -528,7 +528,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="e.g. Validity: 1 Week | 50% advance, remaining on delivery."
+                placeholder="1. Interest @ 21% will be charged if payment not made within 7 days&#10;2. 100% Advance Payment&#10;3. Goods once sold will not be taken back or exchanged"
                 className="input text-xs w-full py-1.5 bg-white"
               />
 

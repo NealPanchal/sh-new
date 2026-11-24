@@ -30,6 +30,35 @@ import {
   broadcastChallansUpdate,
 } from '@/lib/firebase-service';
 
+/** Safely get auth token for client-side API calls without crashing on SSR */
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (typeof window === 'undefined') return headers;
+  try {
+    const token =
+      localStorage.getItem('showhouse_admin_token') ||
+      localStorage.getItem('showhouse_auth_token') ||
+      sessionStorage.getItem('showhouse_admin_token') ||
+      sessionStorage.getItem('showhouse_auth_token') ||
+      document.cookie.match(/sh_admin_session=([^;]+)/)?.[1] ||
+      document.cookie.match(/sh_auth_token=([^;]+)/)?.[1] ||
+      null;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  } catch {}
+  return headers;
+}
+
+/** Fire-and-forget server API POST */
+function serverPost(url: string, body: unknown) {
+  if (typeof window === 'undefined') return;
+  fetch(url, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+
 const STORAGE_KEY = 'showhouse_demo_data';
 const DELETED_CHALLANS_KEY = 'showhouse_deleted_challans';
 const DEMO_SEEDED_KEY = 'showhouse_demo_seeded_v1';
@@ -293,13 +322,7 @@ export function createCustomer(data: Partial<Customer>): Customer {
   saveCustomerToFirebase(customer).catch((err) =>
     console.warn('Firebase saveCustomer sync:', err)
   );
-  if (typeof window !== 'undefined') {
-    fetch('/api/customers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(customer),
-    }).catch(() => {});
-  }
+  serverPost('/api/customers', customer);
   return customer;
 }
 
@@ -332,13 +355,7 @@ export function updateCustomer(id: string, data: Partial<Customer>): Customer | 
   saveCustomerToFirebase(state.customers[idx]).catch((err) =>
     console.warn('Firebase updateCustomer sync:', err)
   );
-  if (typeof window !== 'undefined') {
-    fetch('/api/customers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state.customers[idx]),
-    }).catch(() => {});
-  }
+  serverPost('/api/customers', state.customers[idx]);
   return state.customers[idx];
 }
 
@@ -929,6 +946,55 @@ export function createChallan(
     console.warn('Firebase saveChallan sync:', err)
   );
   broadcastChallansUpdate(state.challans);
+
+  // Auto-sync challan materials to customer's permanent agreed rates & ensure site is saved
+  if (challan.customer_id) {
+    autoSyncCustomerMaterialRates(
+      challan.customer_id,
+      challanItems.map((ci) => ({
+        item_description: ci.item_description,
+        brand: ci.brand,
+        colour_finish: ci.colour_finish,
+        size: ci.size,
+        unit: ci.unit,
+        rate: ci.rate != null ? ci.rate : undefined,
+      })),
+      challan.site_id,
+      challan.site_name
+    );
+
+    if (challan.site_name && challan.site_name !== 'All Sites') {
+      const custIdx = state.customers.findIndex((c) => c.id === challan.customer_id);
+      if (custIdx !== -1) {
+        const cust = state.customers[custIdx];
+        const existingSites = Array.isArray(cust.sites) ? [...cust.sites] : [];
+        const siteExists = existingSites.some(
+          (s) =>
+            (challan.site_id && s.id === challan.site_id) ||
+            (s.site_name && s.site_name.toLowerCase() === challan.site_name!.toLowerCase())
+        );
+        if (!siteExists) {
+          existingSites.push({
+            id: challan.site_id || `site_${cust.id}_${Date.now()}`,
+            customer_id: cust.id,
+            site_name: challan.site_name,
+            site_address: challan.delivery_address || cust.delivery_address || 'Thane (W)',
+            is_active: true,
+            created_at: new Date().toISOString(),
+          });
+          state.customers[custIdx] = {
+            ...cust,
+            sites: existingSites,
+            updated_at: new Date().toISOString(),
+          };
+          saveState(state);
+          saveCustomerToFirebase(state.customers[custIdx]).catch(() => {});
+          serverPost('/api/customers', state.customers[custIdx]);
+        }
+      }
+    }
+  }
+
   return challan;
 }
 
@@ -1744,14 +1810,9 @@ function autoSyncCustomerMaterialRates(
     material_rates: updatedRates,
     updated_at: new Date().toISOString(),
   };
+  saveState(state);
   saveCustomerToFirebase(state.customers[custIdx]).catch(() => {});
-  if (typeof window !== 'undefined') {
-    fetch('/api/customers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state.customers[custIdx]),
-    }).catch(() => {});
-  }
+  serverPost('/api/customers', state.customers[custIdx]);
 }
 
 export function createQuotation(data: Partial<Quotation>, items: Partial<QuotationItem>[]): Quotation {
@@ -1820,19 +1881,44 @@ export function createQuotation(data: Partial<Quotation>, items: Partial<Quotati
   state.quotations.push(quotation);
   saveState(state);
 
-  // Auto-sync quoted materials to customer's permanent agreed material_rates
+  // Auto-sync quoted materials to customer's permanent agreed material_rates & save site
   if (quotation.customer_id) {
     autoSyncCustomerMaterialRates(quotation.customer_id, cleanItems, quotation.site_id, quotation.site_name);
+
+    if (quotation.site_name && quotation.site_name !== 'All Sites') {
+      const custIdx = state.customers.findIndex((c) => c.id === quotation.customer_id);
+      if (custIdx !== -1) {
+        const cust = state.customers[custIdx];
+        const existingSites = Array.isArray(cust.sites) ? [...cust.sites] : [];
+        const siteExists = existingSites.some(
+          (s) =>
+            (quotation.site_id && s.id === quotation.site_id) ||
+            (s.site_name && s.site_name.toLowerCase() === quotation.site_name!.toLowerCase())
+        );
+        if (!siteExists) {
+          existingSites.push({
+            id: quotation.site_id || `site_${cust.id}_${Date.now()}`,
+            customer_id: cust.id,
+            site_name: quotation.site_name,
+            site_address: quotation.delivery_address || cust.delivery_address || 'Thane (W)',
+            is_active: true,
+            created_at: new Date().toISOString(),
+          });
+          state.customers[custIdx] = {
+            ...cust,
+            sites: existingSites,
+            updated_at: new Date().toISOString(),
+          };
+          saveState(state);
+          saveCustomerToFirebase(state.customers[custIdx]).catch(() => {});
+          serverPost('/api/customers', state.customers[custIdx]);
+        }
+      }
+    }
   }
 
-  // Dual sync quotation to server API
-  if (typeof window !== 'undefined') {
-    fetch('/api/quotations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(quotation),
-    }).catch(() => {});
-  }
+  // Dual sync quotation to server API (with auth)
+  serverPost('/api/quotations', quotation);
 
   return quotation;
 }
@@ -1899,15 +1985,40 @@ export function updateQuotation(id: string, data: Partial<Quotation>, items?: Pa
   const updatedQ = state.quotations[idx];
   if (updatedQ.customer_id) {
     autoSyncCustomerMaterialRates(updatedQ.customer_id, cleanItems, updatedQ.site_id, updatedQ.site_name);
+
+    if (updatedQ.site_name && updatedQ.site_name !== 'All Sites') {
+      const custIdx = state.customers.findIndex((c) => c.id === updatedQ.customer_id);
+      if (custIdx !== -1) {
+        const cust = state.customers[custIdx];
+        const existingSites = Array.isArray(cust.sites) ? [...cust.sites] : [];
+        const siteExists = existingSites.some(
+          (s) =>
+            (updatedQ.site_id && s.id === updatedQ.site_id) ||
+            (s.site_name && s.site_name.toLowerCase() === updatedQ.site_name!.toLowerCase())
+        );
+        if (!siteExists) {
+          existingSites.push({
+            id: updatedQ.site_id || `site_${cust.id}_${Date.now()}`,
+            customer_id: cust.id,
+            site_name: updatedQ.site_name,
+            site_address: updatedQ.delivery_address || cust.delivery_address || 'Thane (W)',
+            is_active: true,
+            created_at: new Date().toISOString(),
+          });
+          state.customers[custIdx] = {
+            ...cust,
+            sites: existingSites,
+            updated_at: new Date().toISOString(),
+          };
+          saveState(state);
+          saveCustomerToFirebase(state.customers[custIdx]).catch(() => {});
+          serverPost('/api/customers', state.customers[custIdx]);
+        }
+      }
+    }
   }
 
-  if (typeof window !== 'undefined') {
-    fetch('/api/quotations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedQ),
-    }).catch(() => {});
-  }
+  serverPost('/api/quotations', updatedQ);
 
   return state.quotations[idx];
 }

@@ -477,9 +477,11 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(isA4 ? 5.8 : 5.0);
   doc.setTextColor(50, 50, 50);
-  doc.text('• Validity: 15 Days | Agreed rates locked for approved site scope.', leftX, termsY);
+  doc.text('• Interest @ 21% will be charged if the payment of bill not made with 7 days', leftX, termsY);
   termsY += isA4 ? 2.8 : 2.6;
-  doc.text('• Quantities verified & billed during delivery challan dispatch. Rates excl. GST.', leftX, termsY);
+  doc.text('• 100% Advance Payment', leftX, termsY);
+  termsY += isA4 ? 2.8 : 2.6;
+  doc.text('• Goods once sold will not be taken back or exchanged', leftX, termsY);
 
   // 4. Client / Architect Approval Signature line
   const sigDividerY = y + (isA4 ? 39.5 : 38.5);

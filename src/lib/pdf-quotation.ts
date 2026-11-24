@@ -488,11 +488,13 @@ export function exportQuotationToPDF(
   termsY += isA4 ? 3.2 : 2.8;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(isA4 ? 6.0 : 5.0);
+  doc.setFontSize(isA4 ? 5.8 : 4.8);
   doc.setTextColor(50, 50, 50);
-  doc.text('• Validity: 15 Days | Agreed rates locked for approved site scope.', leftX, termsY);
-  termsY += isA4 ? 3.0 : 2.6;
-  doc.text('• Delivery: within 2 days of confirmation | 50% advance, 50% on delivery.', leftX, termsY);
+  doc.text('• Interest @ 21% will be charged if the payment of bill not made with 7 days', leftX, termsY);
+  termsY += isA4 ? 2.8 : 2.4;
+  doc.text('• 100% Advance Payment', leftX, termsY);
+  termsY += isA4 ? 2.8 : 2.4;
+  doc.text('• Goods once sold will not be taken back or exchanged', leftX, termsY);
 
   // 4. Client Acceptance Signature
   const termsEndDividerY = boxY + (isA4 ? 44.5 : 37.5);

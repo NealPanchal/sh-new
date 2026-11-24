@@ -410,23 +410,60 @@ function CreateQuotationContent() {
     try {
       setIsSaving(true);
 
-      // 1. Ensure Customer exists
+      // 1. Ensure Customer exists and sites are retained
       let custId = selectedCustomerId;
       let targetCust = matchedCustomer;
 
       if (!targetCust && customerName.trim()) {
+        const initialSites = selectedSiteName && selectedSiteName !== 'All Sites'
+          ? [{
+              id: selectedSiteId || `site_cust_${Date.now()}`,
+              customer_id: '',
+              site_name: selectedSiteName,
+              site_address: deliveryAddress.trim() || 'Thane (W)',
+              is_active: true,
+              created_at: new Date().toISOString(),
+            }]
+          : [];
         const newCust = createCustomer({
           name: customerName.trim(),
           business_name: customerName.trim(),
           phone: customerPhone.trim() || undefined,
           delivery_address: deliveryAddress.trim() || undefined,
           billing_address: deliveryAddress.trim() || undefined,
+          sites: initialSites,
         });
         custId = newCust.id;
         targetCust = newCust;
         setSelectedCustomerId(newCust.id);
-      } else if (targetCust && customerPhone.trim() && !targetCust.phone) {
-        targetCust.phone = customerPhone.trim();
+      } else if (targetCust) {
+        const existingSites = Array.isArray(targetCust.sites) ? [...targetCust.sites] : [];
+        let updatedSites = existingSites;
+        if (selectedSiteName && selectedSiteName !== 'All Sites') {
+          const siteExists = existingSites.some(
+            (s) =>
+              (selectedSiteId && s.id === selectedSiteId) ||
+              (s.site_name && s.site_name.toLowerCase() === selectedSiteName.toLowerCase())
+          );
+          if (!siteExists) {
+            updatedSites = [
+              ...existingSites,
+              {
+                id: selectedSiteId || `site_${targetCust.id}_${Date.now()}`,
+                customer_id: targetCust.id,
+                site_name: selectedSiteName,
+                site_address: deliveryAddress.trim() || targetCust.delivery_address || 'Thane (W)',
+                is_active: true,
+                created_at: new Date().toISOString(),
+              },
+            ];
+          }
+        }
+        updateCustomer(targetCust.id, {
+          phone: customerPhone.trim() || targetCust.phone,
+          delivery_address: deliveryAddress.trim() || targetCust.delivery_address,
+          sites: updatedSites,
+        });
       }
 
       // 2. Build Quotation Payload
@@ -478,7 +515,9 @@ function CreateQuotationContent() {
         exportQuotationToPDF(saved, profile, 'a4');
         showToast('Downloaded Quotation PDF!', 'success');
       } else if (action === 'challan') {
-        router.push(`/challans/new?customerId=${encodeURIComponent(saved.customer_id)}&quotationId=${encodeURIComponent(saved.id)}`);
+        router.push(
+          `/challans/new?customerId=${encodeURIComponent(saved.customer_id)}&quotationId=${encodeURIComponent(saved.id)}&site=${encodeURIComponent(saved.site_name || '')}&siteId=${encodeURIComponent(saved.site_id || '')}`
+        );
         return;
       }
 
@@ -930,8 +969,9 @@ function CreateQuotationContent() {
               onChange={(e) => setNotes(e.target.value)}
             />
             <div className="text-[11px] text-surface-500 space-y-0.5">
-              <p>• Validity: 15 Days from quotation date.</p>
-              <p>• Delivery: Dispatched to selected site upon order confirmation.</p>
+              <p>• Interest @ 21% will be charged if payment not made within 7 days</p>
+              <p>• 100% Advance Payment</p>
+              <p>• Goods once sold will not be taken back or exchanged</p>
             </div>
           </div>
 
