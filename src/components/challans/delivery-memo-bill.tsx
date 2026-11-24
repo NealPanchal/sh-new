@@ -421,10 +421,10 @@ export function DeliveryMemoBill({
           <div className="grid grid-cols-12 gap-3 items-end">
             {/* Left Terms & Conditions */}
             <div className="col-span-7 text-[9px] text-surface-500 leading-tight space-y-0.5">
-              <p>• Interest @ 21% will be charged if the payment of the bill not made within 7 days</p>
+              <p>• Interest @ 21% will be charged if the payment of bill not made with 7 days</p>
+              <p>• 100% Advance Payment</p>
+              <p>• Goods once sold will not be taken back or exchanged</p>
               <p>• 18% GST applicable on all billing</p>
-              <p>• Payment by A/C payee cheque only</p>
-              <p>• Goods once sold will not be taken back or exchanged after 24hrs of delivery</p>
               <p>• Subject to Maharashtra Jurisdiction</p>
             </div>
 

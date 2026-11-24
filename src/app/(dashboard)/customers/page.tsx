@@ -84,6 +84,7 @@ export default function CustomersPage() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'architects' | 'clients'>('all');
   const [staffFilter, setStaffFilter] = useState('all');
+  const [selectedSiteFilter, setSelectedSiteFilter] = useState('all');
 
   // Modals
   const [showForm, setShowForm] = useState(false);
@@ -184,6 +185,20 @@ export default function CustomersPage() {
     return accessibleCustomers.filter((c) => !isCustomerArchitect(c));
   }, [accessibleCustomers, isCustomerArchitect]);
 
+  // Extract all configured sites across accessible customers
+  const allUniqueSites = useMemo(() => {
+    const set = new Set<string>();
+    accessibleCustomers.forEach((c) => {
+      if (Array.isArray(c.sites)) {
+        c.sites.forEach((s) => {
+          const sName = (s.site_name || s.name || '').trim();
+          if (sName) set.add(sName);
+        });
+      }
+    });
+    return Array.from(set).sort();
+  }, [accessibleCustomers]);
+
   // Tab & Search Filtered List
   const displayCustomers = useMemo(() => {
     let list = accessibleCustomers;
@@ -192,6 +207,20 @@ export default function CustomersPage() {
       list = allArchitects;
     } else if (activeTab === 'clients') {
       list = allClients;
+    }
+
+    if (selectedSiteFilter !== 'all') {
+      const targetSite = selectedSiteFilter.toLowerCase();
+      list = list.filter((c) => {
+        if (Array.isArray(c.sites) && c.sites.length > 0) {
+          return c.sites.some(
+            (s) =>
+              (s.site_name || '').toLowerCase() === targetSite ||
+              (s.name || '').toLowerCase() === targetSite
+          );
+        }
+        return false;
+      });
     }
 
     if (search.trim()) {
@@ -203,12 +232,18 @@ export default function CustomersPage() {
           (c.contact_person && c.contact_person.toLowerCase().includes(q)) ||
           (c.email && c.email.toLowerCase().includes(q)) ||
           (c.architect_firm && c.architect_firm.toLowerCase().includes(q)) ||
-          (c.delivery_address && c.delivery_address.toLowerCase().includes(q))
+          (c.delivery_address && c.delivery_address.toLowerCase().includes(q)) ||
+          (Array.isArray(c.sites) &&
+            c.sites.some(
+              (s) =>
+                (s.site_name && s.site_name.toLowerCase().includes(q)) ||
+                (s.site_address && s.site_address.toLowerCase().includes(q))
+            ))
       );
     }
 
     return list;
-  }, [accessibleCustomers, activeTab, allArchitects, allClients, search]);
+  }, [accessibleCustomers, activeTab, allArchitects, allClients, selectedSiteFilter, search]);
 
   // Initialize selected architect IDs when modal opens
   const handleOpenBroadcastModal = () => {
@@ -495,6 +530,24 @@ export default function CustomersPage() {
               )}
             </div>
 
+            {/* Site Filter Dropdown */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Building2 size={14} className="text-[#ea580c] hidden sm:inline" />
+              <select
+                value={selectedSiteFilter}
+                onChange={(e) => setSelectedSiteFilter(e.target.value)}
+                className="select text-xs py-1.5 font-bold text-surface-800 bg-surface-50 border-surface-300 rounded-lg max-w-[170px]"
+                title="Filter customers by delivery site"
+              >
+                <option value="all">All Sites ({allUniqueSites.length})</option>
+                {allUniqueSites.map((site) => (
+                  <option key={site} value={site}>
+                    📍 {site}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Admin Staff Filter Dropdown (Role Protected) */}
             {!isEmp && (
               <div className="flex items-center gap-1.5 shrink-0">
@@ -662,6 +715,21 @@ export default function CustomersPage() {
                       <span className="truncate">{c.delivery_address || c.billing_address}</span>
                     </div>
                   )}
+                  {Array.isArray(c.sites) && c.sites.length > 0 && (
+                    <div className="pt-1 flex flex-wrap gap-1">
+                      {c.sites.map((s, idx) => (
+                        <button
+                          key={s.id || idx}
+                          type="button"
+                          onClick={() => setSelectedSiteFilter(s.site_name || s.name || '')}
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold bg-orange-50 text-[#ea580c] border border-orange-200"
+                        >
+                          <Building2 size={10} />
+                          <span>{s.site_name || s.name || `Site ${idx + 1}`}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {c.creator_name && (
                     <div className="text-[10px] text-surface-400 pt-0.5">
                       Added by: <strong>{c.creator_name}</strong>
@@ -684,6 +752,7 @@ export default function CustomersPage() {
                 <th>Type</th>
                 <th>Contact Person</th>
                 <th>Phone / WhatsApp</th>
+                <th>Sites / Projects</th>
                 <th>Studio / Site Address</th>
                 <th>Added By</th>
                 <th className="text-right">Actions</th>
@@ -692,7 +761,7 @@ export default function CustomersPage() {
             <tbody className="divide-y divide-surface-100">
               {displayCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-10 text-xs text-surface-400 space-y-1">
+                  <td colSpan={8} className="text-center py-10 text-xs text-surface-400 space-y-1">
                     <p className="font-bold text-surface-700">No parties found</p>
                     <p className="text-[11px]">
                       {isEmp
@@ -787,6 +856,28 @@ export default function CustomersPage() {
                           </div>
                         ) : (
                           '—'
+                        )}
+                      </td>
+
+                      {/* Sites / Projects */}
+                      <td className="text-xs">
+                        {Array.isArray(c.sites) && c.sites.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[220px]">
+                            {c.sites.map((s, idx) => (
+                              <button
+                                key={s.id || idx}
+                                type="button"
+                                onClick={() => setSelectedSiteFilter(s.site_name || s.name || '')}
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-[#ea580c] border border-orange-200 hover:bg-orange-100 cursor-pointer"
+                                title={s.site_address || s.location || ''}
+                              >
+                                <Building2 size={10} />
+                                <span>{s.site_name || s.name || `Site ${idx + 1}`}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-surface-400 italic">Primary only</span>
                         )}
                       </td>
 

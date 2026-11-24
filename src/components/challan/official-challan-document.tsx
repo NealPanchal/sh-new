@@ -264,10 +264,21 @@ export function OfficialChallanDocument({
         </div>
 
         {/* Sub-row: Terms & Conditions */}
-        <div className="border-t border-black/30 p-2.5 text-[10px] space-y-0.5 leading-snug">
+        <div className="border-t border-black/30 p-2 text-[9.5px] space-y-0.5 leading-snug">
           <div className="font-bold uppercase text-black">TERMS &amp; CONDITIONS :</div>
-          <div>• Validity: 1 Week | Wallpaper &amp; Laminate rates include installation.</div>
-          <div>• Delivery: within 2 days of confirmation | 50% advance, 50% on delivery.</div>
+          {profile?.terms_conditions ? (
+            profile.terms_conditions
+              .split('\n')
+              .map((t) => t.trim().replace(/^\d+[\.\)]\s*/, '• '))
+              .filter(Boolean)
+              .map((term, i) => <div key={i}>{term.startsWith('•') ? term : `• ${term}`}</div>)
+          ) : (
+            <>
+              <div>• Interest @ 21% will be charged if the payment of bill not made with 7 days</div>
+              <div>• 100% Advance Payment</div>
+              <div>• Goods once sold will not be taken back or exchanged</div>
+            </>
+          )}
         </div>
 
         {/* Sub-row: Receiver's Signature (With dedicated ample signing space) */}

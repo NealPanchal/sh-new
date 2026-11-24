@@ -4,6 +4,7 @@
  */
 
 import { Challan } from '@/types';
+import { safeWriteDataFile } from './server-storage';
 import {
   saveDocToSupabase,
   fetchDocFromSupabase,
@@ -167,7 +168,12 @@ export async function fetchAllChallansFromFirestore(): Promise<Challan[]> {
     const supaDocs = await fetchCollectionDocsFromSupabase('challans');
     if (Array.isArray(supaDocs) && supaDocs.length > 0) {
       const valid = supaDocs.filter((c: any) => c && !c.is_deleted && c.id !== 'all_challans');
-      if (valid.length > 0) return valid as Challan[];
+      if (valid.length > 0) {
+        try {
+          safeWriteDataFile('challans.json', valid);
+        } catch {}
+        return valid as Challan[];
+      }
     }
   } catch { }
 

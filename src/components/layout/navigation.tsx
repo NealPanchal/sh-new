@@ -27,6 +27,7 @@ import {
   Download,
   ChevronRight,
   Truck,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logoutAdmin, getCurrentUser } from '@/lib/auth';
@@ -35,7 +36,9 @@ import { UserRole } from '@/types';
 export const allNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/challans/new', label: 'New Challan', icon: FilePlus },
+  { href: '/quotations/new', label: 'New Quotation', icon: FileSpreadsheet },
   { href: '/challans', label: 'All Challans', icon: FileText },
+  { href: '/quotations', label: 'Quotations', icon: FileSpreadsheet },
   { href: '/delivery', label: 'Delivery Status', icon: Truck },
   { href: '/bills', label: 'Delivery Bills', icon: Receipt },
   { href: '/customers', label: 'Customers', icon: Users },

@@ -698,5 +698,24 @@
     "gstin": null,
     "company_name": "Vrushank",
     "opening_balance": 0
+  },
+  {
+    "id": "4bf00aa6-0b94-4891-8564-c51ad58bc1a8",
+    "user_id": "admin",
+    "name": "Formete Engineering",
+    "business_name": "Formete Engineering",
+    "company_name": "Formete Engineering",
+    "contact_person": "Formete Engineering",
+    "phone": "8554867094",
+    "billing_address": "Tata Thermal Power Plant, Trombay, Bombay",
+    "delivery_address": "Tata Thermal Power Plant, Trombay, Bombay",
+    "gstin": null,
+    "notes": null,
+    "is_active": true,
+    "opening_balance": 0,
+    "credit_days": 45,
+    "credit_limit": 200000,
+    "created_at": "2026-11-23T12:46:09.890Z",
+    "updated_at": "2026-11-23T12:46:10.237Z"
   }
 ]

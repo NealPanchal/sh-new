@@ -88,18 +88,33 @@ export function CustomerFormModal({ editId, onClose }: CustomerFormModalProps) {
   }, [editId, getCustomer, reset]);
 
   const onSubmit = (data: CustomerFormValues) => {
-    const validSites = customerSites
-      .filter((s) => s.site_address?.trim())
+    let validSites = customerSites
+      .filter((s) => (s.site_name && s.site_name.trim()) || (s.site_address && s.site_address.trim()))
       .map((s, idx) => ({
         id: s.id || `site_${editId || 'new'}_${Date.now()}_${idx}`,
         customer_id: editId || '',
         site_name: s.site_name?.trim() || `Site ${idx + 1}`,
         name: s.site_name?.trim() || `Site ${idx + 1}`,
-        site_address: s.site_address.trim(),
-        location: s.site_address.trim(),
+        site_address: s.site_address?.trim() || data.delivery_address?.trim() || '',
+        location: s.site_address?.trim() || data.delivery_address?.trim() || '',
         created_at: new Date().toISOString(),
         is_active: true,
       }));
+
+    if (validSites.length === 0 && data.delivery_address?.trim()) {
+      validSites = [
+        {
+          id: `site_${editId || 'new'}_${Date.now()}_0`,
+          customer_id: editId || '',
+          site_name: 'Site 1',
+          name: 'Site 1',
+          site_address: data.delivery_address.trim(),
+          location: data.delivery_address.trim(),
+          created_at: new Date().toISOString(),
+          is_active: true,
+        },
+      ];
+    }
 
     const user = getCurrentUser();
     const cleanContact = data.contact_person.trim();

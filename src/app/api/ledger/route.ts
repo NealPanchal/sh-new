@@ -5,6 +5,7 @@ import { syncFromFirestoreIfCold } from '@/lib/server-storage';
 import { deleteDocFromFirestoreRest } from '@/lib/server-firestore';
 import {
   computeCustomerLedger,
+  computeAllPartiesLedgerSummary,
   addManualLedgerEntry,
   deleteManualLedgerEntry,
   deleteLedgerEntry,
@@ -15,6 +16,7 @@ import {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const customerId = searchParams.get('customerId');
+  const summary = searchParams.get('summary');
   const customerName = searchParams.get('customerName') || undefined;
   const siteId = searchParams.get('siteId') || undefined;
   const siteName = searchParams.get('siteName') || undefined;
@@ -22,14 +24,21 @@ export async function GET(req: NextRequest) {
   const toDate = searchParams.get('toDate') || undefined;
   const typeFilter = searchParams.get('type') || undefined;
 
-  if (!customerId) {
-    return NextResponse.json({ success: false, error: 'Customer ID is required' }, { status: 400 });
-  }
-
   try {
     await syncFromFirestoreIfCold('manual_ledger_entries.json', []);
     await syncFromFirestoreIfCold('payments.json', []);
     await syncFromFirestoreIfCold('customers.json', []);
+    await syncFromFirestoreIfCold('challans.json', []);
+
+    // Overall summary across all parties
+    if (summary === 'all' || customerId === 'all') {
+      const summaryResult = computeAllPartiesLedgerSummary();
+      return NextResponse.json({ success: true, allPartiesSummary: summaryResult });
+    }
+
+    if (!customerId) {
+      return NextResponse.json({ success: false, error: 'Customer ID is required' }, { status: 400 });
+    }
 
     const result = computeCustomerLedger(customerId, {
       customerName,

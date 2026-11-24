@@ -819,9 +819,9 @@ export function generateQuotationWhatsAppMessage(
 
   // Terms
   msg += `*TERMS & CONDITIONS:*\n`;
-  msg += `• Validity: 1 Week\n`;
-  msg += `• Payment: 50% advance with confirmation, remaining on delivery\n`;
-  msg += `• Delivery: Within 2 days of order confirmation\n\n`;
+  msg += `• Interest @ 21% will be charged if payment not made within 7 days\n`;
+  msg += `• 100% Advance Payment\n`;
+  msg += `• Goods once sold will not be taken back or exchanged\n\n`;
 
   msg += `_" YOUR CONCEPTS, OUR DESIGNS "_\n`;
   msg += `📞 +91 93248 69306 / 022 - 2538 7683`;

@@ -37,6 +37,7 @@ import {
   ChevronDown,
   CalendarClock,
   Copy,
+  ArrowRight,
 } from 'lucide-react';
 import { Customer, CustomerSite, CustomerLedgerEntry, PaymentMode } from '@/types';
 import { useApp } from '@/lib/context';
@@ -222,7 +223,37 @@ function MasterPartyLedgerContent() {
 
   // Customer & Site lists
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+
+  // Overall All Parties Summary Data
+  const [allPartiesData, setAllPartiesData] = useState<{
+    summary: {
+      totalParties: number;
+      totalDebit: number;
+      totalCredit: number;
+      totalOutstanding: number;
+      totalReceivable: number;
+      totalPayable: number;
+    };
+    parties: Array<{
+      id: string;
+      name: string;
+      business_name: string;
+      contact_person: string;
+      phone: string;
+      is_architect: boolean;
+      credit_status: string;
+      sites_count: number;
+      sites: string[];
+      opening_balance: number;
+      total_debit: number;
+      total_credit: number;
+      closing_balance: number;
+      last_activity_date?: string;
+    }>;
+  } | null>(null);
+  const [allPartiesSearch, setAllPartiesSearch] = useState('');
+  const [allPartiesFilter, setAllPartiesFilter] = useState<'all' | 'pending' | 'settled'>('all');
 
   // Clear Ledger state
   const [showDeleteEntireLedgerModal, setShowDeleteEntireLedgerModal] = useState(false);
@@ -389,8 +420,8 @@ function MasterPartyLedgerContent() {
           const merged = Array.from(map.values());
           if (merged.length > 0) {
             setCustomers(merged);
-            if (!selectedCustomerId) {
-              setSelectedCustomerId(merged[0].id);
+            if (!paramParty && !selectedCustomerId) {
+              setSelectedCustomerId('all');
             }
           }
         } else if (contextCustomers && contextCustomers.length > 0) {
@@ -459,6 +490,24 @@ function MasterPartyLedgerContent() {
       }
       const token = getClientAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+      // Overall Summary for All Parties
+      if (selectedCustomerId === 'all') {
+        try {
+          const res = await fetch('/api/ledger?summary=all', { headers });
+          if (res.ok) {
+            const d = await res.json();
+            if (d.success && d.allPartiesSummary) {
+              setAllPartiesData(d.allPartiesSummary);
+            }
+          }
+        } catch (err) {
+          console.warn('All parties summary fetch note:', err);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
 
       const currentCustomers = customersRef.current || [];
       const currentContextCusts = contextCustomersRef.current || [];
@@ -881,6 +930,24 @@ function MasterPartyLedgerContent() {
 
   // Selected customer object
   const selectedCustomer = useMemo<Customer>(() => {
+    if (selectedCustomerId === 'all') {
+      return {
+        id: 'all',
+        user_id: '',
+        name: 'All Parties (Overall Summary)',
+        business_name: 'All Parties (Overall Summary)',
+        company_name: '',
+        contact_person: '',
+        billing_address: '',
+        delivery_address: '',
+        phone: '',
+        gstin: '',
+        notes: null,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      };
+    }
     const found =
       customers.find((c) => c.id === selectedCustomerId || c.name === selectedCustomerId) ||
       (contextCustomers || []).find((c: Customer) => c.id === selectedCustomerId || c.name === selectedCustomerId);
@@ -918,6 +985,32 @@ function MasterPartyLedgerContent() {
     }
     return list;
   }, [ledgerData.entries, searchChallanNo]);
+
+  // Filtered list of all parties in Overall Summary mode
+  const filteredAllParties = useMemo(() => {
+    if (!allPartiesData?.parties) return [];
+    let list = allPartiesData.parties;
+
+    if (allPartiesFilter === 'pending') {
+      list = list.filter((p) => p.closing_balance > 0);
+    } else if (allPartiesFilter === 'settled') {
+      list = list.filter((p) => p.closing_balance <= 0);
+    }
+
+    if (allPartiesSearch.trim()) {
+      const q = allPartiesSearch.trim().toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.business_name.toLowerCase().includes(q) ||
+          p.contact_person.toLowerCase().includes(q) ||
+          p.phone.includes(q) ||
+          p.sites.some((s) => s.toLowerCase().includes(q))
+      );
+    }
+
+    return list;
+  }, [allPartiesData?.parties, allPartiesFilter, allPartiesSearch]);
 
 
   // Comprehensive Customer Transactions & Challans for Auto-Fill
@@ -2586,6 +2679,7 @@ function MasterPartyLedgerContent() {
             }}
             className="input text-xs py-1.5 px-2.5 font-bold text-surface-900 bg-surface-50 border-surface-300 rounded-lg min-w-[210px]"
           >
+            <option value="all">📊 All Parties (Overall Filter &amp; Total Calculation)</option>
             {customers.length === 0 ? (
               <option value="">No parties yet</option>
             ) : (
@@ -2627,12 +2721,326 @@ function MasterPartyLedgerContent() {
       {/* ============================================================ */}
       {/* PRIMARY TAB: LEDGER ACCOUNT (MATCHES REFERENCE PHOTO)        */}
       {/* ============================================================ */}
-      {activeTab === 'ledger' && (
+      {activeTab === 'ledger' && selectedCustomerId === 'all' && (
+        <div className="space-y-4">
+          {/* Top Banner & Refresh */}
+          <div className="bg-white p-5 rounded-xl border border-surface-200 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-surface-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-orange-100 text-[#ea580c]">
+                  <BookOpen size={20} />
+                </div>
+                <div>
+                  <h1 className="text-lg sm:text-xl font-black text-surface-950 tracking-tight">
+                    Master Party Ledger &amp; Total Calculation
+                  </h1>
+                  <p className="text-xs text-surface-500">
+                    Consolidated financial summary across all parties. Click on any party to open their detailed ledger.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fetchLedger()}
+                  disabled={loading}
+                  className="px-3 py-1.5 text-xs font-bold text-surface-700 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center gap-1.5 border border-surface-300 cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Refresh All Calculations"
+                >
+                  <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+                  <span>Refresh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 text-xs font-semibold text-surface-700 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center gap-1.5 border border-surface-300 cursor-pointer active:scale-95"
+                >
+                  <Printer size={13} />
+                  <span>Print</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Total Calculation 4-Stat Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Stat 1: Total Parties */}
+              <div className="p-3.5 rounded-xl bg-surface-50 border border-surface-200 space-y-1">
+                <div className="text-[11px] font-bold text-surface-500 uppercase tracking-wider flex items-center gap-1">
+                  <User size={13} className="text-surface-400" />
+                  <span>Total Parties</span>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-surface-900">
+                  {allPartiesData?.summary.totalParties || customers.length || 0}
+                </div>
+                <div className="text-[10px] text-surface-400">
+                  Registered accounts
+                </div>
+              </div>
+
+              {/* Stat 2: Total Debit (Sales) */}
+              <div className="p-3.5 rounded-xl bg-blue-50/60 border border-blue-200/80 space-y-1">
+                <div className="text-[11px] font-bold text-blue-800 uppercase tracking-wider flex items-center gap-1">
+                  <ArrowUpRight size={13} className="text-blue-600" />
+                  <span>Total Sales (Debit)</span>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-blue-900 font-mono">
+                  ₹{formatAmountDisplay(allPartiesData?.summary.totalDebit || 0) || '0.00'}
+                </div>
+                <div className="text-[10px] text-blue-700/80">
+                  Billed delivery challans
+                </div>
+              </div>
+
+              {/* Stat 3: Total Credit (Received) */}
+              <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200/80 space-y-1">
+                <div className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+                  <ArrowDownLeft size={13} className="text-emerald-600" />
+                  <span>Total Received (Credit)</span>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-emerald-900 font-mono">
+                  ₹{formatAmountDisplay(allPartiesData?.summary.totalCredit || 0) || '0.00'}
+                </div>
+                <div className="text-[10px] text-emerald-700/80">
+                  Payments &amp; receipts
+                </div>
+              </div>
+
+              {/* Stat 4: Net Outstanding */}
+              <div className="p-3.5 rounded-xl bg-orange-50 border border-orange-200 space-y-1">
+                <div className="text-[11px] font-bold text-[#ea580c] uppercase tracking-wider flex items-center gap-1">
+                  <WalletCards size={13} />
+                  <span>Net Outstanding Balance</span>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-[#c2410c] font-mono">
+                  ₹{formatAmountDisplay(Math.abs(allPartiesData?.summary.totalOutstanding || 0)) || '0.00'}{' '}
+                  <span className="text-xs font-bold font-sans">
+                    {(allPartiesData?.summary.totalOutstanding || 0) >= 0 ? 'Dr' : 'Cr'}
+                  </span>
+                </div>
+                <div className="text-[10px] text-orange-800/80">
+                  {(allPartiesData?.summary.totalOutstanding || 0) >= 0 ? 'Pending collection from clients' : 'Advance received'}
+                </div>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <div className="relative flex-1 max-w-md">
+                <input
+                  type="text"
+                  placeholder="Search party by name, site, phone, or contact person..."
+                  value={allPartiesSearch}
+                  onChange={(e) => setAllPartiesSearch(e.target.value)}
+                  className="input pl-8 pr-3 py-1.5 text-xs border-surface-300 w-full"
+                />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400" />
+                {allPartiesSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setAllPartiesSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-surface-400 hover:text-surface-700"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={() => setAllPartiesFilter('all')}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer',
+                    allPartiesFilter === 'all'
+                      ? 'bg-zinc-900 text-white'
+                      : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                  )}
+                >
+                  All ({allPartiesData?.parties.length || 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllPartiesFilter('pending')}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer',
+                    allPartiesFilter === 'pending'
+                      ? 'bg-[#ea580c] text-white'
+                      : 'bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100'
+                  )}
+                >
+                  Pending Outstanding ({allPartiesData?.parties.filter((p) => p.closing_balance > 0).length || 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllPartiesFilter('settled')}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer',
+                    allPartiesFilter === 'settled'
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                  )}
+                >
+                  Settled / Nil ({allPartiesData?.parties.filter((p) => p.closing_balance <= 0).length || 0})
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Master Table of All Parties */}
+          <div className="bg-white rounded-xl border border-surface-200 shadow-2xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-surface-50 border-b border-surface-200 text-surface-700 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">#</th>
+                    <th className="py-2.5 px-3">Party Name</th>
+                    <th className="py-2.5 px-3">Contact &amp; WhatsApp</th>
+                    <th className="py-2.5 px-2.5">Delivery Sites</th>
+                    <th className="py-2.5 px-3 text-right">Opening (₹)</th>
+                    <th className="py-2.5 px-3 text-right">Total Debit / Sales (₹)</th>
+                    <th className="py-2.5 px-3 text-right">Total Credit / Paid (₹)</th>
+                    <th className="py-2.5 px-3 text-right">Closing Balance (₹)</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-100">
+                  {filteredAllParties.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-surface-400 space-y-1">
+                        <User className="w-10 h-10 mx-auto text-surface-300 mb-1" />
+                        <p className="font-bold text-surface-700 text-sm">No matching parties found</p>
+                        <p className="text-xs">Try adjusting your search query or reset filter.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAllParties.map((p, idx) => {
+                      const isDr = p.closing_balance > 0;
+                      const isCr = p.closing_balance < 0;
+                      return (
+                        <tr
+                          key={p.id || idx}
+                          onClick={() => {
+                            setSelectedCustomerId(p.id);
+                            setSiteFilter('all');
+                          }}
+                          className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
+                        >
+                          <td className="p-3 text-center font-bold text-surface-400">
+                            {idx + 1}
+                          </td>
+                          <td className="p-3">
+                            <div className="font-extrabold text-surface-900 group-hover:text-primary-600 flex items-center gap-1.5">
+                              <span>{p.business_name || p.name}</span>
+                              {p.is_architect && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                                  Arch
+                                </span>
+                              )}
+                            </div>
+                            {p.contact_person && p.contact_person !== p.business_name && (
+                              <div className="text-[10px] text-surface-500">
+                                Contact: {p.contact_person}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-surface-700 whitespace-nowrap">
+                            {p.phone ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono font-bold text-xs">{p.phone}</span>
+                              </div>
+                            ) : (
+                              <span className="text-surface-400 italic text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            {p.sites && p.sites.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 max-w-[180px]">
+                                {p.sites.slice(0, 2).map((s, sIdx) => (
+                                  <span
+                                    key={sIdx}
+                                    className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-orange-50 text-[#ea580c] border border-orange-200"
+                                  >
+                                    📍 {s}
+                                  </span>
+                                ))}
+                                {p.sites.length > 2 && (
+                                  <span className="text-[10px] text-surface-400">
+                                    +{p.sites.length - 2} more
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-surface-400 italic text-[11px]">Primary</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-mono text-surface-700">
+                            {p.opening_balance !== 0 ? `₹${formatAmountDisplay(p.opening_balance)}` : '—'}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-surface-900">
+                            {p.total_debit > 0 ? `₹${formatAmountDisplay(p.total_debit)}` : '—'}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-700">
+                            {p.total_credit > 0 ? `₹${formatAmountDisplay(p.total_credit)}` : '—'}
+                          </td>
+                          <td className="p-3 text-right font-mono font-black text-xs whitespace-nowrap">
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded-full inline-block',
+                                isDr
+                                  ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                                  : isCr
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : 'bg-surface-100 text-surface-600'
+                              )}
+                            >
+                              ₹{formatAmountDisplay(Math.abs(p.closing_balance))} {isDr ? 'Dr' : isCr ? 'Cr' : ''}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedCustomerId(p.id);
+                                setSiteFilter('all');
+                              }}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-black hover:bg-zinc-800 rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer ml-auto transition-colors"
+                              title="Open complete detailed ledger"
+                            >
+                              <span>Open Ledger</span>
+                              <ArrowRight size={12} className="text-[#ea580c]" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRIMARY TAB: LEDGER ACCOUNT (FOR SINGLE SELECTED PARTY) */}
+      {activeTab === 'ledger' && selectedCustomerId !== 'all' && (
         <div className="space-y-4">
           {/* Top Header Section (Matching Photo) */}
           <div className="bg-white p-5 rounded-xl border border-surface-200 shadow-2xs relative print:border-none print:shadow-none print:p-0">
             {/* Action Buttons: Responsive for Mobile & Desktop */}
             <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 mb-3 sm:mb-0 sm:absolute sm:top-4 sm:right-4 print:hidden">
+              <button
+                type="button"
+                onClick={() => setSelectedCustomerId('all')}
+                className="px-2.5 py-1.5 text-xs font-bold text-[#ea580c] bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg flex items-center gap-1 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+                title="Back to All Parties Summary Overview"
+              >
+                <BookOpen size={13} />
+                <span>All Parties Overview</span>
+              </button>
+
               <Link
                 href="/"
                 className="px-2.5 py-1.5 text-xs font-semibold text-surface-700 bg-surface-100 hover:bg-surface-200 rounded-lg flex items-center gap-1 transition-colors border border-surface-200 active:scale-95"

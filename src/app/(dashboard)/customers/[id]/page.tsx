@@ -54,6 +54,7 @@ export default function CustomerDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
   const [activeSiteFilter, setActiveSiteFilter] = useState<string>('all');
+  const [activeChallanSiteFilter, setActiveChallanSiteFilter] = useState<string>('all');
   const [showQuotationModal, setShowQuotationModal] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [showSiteModal, setShowSiteModal] = useState(false);
@@ -74,6 +75,16 @@ export default function CustomerDetailPage() {
     () => getCustomerQuotations(customerId),
     [getCustomerQuotations, customerId, allQuotations, dataVersion]
   );
+
+  const displayedChallans = useMemo(() => {
+    if (activeChallanSiteFilter === 'all') return challans;
+    return challans.filter(
+      (c) =>
+        c.site_name === activeChallanSiteFilter ||
+        c.site_id === activeChallanSiteFilter ||
+        (c.delivery_address && c.delivery_address.toLowerCase().includes(activeChallanSiteFilter.toLowerCase()))
+    );
+  }, [challans, activeChallanSiteFilter]);
 
   useEffect(() => {
     if (!customerId) return;
@@ -845,11 +856,18 @@ export default function CustomerDetailPage() {
           {/* 3. Challan History */}
           <div className="card p-3 sm:p-4 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-surface-100">
-              <h3 className="text-sm font-bold text-surface-900">
-                Challan History ({challans.length})
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-surface-900">
+                  Challan History ({challans.length})
+                </h3>
+                {activeChallanSiteFilter !== 'all' && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black bg-[#ea580c] text-white">
+                    📍 {activeChallanSiteFilter} ({displayedChallans.length})
+                  </span>
+                )}
+              </div>
               <Link
-                href={`/challans/new?customerId=${customer.id}`}
+                href={`/challans/new?customerId=${customer.id}${activeChallanSiteFilter !== 'all' ? `&site=${encodeURIComponent(activeChallanSiteFilter)}` : ''}`}
                 className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1"
               >
                 <Plus size={13} />
@@ -857,15 +875,66 @@ export default function CustomerDetailPage() {
               </Link>
             </div>
 
-            {challans.length === 0 ? (
+            {/* Site Wise Filter for Challans */}
+            {customerSites.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveChallanSiteFilter('all')}
+                  className={cn(
+                    'py-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1',
+                    activeChallanSiteFilter === 'all'
+                      ? 'bg-zinc-900 text-white shadow-xs'
+                      : 'bg-surface-100 hover:bg-surface-200 text-surface-700'
+                  )}
+                >
+                  <span>All Sites</span>
+                  <span className="text-[10px] px-1 py-0.2 rounded-full font-black bg-surface-200 text-surface-800">
+                    {challans.length}
+                  </span>
+                </button>
+                {customerSites.map((site, idx) => {
+                  const sName = site.site_name || `Site ${idx + 1}`;
+                  const count = challans.filter(
+                    (c) =>
+                      c.site_name === sName ||
+                      c.site_id === site.id ||
+                      (c.delivery_address && c.delivery_address.toLowerCase().includes(sName.toLowerCase()))
+                  ).length;
+                  return (
+                    <button
+                      key={site.id || idx}
+                      type="button"
+                      onClick={() => setActiveChallanSiteFilter(sName)}
+                      className={cn(
+                        'py-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1',
+                        activeChallanSiteFilter === sName
+                          ? 'bg-[#ea580c] text-white shadow-xs'
+                          : 'bg-surface-100 hover:bg-surface-200 text-surface-700'
+                      )}
+                    >
+                      <Building2 size={11} />
+                      <span>{sName}</span>
+                      <span className="text-[10px] px-1 py-0.2 rounded-full font-black bg-surface-200 text-surface-800">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {displayedChallans.length === 0 ? (
               <div className="py-8 text-center text-xs text-surface-400">
-                No challans generated for this customer yet.
+                {challans.length === 0
+                  ? 'No challans generated for this customer yet.'
+                  : `No challans found for site "${activeChallanSiteFilter}".`}
               </div>
             ) : (
               <>
                 {/* Mobile Card list */}
                 <div className="sm:hidden space-y-2">
-                  {challans.map((c) => (
+                  {displayedChallans.map((c) => (
                     <Link
                       key={c.id}
                       href={`/challans/${c.id}`}
@@ -873,9 +942,16 @@ export default function CustomerDetailPage() {
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-mono font-bold text-xs text-primary-600">{c.challan_number}</span>
-                        <span className="text-[10px] uppercase font-bold text-surface-600 px-1.5 py-0.5 rounded bg-surface-200">
-                          {c.status}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          {c.site_name && (
+                            <span className="text-[10px] font-bold text-[#ea580c] px-1.5 py-0.5 rounded bg-orange-50 border border-orange-200">
+                              {c.site_name}
+                            </span>
+                          )}
+                          <span className="text-[10px] uppercase font-bold text-surface-600 px-1.5 py-0.5 rounded bg-surface-200">
+                            {c.status}
+                          </span>
+                        </div>
                       </div>
                       <div className="flex items-center justify-between text-[11px] text-surface-500">
                         <span>{formatDateIndian(c.challan_date)}</span>
@@ -899,13 +975,14 @@ export default function CustomerDetailPage() {
                       <tr>
                         <th>Challan No.</th>
                         <th>Date</th>
+                        <th>Target Site</th>
                         <th className="text-right">Qty</th>
                         <th className="text-right">Total Amount</th>
                         <th>Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-100">
-                      {challans.map((c) => (
+                      {displayedChallans.map((c) => (
                         <tr key={c.id} className="hover:bg-surface-50">
                           <td>
                             <Link href={`/challans/${c.id}`} className="font-mono font-bold text-primary-600 hover:underline">
@@ -913,6 +990,15 @@ export default function CustomerDetailPage() {
                             </Link>
                           </td>
                           <td className="text-surface-600">{formatDateIndian(c.challan_date)}</td>
+                          <td>
+                            {c.site_name ? (
+                              <span className="px-1.5 py-0.5 rounded bg-orange-50 text-[#ea580c] font-bold text-[10px] border border-orange-200">
+                                📍 {c.site_name}
+                              </span>
+                            ) : (
+                              <span className="text-surface-400 italic text-[11px]">Primary</span>
+                            )}
+                          </td>
                           <td className="text-right font-bold text-surface-900">{c.total_quantity}</td>
                           <td className="text-right font-mono font-bold text-surface-900">
                             {c.total_amount && c.total_amount > 0 ? `₹${c.total_amount.toLocaleString('en-IN')}` : '—'}

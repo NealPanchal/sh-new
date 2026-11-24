@@ -1720,6 +1720,95 @@ export function computeCustomerLedger(
   };
 }
 
+/**
+ * Compute Overall Ledger Calculation Summary for All Parties
+ */
+export function computeAllPartiesLedgerSummary(): {
+  summary: {
+    totalParties: number;
+    totalDebit: number;
+    totalCredit: number;
+    totalOutstanding: number;
+    totalReceivable: number;
+    totalPayable: number;
+  };
+  parties: Array<{
+    id: string;
+    name: string;
+    business_name: string;
+    contact_person: string;
+    phone: string;
+    is_architect: boolean;
+    credit_status: string;
+    sites_count: number;
+    sites: string[];
+    opening_balance: number;
+    total_debit: number;
+    total_credit: number;
+    closing_balance: number;
+    last_activity_date?: string;
+  }>;
+} {
+  const allCusts = getAllCustomers();
+  const allChallans = getAllChallans();
+
+  let totDebit = 0;
+  let totCredit = 0;
+  let totOutstanding = 0;
+  let totReceivable = 0;
+  let totPayable = 0;
+
+  const parties = allCusts.map((c) => {
+    const l = computeCustomerLedger(c.id, {
+      customerName: c.name || c.business_name,
+      allChallans,
+      customers: allCusts,
+    });
+
+    const dr = Math.round(l.totalDebit * 100) / 100;
+    const cr = Math.round(l.totalCredit * 100) / 100;
+    const bal = Math.round(l.closingBalance * 100) / 100;
+
+    totDebit += dr;
+    totCredit += cr;
+    totOutstanding += bal;
+    if (bal > 0) totReceivable += bal;
+    else if (bal < 0) totPayable += Math.abs(bal);
+
+    const siteNames = (l.sites || []).map((s) => s.site_name).filter(Boolean);
+    const lastEntry = l.entries && l.entries.length > 0 ? l.entries[l.entries.length - 1] : undefined;
+
+    return {
+      id: c.id,
+      name: c.name || c.business_name || 'Party',
+      business_name: c.business_name || c.name || 'Party',
+      contact_person: c.contact_person || '',
+      phone: c.phone || '',
+      is_architect: Boolean(c.is_architect || c.customer_type === 'architect'),
+      credit_status: c.credit_status || 'credit',
+      sites_count: siteNames.length,
+      sites: siteNames,
+      opening_balance: Math.round((Number(l.openingBalance) || 0) * 100) / 100,
+      total_debit: dr,
+      total_credit: cr,
+      closing_balance: bal,
+      last_activity_date: lastEntry?.date,
+    };
+  });
+
+  return {
+    summary: {
+      totalParties: parties.length,
+      totalDebit: Math.round(totDebit * 100) / 100,
+      totalCredit: Math.round(totCredit * 100) / 100,
+      totalOutstanding: Math.round(totOutstanding * 100) / 100,
+      totalReceivable: Math.round(totReceivable * 100) / 100,
+      totalPayable: Math.round(totPayable * 100) / 100,
+    },
+    parties,
+  };
+}
+
 // ----------------------------------------------------
 // 10. SITE-WISE SUMMARY & PLUS/MINUS CALCULATION
 // ----------------------------------------------------
