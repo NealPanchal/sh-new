@@ -132,9 +132,16 @@ export async function POST(req: NextRequest) {
       credit_limit: Number(credit_limit) || 200000,
       credit_days: Number(credit_days) || 45,
       notes: notes ? notes.trim() : null,
-      sites: Array.isArray(sites)
-        ? sites
-        : existingIdx >= 0 && Array.isArray(customers[existingIdx].sites)
+      sites: Array.isArray(sites) && sites.length > 0
+        ? sites.map((s, idx) => ({
+            ...s,
+            id: s.id || `site_${custId}_${idx + 1}`,
+            customer_id: custId,
+            site_name: s.site_name || s.name || `Site ${idx + 1}`,
+            site_address: s.site_address || s.location || billing_address || 'Thane (W)',
+            is_active: s.is_active !== false,
+          }))
+        : existingIdx >= 0 && Array.isArray(customers[existingIdx].sites) && customers[existingIdx].sites!.length > 0
         ? customers[existingIdx].sites
         : undefined,
       material_rates: Array.isArray(material_rates)

@@ -253,8 +253,18 @@ export function getCustomer(id: string): Customer | undefined {
 
 export function createCustomer(data: Partial<Customer>): Customer {
   const now = new Date().toISOString();
+  const newId = data.id || generateId();
+  const sites = Array.isArray(data.sites)
+    ? data.sites.map((s, idx) => ({
+        ...s,
+        id: s.id || `site_${newId}_${idx + 1}`,
+        customer_id: newId,
+        site_name: s.site_name || (s as any).name || `Site ${idx + 1}`,
+        site_address: s.site_address || (s as any).location || data.delivery_address || 'Thane (W)',
+      }))
+    : undefined;
+
   const customer: Customer = {
-    id: generateId(),
     user_id: 'demo-user',
     business_name: '',
     contact_person: null,
@@ -267,6 +277,8 @@ export function createCustomer(data: Partial<Customer>): Customer {
     created_at: now,
     updated_at: now,
     ...data,
+    id: newId,
+    sites,
   } as Customer;
   state.customers.push(customer);
   saveState(state);
@@ -279,9 +291,22 @@ export function createCustomer(data: Partial<Customer>): Customer {
 export function updateCustomer(id: string, data: Partial<Customer>): Customer | null {
   const idx = state.customers.findIndex((c) => c.id === id);
   if (idx === -1) return null;
+  const sites = Array.isArray(data.sites)
+    ? data.sites.map((s, sIdx) => ({
+        ...s,
+        id: s.id || `site_${id}_${sIdx + 1}`,
+        customer_id: id,
+        site_name: s.site_name || (s as any).name || `Site ${sIdx + 1}`,
+        site_address: s.site_address || (s as any).location || data.delivery_address || state.customers[idx].delivery_address || 'Thane (W)',
+      }))
+    : data.sites !== undefined
+    ? data.sites
+    : state.customers[idx].sites;
+
   state.customers[idx] = {
     ...state.customers[idx],
     ...data,
+    sites,
     updated_at: new Date().toISOString(),
   };
   saveState(state);
@@ -313,8 +338,37 @@ export function syncCustomersFromFirebase(remoteCustomers: Customer[]): void {
     } else {
       const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
       const tRemote = new Date(rc.updated_at || rc.created_at || 0).getTime();
+      const mergedSites =
+        Array.isArray(rc.sites) && rc.sites.length > 0
+          ? rc.sites
+          : Array.isArray(existing.sites) && existing.sites.length > 0
+          ? existing.sites
+          : [];
+      const mergedRates =
+        Array.isArray(rc.material_rates) && rc.material_rates.length > 0
+          ? rc.material_rates
+          : Array.isArray(existing.material_rates) && existing.material_rates.length > 0
+          ? existing.material_rates
+          : [];
+
       if (tRemote >= tLocal) {
-        map.set(rc.id, rc);
+        map.set(rc.id, {
+          ...existing,
+          ...rc,
+          name: (rc.name || rc.business_name || existing.name || existing.business_name || '').trim(),
+          business_name: (rc.business_name || rc.name || existing.business_name || existing.name || '').trim(),
+          sites: mergedSites,
+          material_rates: mergedRates,
+        });
+      } else {
+        map.set(rc.id, {
+          ...rc,
+          ...existing,
+          name: (existing.name || existing.business_name || rc.name || rc.business_name || '').trim(),
+          business_name: (existing.business_name || existing.name || rc.business_name || rc.name || '').trim(),
+          sites: mergedSites,
+          material_rates: mergedRates,
+        });
       }
     }
   });

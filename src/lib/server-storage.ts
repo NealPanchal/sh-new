@@ -84,6 +84,24 @@ const FIRESTORE_SYNC_MAP: Record<string, SyncConfig> = {
     saveIndividualToCollection: 'quotations',
     idField: 'id',
   },
+  'challans.json': {
+    collection: 'challans',
+    docId: 'all_challans',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'challans',
+    idField: 'id',
+  },
+  'customer_sites.json': {
+    collection: 'customer_sites',
+    docId: 'all_sites',
+    wrapAs: 'list',
+    saveIndividualToCollection: 'customer_sites',
+    idField: 'id',
+  },
+  'user_totp_credentials.json': {
+    collection: 'auth_config',
+    docId: 'user_totp_credentials',
+  },
 };
 
 /**
@@ -281,6 +299,97 @@ export function invalidateDataCache(filename: string): void {
 }
 
 /**
+ * Normalize and merge remote datasets with local persistence
+ * Prevents dropping customer sites, custom material rates, or local challans during hydration
+ */
+function normalizeAndMergeWithLocal(filename: string, remoteData: any): any {
+  if (!remoteData) return remoteData;
+  if (filename === 'customers.json') {
+    const local = safeReadDataFile<any[]>('customers.json', []);
+    const remoteList = Array.isArray(remoteData) ? remoteData : [];
+    const map = new Map<string, any>();
+    for (const c of local) {
+      if (c && c.id) map.set(c.id, c);
+    }
+    for (const rc of remoteList) {
+      if (!rc || !rc.id) continue;
+      const existing = map.get(rc.id);
+      if (!existing) {
+        map.set(rc.id, rc);
+      } else {
+        const mergedSites =
+          Array.isArray(rc.sites) && rc.sites.length > 0
+            ? rc.sites
+            : Array.isArray(existing.sites) && existing.sites.length > 0
+            ? existing.sites
+            : [];
+        const mergedRates =
+          Array.isArray(rc.material_rates) && rc.material_rates.length > 0
+            ? rc.material_rates
+            : Array.isArray(existing.material_rates) && existing.material_rates.length > 0
+            ? existing.material_rates
+            : [];
+        const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
+        const tRemote = new Date(rc.updated_at || rc.created_at || 0).getTime();
+        const base = tRemote >= tLocal ? { ...existing, ...rc } : { ...rc, ...existing };
+        map.set(rc.id, {
+          ...base,
+          name: (base.name || base.business_name || base.contact_person || 'Customer').trim(),
+          business_name: (base.business_name || base.name || 'Customer').trim(),
+          company_name: (base.company_name || base.business_name || base.name || 'Customer').trim(),
+          contact_person: (base.contact_person || base.name || 'Customer').trim(),
+          sites: mergedSites,
+          material_rates: mergedRates,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }
+
+  if (filename === 'challans.json') {
+    const local = safeReadDataFile<any[]>('challans.json', []);
+    const remoteList = Array.isArray(remoteData) ? remoteData : [];
+    const map = new Map<string, any>();
+    for (const c of local) {
+      if (c && (c.id || c.challan_number)) map.set(c.id || c.challan_number, c);
+    }
+    for (const rc of remoteList) {
+      if (!rc || (!rc.id && !rc.challan_number)) continue;
+      const key = rc.id || rc.challan_number;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, rc);
+      } else {
+        const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
+        const tRemote = new Date(rc.updated_at || rc.created_at || 0).getTime();
+        map.set(key, tRemote >= tLocal ? { ...existing, ...rc } : { ...rc, ...existing });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      const da = new Date(b.challan_date || b.created_at || 0).getTime();
+      const db = new Date(a.challan_date || a.created_at || 0).getTime();
+      return da - db;
+    });
+  }
+
+  if (filename === 'customer_sites.json') {
+    const local = safeReadDataFile<any[]>('customer_sites.json', []);
+    const remoteList = Array.isArray(remoteData) ? remoteData : [];
+    const map = new Map<string, any>();
+    for (const s of local) {
+      if (s && s.id) map.set(s.id, s);
+    }
+    for (const rs of remoteList) {
+      if (!rs || !rs.id) continue;
+      map.set(rs.id, rs);
+    }
+    return Array.from(map.values());
+  }
+
+  return remoteData;
+}
+
+/**
  * Async hydrator from Cloud Firestore REST API for cold start serverless containers
  */
 export async function syncFromFirestoreIfCold<T = any>(filename: string, fallback: T): Promise<T> {
@@ -297,10 +406,12 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
     try {
       const supaDoc = await fetchDocFromSupabase(mapping.collection, mapping.docId);
       if (supaDoc) {
-        const supaData =
+        const rawSupaData =
           mapping.wrapAs && Array.isArray(supaDoc[mapping.wrapAs])
             ? supaDoc[mapping.wrapAs]
             : supaDoc;
+
+        const supaData = normalizeAndMergeWithLocal(filename, rawSupaData);
 
         inMemoryCache.set(filename, supaData);
         firestoreHydrated.add(filename);
@@ -323,13 +434,14 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
       // First try fetching the primary bundle doc (single fast read, always reflects exact saved state)
       const remoteBundle = await fetchDocFromFirestoreRest(mapping.collection, mapping.docId).catch(() => null);
 
-      const bundleList = mapping.wrapAs && Array.isArray(remoteBundle?.[mapping.wrapAs])
+      const rawBundleList = mapping.wrapAs && Array.isArray(remoteBundle?.[mapping.wrapAs])
         ? remoteBundle[mapping.wrapAs]
         : Array.isArray(remoteBundle)
         ? remoteBundle
         : null;
 
-      if (bundleList && Array.isArray(bundleList) && bundleList.length > 0) {
+      if (rawBundleList && Array.isArray(rawBundleList) && rawBundleList.length > 0) {
+        const bundleList = normalizeAndMergeWithLocal(filename, rawBundleList);
         inMemoryCache.set(filename, bundleList);
         firestoreHydrated.add(filename);
         try {
@@ -359,7 +471,8 @@ export async function syncFromFirestoreIfCold<T = any>(filename: string, fallbac
         });
 
         if (mergedMap.size > 0) {
-          const consolidated = Array.from(mergedMap.values());
+          const rawConsolidated = Array.from(mergedMap.values());
+          const consolidated = normalizeAndMergeWithLocal(filename, rawConsolidated);
           inMemoryCache.set(filename, consolidated);
           firestoreHydrated.add(filename);
           try {

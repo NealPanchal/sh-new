@@ -15,5 +15,155 @@
     "is_active": true,
     "created_at": "2026-11-23T05:48:58.864Z",
     "updated_at": "2026-11-23T05:48:58.864Z"
+  },
+  {
+    "id": "site_1",
+    "customer_id": "db3a02dc-44d0-47c8-b0e2-37ea9ab40599",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Lodha amara",
+    "location": "Lodha amara",
+    "created_at": "2026-11-23T08:34:48.670Z",
+    "is_active": true
+  },
+  {
+    "id": "site_1795246277213",
+    "customer_id": "0eae3aab-c1b1-494d-a3d8-5c9c4a486c27",
+    "site_name": "Site 2",
+    "name": "Site 2",
+    "site_address": "Vasant vihar",
+    "location": "Vasant vihar",
+    "created_at": "2026-11-21T07:31:51.061Z",
+    "is_active": true
+  },
+  {
+    "id": "site_1795246280142",
+    "customer_id": "0eae3aab-c1b1-494d-a3d8-5c9c4a486c27",
+    "site_name": "Site 3",
+    "name": "Site 3",
+    "site_address": "Kalpataru",
+    "location": "Kalpataru",
+    "created_at": "2026-11-21T07:31:51.061Z",
+    "is_active": true
+  },
+  {
+    "id": "site_1_4ed8ae99-a061-4581-b9ef-94baf1e2806b",
+    "customer_id": "4ed8ae99-a061-4581-b9ef-94baf1e2806b",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Charai",
+    "location": "Charai",
+    "is_active": true,
+    "created_at": "2026-11-23T07:04:34.545Z"
+  },
+  {
+    "id": "site_1795268280439",
+    "customer_id": "70bdfe95-3606-4899-b725-8584ba027fc8",
+    "site_name": "Site 2",
+    "name": "Site 2",
+    "site_address": "Hiranandani",
+    "location": "Hiranandani",
+    "created_at": "2026-11-21T13:38:16.289Z",
+    "is_active": true
+  },
+  {
+    "id": "site_1_78543ad3-006d-40ed-8c1a-06bad5d23b79",
+    "customer_id": "78543ad3-006d-40ed-8c1a-06bad5d23b79",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Showhouse Site",
+    "location": "Showhouse Site",
+    "is_active": true,
+    "created_at": "2026-11-23T07:07:57.380Z"
+  },
+  {
+    "id": "site_1_884da6b6-34ba-4640-8b99-3ee615a96b52",
+    "customer_id": "884da6b6-34ba-4640-8b99-3ee615a96b52",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Rejuve 360, Mulund",
+    "location": "Rejuve 360, Mulund",
+    "is_active": true,
+    "created_at": "2026-11-23T07:48:24.577Z"
+  },
+  {
+    "id": "site_9ca2a0c1-6b67-43d0-a553-ddc5828be325_site_2_1795509116076",
+    "customer_id": "9ca2a0c1-6b67-43d0-a553-ddc5828be325",
+    "site_name": "Site 2",
+    "name": "Site 2",
+    "site_address": "A2 702 lok kailash\nMulund weat",
+    "location": "A2 702 lok kailash\nMulund weat",
+    "is_active": true,
+    "created_at": "2026-11-23"
+  },
+  {
+    "id": "site_1_adea6610-a478-46ed-88c2-b171d38ca01a",
+    "customer_id": "adea6610-a478-46ed-88c2-b171d38ca01a",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Kalwa",
+    "location": "Kalwa",
+    "is_active": true,
+    "created_at": "2026-11-23T08:20:57.452Z"
+  },
+  {
+    "id": "site_1_e2ffe0e8-2aa7-4a72-bb74-ff4d2c382610",
+    "customer_id": "e2ffe0e8-2aa7-4a72-bb74-ff4d2c382610",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Charai",
+    "location": "Charai",
+    "is_active": true,
+    "created_at": "2026-11-23T08:06:29.416Z"
+  },
+  {
+    "id": "site_1_e3fa223f-7e37-4e6c-bad4-e1b891afbef8",
+    "customer_id": "e3fa223f-7e37-4e6c-bad4-e1b891afbef8",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Capital, meadows, Thane",
+    "location": "Capital, meadows, Thane",
+    "is_active": true,
+    "created_at": "2026-11-21T12:35:10.181Z"
+  },
+  {
+    "id": "site_1_4bf00aa6-0b94-4891-8564-c51ad58bc1a8",
+    "customer_id": "4bf00aa6-0b94-4891-8564-c51ad58bc1a8",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Tata Thermal Power Plant, Trombay, Bombay",
+    "location": "Tata Thermal Power Plant, Trombay, Bombay",
+    "is_active": true,
+    "created_at": "2026-11-23T12:46:09.890Z"
+  },
+  {
+    "id": "site_1_2ed7baa3-e36d-4bb4-a856-4adc5f14b869",
+    "customer_id": "2ed7baa3-e36d-4bb4-a856-4adc5f14b869",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "2508, Samnvay and Mitradham, Kopri",
+    "location": "2508, Samnvay and Mitradham, Kopri",
+    "is_active": true,
+    "created_at": "2026-11-23"
+  },
+  {
+    "id": "site_1_ec90d0f1-5ad3-4795-ac1d-6ea5406aa590",
+    "customer_id": "ec90d0f1-5ad3-4795-ac1d-6ea5406aa590",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "Chembur",
+    "location": "Chembur",
+    "is_active": true,
+    "created_at": "2026-11-23"
+  },
+  {
+    "id": "site_1_0fc94352-f54f-49b7-ae21-00d3dbc221a2",
+    "customer_id": "0fc94352-f54f-49b7-ae21-00d3dbc221a2",
+    "site_name": "Site 1",
+    "name": "Site 1",
+    "site_address": "B - 2303/2304, siesta prestige, mulund",
+    "location": "B - 2303/2304, siesta prestige, mulund",
+    "is_active": true,
+    "created_at": "2026-11-24T08:23:30.483Z"
   }
 ]

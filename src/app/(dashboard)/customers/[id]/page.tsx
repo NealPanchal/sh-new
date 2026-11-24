@@ -142,6 +142,9 @@ export default function CustomerDetailPage() {
     updateCustomer(customer.id, {
       sites: remaining,
     });
+    fetch(`/api/sites?id=${encodeURIComponent(siteId)}`, {
+      method: 'DELETE',
+    }).catch(() => {});
     showToast(`Removed ${siteName}`, 'info');
   };
 

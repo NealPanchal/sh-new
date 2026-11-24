@@ -87,6 +87,18 @@ export function getAllCustomers(): Customer[] {
 
   let modified = false;
 
+  // Ensure all customers have standard name and profile fields
+  custs.forEach((c) => {
+    if (!c.name && (c.business_name || c.contact_person)) {
+      c.name = (c.business_name || c.contact_person || 'Customer').trim();
+      modified = true;
+    }
+    if (!c.business_name && c.name) {
+      c.business_name = c.name;
+      modified = true;
+    }
+  });
+
   // Dynamic Scan: Auto-detect any missing party from all delivery challans
   try {
     const challans = getAllChallans();
@@ -128,10 +140,73 @@ export function getAllCustomers(): Customer[] {
           opening_balance: 0,
           credit_days: 45,
           credit_limit: 200000,
+          sites: [
+            {
+              id: `site_1_${cId || Date.now()}`,
+              customer_id: cId || `cust_${Date.now()}`,
+              site_name: c.site_name || 'Site 1',
+              name: c.site_name || 'Site 1',
+              site_address: c.delivery_address || c.customer_address || 'Thane (W)',
+              location: c.delivery_address || c.customer_address || 'Thane (W)',
+              is_active: true,
+              created_at: c.challan_date || new Date().toISOString(),
+            },
+          ],
           created_at: c.created_at || new Date().toISOString(),
           updated_at: c.updated_at || new Date().toISOString(),
         };
         custs.push(newCust);
+        modified = true;
+      }
+    });
+
+    // Ensure all existing customers have at least their default site or challan sites configured
+    custs.forEach((c) => {
+      const cChallans = challans.filter((ch) =>
+        (ch.customer_id && ch.customer_id === c.id) ||
+        (ch.customer_name && c.name && ch.customer_name.trim().toLowerCase() === c.name.trim().toLowerCase())
+      );
+      const challanSiteNames = Array.from(new Set(cChallans.map((ch) => (ch.site_name || '').trim()).filter(Boolean)));
+      
+      const currentSites = Array.isArray(c.sites) ? [...c.sites] : [];
+      let sitesUpdated = false;
+
+      // If no sites at all, add default Site 1
+      if (currentSites.length === 0) {
+        currentSites.push({
+          id: `site_1_${c.id}`,
+          customer_id: c.id,
+          site_name: challanSiteNames[0] || 'Site 1',
+          name: challanSiteNames[0] || 'Site 1',
+          site_address: c.delivery_address || c.billing_address || 'Thane (W)',
+          location: c.delivery_address || c.billing_address || 'Thane (W)',
+          is_active: true,
+          created_at: c.created_at || new Date().toISOString(),
+        });
+        sitesUpdated = true;
+      }
+
+      // If challans contain additional site names (e.g. Site 2) not in currentSites, add them
+      challanSiteNames.forEach((sName) => {
+        const has = currentSites.some((s) => (s.site_name || s.name || '').trim().toLowerCase() === sName.toLowerCase());
+        if (!has) {
+          const matchingChallan = cChallans.find((ch) => (ch.site_name || '').trim().toLowerCase() === sName.toLowerCase());
+          currentSites.push({
+            id: `site_${c.id}_${sName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
+            customer_id: c.id,
+            site_name: sName,
+            name: sName,
+            site_address: matchingChallan?.delivery_address || c.delivery_address || `${sName} Site`,
+            location: matchingChallan?.delivery_address || c.delivery_address || `${sName} Site`,
+            is_active: true,
+            created_at: matchingChallan?.challan_date || new Date().toISOString(),
+          });
+          sitesUpdated = true;
+        }
+      });
+
+      if (sitesUpdated) {
+        c.sites = currentSites;
         modified = true;
       }
     });
@@ -147,10 +222,32 @@ export function getAllCustomers(): Customer[] {
 
 export function saveCustomers(custs: Customer[]): void {
   writeJsonFile('customers.json', custs, true);
+  // Auto-sync customer sites into customer_sites.json
+  try {
+    const allSitesMap = new Map<string, CustomerSite>();
+    const existingSites = getCustomerSites();
+    existingSites.forEach((s) => allSitesMap.set(s.id, s));
+    custs.forEach((c) => {
+      if (Array.isArray(c.sites)) {
+        c.sites.forEach((s, idx) => {
+          if (!s || !s.id) return;
+          allSitesMap.set(s.id, {
+            ...s,
+            customer_id: c.id,
+            site_name: s.site_name || s.name || `Site ${idx + 1}`,
+            site_address: s.site_address || s.location || c.delivery_address || 'Thane (W)',
+            is_active: s.is_active !== false,
+          });
+        });
+      }
+    });
+    saveCustomerSites(Array.from(allSitesMap.values()));
+  } catch {}
 }
 
 export async function saveCustomersAsync(custs: Customer[]): Promise<boolean> {
   const { safeWriteDataFileAsync } = await import('@/lib/server-storage');
+  saveCustomers(custs);
   return safeWriteDataFileAsync('customers.json', custs);
 }
 
@@ -183,6 +280,22 @@ export function getSitesByCustomerId(customerId: string, externalChallans?: Chal
       (custId && s.customer_id.toLowerCase() === custId) ||
       (targetId && s.customer_id.toLowerCase() === targetId)
   );
+
+  // Merge customer profile's explicit sites
+  if (Array.isArray(cust?.sites)) {
+    cust.sites.forEach((cs) => {
+      const lowerName = (cs.site_name || cs.name || '').trim().toLowerCase();
+      if (!sites.some((s) => s.id === cs.id || s.site_name.trim().toLowerCase() === lowerName)) {
+        sites.push({
+          ...cs,
+          customer_id: cust.id,
+          site_name: cs.site_name || cs.name || 'Site 1',
+          site_address: cs.site_address || cs.location || cust.delivery_address || 'Thane (W)',
+          is_active: cs.is_active !== false,
+        });
+      }
+    });
+  }
 
   // Auto-fetch and detect all sites from customer's challans
   try {
@@ -326,6 +439,57 @@ export function addOrUpdateSite(site: CustomerSite): CustomerSite {
     sites.push(record);
   }
   saveCustomerSites(sites);
+
+  // Sync updated site balance directly to customer profile in customers.json
+  try {
+    const custs = readJsonFile<Customer[]>('customers.json', []);
+    const cIdx = custs.findIndex(
+      (c) =>
+        c.id === site.customer_id ||
+        (c.name && site.customer_id && c.name.toLowerCase() === site.customer_id.toLowerCase())
+    );
+    if (cIdx >= 0) {
+      const c = custs[cIdx];
+      const cSites = Array.isArray(c.sites) ? [...c.sites] : [];
+      const sIdx = cSites.findIndex((s) => s.id === site.id || s.site_name.trim().toLowerCase() === site.site_name.trim().toLowerCase());
+      if (sIdx >= 0) {
+        cSites[sIdx] = site;
+      } else {
+        cSites.push(site);
+      }
+      c.sites = cSites;
+      c.updated_at = now;
+      writeJsonFile('customers.json', custs, true);
+    }
+  } catch (syncErr) {
+    console.warn('Sync site balance to customer profile note:', syncErr);
+  }
+
+  // Sync site update directly into customer profile in customers.json
+  try {
+    const custs = readJsonFile<Customer[]>('customers.json', []);
+    const cIdx = custs.findIndex(
+      (c) =>
+        c.id === record.customer_id ||
+        (c.name && record.customer_id && c.name.toLowerCase() === record.customer_id.toLowerCase())
+    );
+    if (cIdx >= 0) {
+      const c = custs[cIdx];
+      const cSites = Array.isArray(c.sites) ? [...c.sites] : [];
+      const sIdx = cSites.findIndex((s) => s.id === record.id || s.site_name.trim().toLowerCase() === record.site_name.trim().toLowerCase());
+      if (sIdx >= 0) {
+        cSites[sIdx] = record;
+      } else {
+        cSites.push(record);
+      }
+      c.sites = cSites;
+      c.updated_at = now;
+      writeJsonFile('customers.json', custs, true);
+    }
+  } catch (syncErr) {
+    console.warn('Sync site to customer profile note:', syncErr);
+  }
+
   return record;
 }
 
@@ -406,6 +570,31 @@ export function verifyCustomerSite(siteId: string, user: string): CustomerSite {
 
   saveCustomerSites(sites);
 
+  // Sync updated site balance directly to customer profile in customers.json
+  try {
+    const custs = readJsonFile<Customer[]>('customers.json', []);
+    const cIdx = custs.findIndex(
+      (c) =>
+        c.id === site.customer_id ||
+        (c.name && site.customer_id && c.name.toLowerCase() === site.customer_id.toLowerCase())
+    );
+    if (cIdx >= 0) {
+      const c = custs[cIdx];
+      const cSites = Array.isArray(c.sites) ? [...c.sites] : [];
+      const sIdx = cSites.findIndex((s) => s.id === site.id || s.site_name.trim().toLowerCase() === site.site_name.trim().toLowerCase());
+      if (sIdx >= 0) {
+        cSites[sIdx] = site;
+      } else {
+        cSites.push(site);
+      }
+      c.sites = cSites;
+      c.updated_at = now;
+      writeJsonFile('customers.json', custs, true);
+    }
+  } catch (syncErr) {
+    console.warn('Sync site balance to customer profile note:', syncErr);
+  }
+
   recordAuditLog({
     entity_type: 'site_adjustment',
     entity_id: site.id,
@@ -447,6 +636,31 @@ export function unverifyCustomerSite(siteId: string, user: string, reason?: stri
   });
 
   saveCustomerSites(sites);
+
+  // Sync updated site balance directly to customer profile in customers.json
+  try {
+    const custs = readJsonFile<Customer[]>('customers.json', []);
+    const cIdx = custs.findIndex(
+      (c) =>
+        c.id === site.customer_id ||
+        (c.name && site.customer_id && c.name.toLowerCase() === site.customer_id.toLowerCase())
+    );
+    if (cIdx >= 0) {
+      const c = custs[cIdx];
+      const cSites = Array.isArray(c.sites) ? [...c.sites] : [];
+      const sIdx = cSites.findIndex((s) => s.id === site.id || s.site_name.trim().toLowerCase() === site.site_name.trim().toLowerCase());
+      if (sIdx >= 0) {
+        cSites[sIdx] = site;
+      } else {
+        cSites.push(site);
+      }
+      c.sites = cSites;
+      c.updated_at = now;
+      writeJsonFile('customers.json', custs, true);
+    }
+  } catch (syncErr) {
+    console.warn('Sync site balance to customer profile note:', syncErr);
+  }
 
   recordAuditLog({
     entity_type: 'site_adjustment',
@@ -531,6 +745,31 @@ export function updateCustomerSiteBalances(
 
   saveCustomerSites(sites);
 
+  // Sync updated site balance directly to customer profile in customers.json
+  try {
+    const custs = readJsonFile<Customer[]>('customers.json', []);
+    const cIdx = custs.findIndex(
+      (c) =>
+        c.id === site.customer_id ||
+        (c.name && site.customer_id && c.name.toLowerCase() === site.customer_id.toLowerCase())
+    );
+    if (cIdx >= 0) {
+      const c = custs[cIdx];
+      const cSites = Array.isArray(c.sites) ? [...c.sites] : [];
+      const sIdx = cSites.findIndex((s) => s.id === site.id || s.site_name.trim().toLowerCase() === site.site_name.trim().toLowerCase());
+      if (sIdx >= 0) {
+        cSites[sIdx] = site;
+      } else {
+        cSites.push(site);
+      }
+      c.sites = cSites;
+      c.updated_at = now;
+      writeJsonFile('customers.json', custs, true);
+    }
+  } catch (syncErr) {
+    console.warn('Sync site balance to customer profile note:', syncErr);
+  }
+
   recordAuditLog({
     entity_type: 'site_adjustment',
     entity_id: site.id,
@@ -551,6 +790,26 @@ export function deleteCustomerSite(siteId: string, user: string): boolean {
 
   const [removed] = sites.splice(idx, 1);
   saveCustomerSites(sites);
+
+  // Sync site deletion from customer profile in customers.json
+  try {
+    const custs = readJsonFile<Customer[]>('customers.json', []);
+    const cIdx = custs.findIndex(
+      (c) =>
+        c.id === removed.customer_id ||
+        (c.name && removed.customer_id && c.name.toLowerCase() === removed.customer_id.toLowerCase())
+    );
+    if (cIdx >= 0) {
+      const c = custs[cIdx];
+      if (Array.isArray(c.sites)) {
+        c.sites = c.sites.filter((s) => s.id !== siteId && s.id !== removed.id);
+        c.updated_at = new Date().toISOString();
+        writeJsonFile('customers.json', custs, true);
+      }
+    }
+  } catch (err) {
+    console.warn('Sync site deletion to customer profile note:', err);
+  }
 
   recordAuditLog({
     entity_type: 'site_adjustment',
