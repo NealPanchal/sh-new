@@ -61,15 +61,24 @@ export async function GET(req: NextRequest) {
         const myCustNames = new Set(myCustomers.map((c) => (c.name || c.business_name || '').toLowerCase().trim()));
         const fullSummary = computeAllPartiesLedgerSummary();
         const filteredParties = (fullSummary.parties || []).filter((p: any) =>
-          myCustIds.has(p.customer_id) ||
-          myCustNames.has((p.customer_name || '').toLowerCase().trim())
+          myCustIds.has(p.id) ||
+          (p.name && myCustNames.has(p.name.toLowerCase().trim())) ||
+          (p.business_name && myCustNames.has(p.business_name.toLowerCase().trim()))
         );
+        const fDebit = filteredParties.reduce((sum: number, p: any) => sum + (Number(p.total_debit) || 0), 0);
+        const fCredit = filteredParties.reduce((sum: number, p: any) => sum + (Number(p.total_credit) || 0), 0);
+        const fOutstanding = fDebit - fCredit;
+
         const filteredSummary = {
-          ...fullSummary,
+          summary: {
+            totalParties: filteredParties.length,
+            totalDebit: fDebit,
+            totalCredit: fCredit,
+            totalOutstanding: fOutstanding,
+            totalReceivable: filteredParties.reduce((sum: number, p: any) => sum + Math.max(0, Number(p.closing_balance) || 0), 0),
+            totalPayable: filteredParties.reduce((sum: number, p: any) => sum + Math.abs(Math.min(0, Number(p.closing_balance) || 0)), 0),
+          },
           parties: filteredParties,
-          totalCustomers: filteredParties.length,
-          totalReceivable: filteredParties.reduce((sum: number, p: any) => sum + Math.max(0, p.net_balance), 0),
-          totalPayable: filteredParties.reduce((sum: number, p: any) => sum + Math.abs(Math.min(0, p.net_balance)), 0),
         };
         return NextResponse.json({ success: true, allPartiesSummary: filteredSummary });
       }

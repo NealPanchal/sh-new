@@ -516,15 +516,22 @@ function MasterPartyLedgerContent() {
                 const myCustIds = new Set(myCusts.map((c) => c.id));
                 const myCustNames = new Set(myCusts.map((c) => (c.name || c.business_name || '').toLowerCase().trim()));
                 const filteredParties = (summ.parties || []).filter((p: any) =>
-                  myCustIds.has(p.customer_id) ||
-                  myCustNames.has((p.customer_name || '').toLowerCase().trim())
+                  myCustIds.has(p.id) ||
+                  (p.name && myCustNames.has(p.name.toLowerCase().trim())) ||
+                  (p.business_name && myCustNames.has(p.business_name.toLowerCase().trim()))
                 );
+                const fDebit = filteredParties.reduce((sum: number, p: any) => sum + (Number(p.total_debit) || 0), 0);
+                const fCredit = filteredParties.reduce((sum: number, p: any) => sum + (Number(p.total_credit) || 0), 0);
                 summ = {
-                  ...summ,
+                  summary: {
+                    totalParties: filteredParties.length,
+                    totalDebit: fDebit,
+                    totalCredit: fCredit,
+                    totalOutstanding: fDebit - fCredit,
+                    totalReceivable: filteredParties.reduce((sum: number, p: any) => sum + Math.max(0, Number(p.closing_balance) || 0), 0),
+                    totalPayable: filteredParties.reduce((sum: number, p: any) => sum + Math.abs(Math.min(0, Number(p.closing_balance) || 0)), 0),
+                  },
                   parties: filteredParties,
-                  totalCustomers: filteredParties.length,
-                  totalReceivable: filteredParties.reduce((sum: number, p: any) => sum + Math.max(0, p.net_balance), 0),
-                  totalPayable: filteredParties.reduce((sum: number, p: any) => sum + Math.abs(Math.min(0, p.net_balance)), 0),
                 };
               }
               setAllPartiesData(summ);
@@ -1054,11 +1061,11 @@ function MasterPartyLedgerContent() {
       const q = allPartiesSearch.trim().toLowerCase();
       list = list.filter(
         (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.business_name.toLowerCase().includes(q) ||
-          p.contact_person.toLowerCase().includes(q) ||
-          p.phone.includes(q) ||
-          p.sites.some((s) => s.toLowerCase().includes(q))
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.business_name || '').toLowerCase().includes(q) ||
+          (p.contact_person || '').toLowerCase().includes(q) ||
+          (p.phone || '').includes(q) ||
+          (p.sites || []).some((s: string) => (s || '').toLowerCase().includes(q))
       );
     }
 
@@ -2858,7 +2865,7 @@ function MasterPartyLedgerContent() {
                   <span>Total Parties</span>
                 </div>
                 <div className="text-xl sm:text-2xl font-black text-surface-900">
-                  {allPartiesData?.summary.totalParties || customers.length || 0}
+                  {allPartiesData?.summary.totalParties ?? visibleCustomers.length}
                 </div>
                 <div className="text-[10px] text-surface-400">
                   Registered accounts
