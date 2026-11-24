@@ -304,9 +304,9 @@ export default function DeliveryManagementPage() {
 
       const statusLabels: Record<string, string> = {
         pending: 'Pending',
-        approved: 'Approved',
         out_for_delivery: 'Out for Delivery (In Transit)',
         delivered: 'Delivered',
+        approved: 'Approve — Signed Copy Received',
         partially_delivered: 'Partially Delivered',
         cancelled: 'Cancelled',
         goods_returned: 'Goods Returned',
@@ -548,18 +548,6 @@ export default function DeliveryManagementPage() {
             </button>
             <button
               type="button"
-              onClick={() => setStatusTab('approved')}
-              className={cn(
-                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
-                statusTab === 'approved'
-                  ? 'bg-white text-indigo-800 shadow-xs'
-                  : 'text-surface-600 hover:text-surface-900'
-              )}
-            >
-              Approved ({stats.approved})
-            </button>
-            <button
-              type="button"
               onClick={() => setStatusTab('out_for_delivery')}
               className={cn(
                 'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
@@ -581,6 +569,18 @@ export default function DeliveryManagementPage() {
               )}
             >
               Delivered ({stats.delivered})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusTab('approved')}
+              className={cn(
+                'px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer',
+                statusTab === 'approved'
+                  ? 'bg-white text-indigo-800 shadow-xs'
+                  : 'text-surface-600 hover:text-surface-900'
+              )}
+            >
+              Signed Copy Received ({stats.approved})
             </button>
             <button
               type="button"
@@ -784,7 +784,7 @@ export default function DeliveryManagementPage() {
                               }}
                               className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-400 cursor-pointer disabled:opacity-50"
                             />
-                            <span className="text-xs">Mark as Approved</span>
+                            <span className="text-xs">Approve — Signed Copy Received</span>
                           </label>
 
                           {/* Status Dropdown with 7 exact options */}
@@ -815,9 +815,9 @@ export default function DeliveryManagementPage() {
                               )}
                             >
                               <option value="pending">Pending</option>
-                              <option value="approved">Approved</option>
                               <option value="out_for_delivery">Out for Delivery</option>
                               <option value="delivered">Delivered</option>
+                              <option value="approved">Approve — Signed Copy Received</option>
                               <option value="partially_delivered">Partially Delivered</option>
                               <option value="cancelled">Cancelled</option>
                               <option value="goods_returned">Goods Returned</option>
@@ -844,20 +844,20 @@ export default function DeliveryManagementPage() {
                         <div className="flex items-center justify-end gap-1.5">
                           {!isApproved ? (
                             <>
-                              {/* 1-Click "Mark as Approved" Button */}
+                              {/* 1-Click "Approve (Signed Copy Received)" Button */}
                               <button
                                 type="button"
                                 disabled={isUpdating}
                                 onClick={() => handleMarkAsApproved(c)}
                                 className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                                title="Admin: Mark as Approved and add to Party Ledger & Challans"
+                                title="Admin: Mark Approved — Signed Copy Received and add to Party Ledger"
                               >
                                 {isUpdating ? (
                                   <span>Saving...</span>
                                 ) : (
                                   <>
                                     <CheckCircle2 size={13} />
-                                    <span>Approve</span>
+                                    <span>Approve (Signed Copy)</span>
                                   </>
                                 )}
                               </button>

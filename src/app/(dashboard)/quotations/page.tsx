@@ -191,7 +191,18 @@ export default function QuotationsPage() {
                       ₹{Number(q.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="p-2 text-center">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200">
+                      <span
+                        className={cn(
+                          'px-2 py-0.5 rounded text-[10px] font-bold uppercase border',
+                          q.status === 'converted'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : q.status === 'approved'
+                            ? 'bg-green-100 text-green-800 border-green-300'
+                            : q.status === 'sent'
+                            ? 'bg-blue-100 text-blue-800 border-blue-200'
+                            : 'bg-amber-100 text-amber-800 border-amber-200'
+                        )}
+                      >
                         {q.status || 'draft'}
                       </span>
                     </td>

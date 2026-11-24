@@ -64,7 +64,7 @@ function StatusBadge({ status }: { status: ChallanStatus }) {
 
   const statusLabels: Partial<Record<ChallanStatus, string>> = {
     pending: '⏳ Pending',
-    approved: '✓ Approved',
+    approved: '✓ Signed Copy Received',
     out_for_delivery: '📦 Out for Delivery',
     delivered: '🚚 Delivered',
     partially_delivered: '🔄 Part. Delivered',

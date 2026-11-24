@@ -66,6 +66,7 @@ function CreateChallanContent() {
     customers,
     products,
     getCustomer,
+    quotations,
     getQuotation,
     updateQuotation,
     peekNextChallanNumber,
@@ -572,51 +573,101 @@ function CreateChallanContent() {
 
   // Pre-load from quotation if quotationId is passed in URL
   useEffect(() => {
-    if (preselectedQuotationId) {
-      const q = getQuotation(preselectedQuotationId);
-      if (q) {
-        setSourceQuotation(q);
-        if (q.customer_id) {
-          const c = getCustomer(q.customer_id);
-          if (c) {
-            selectCustomer(c);
-          } else {
-            setSelectedCustomerId(q.customer_id);
-            setCustomerName(q.customer_name);
-            setCustomerPhone(q.customer_phone || '');
-          }
-        }
-        if (q.site_id) setSelectedSiteId(q.site_id);
-        if (q.site_name) setSelectedSiteName(q.site_name);
-        if (q.delivery_address) setDeliveryAddress(q.delivery_address);
-        if (q.apply_gst) setApplyGst(true);
+    if (!preselectedQuotationId) return;
 
-        if (q.items && q.items.length > 0) {
-          setItems(
-            q.items.map((it) => ({
-              product_id: it.product_id || '',
-              item_description: it.item_description,
-              brand: it.brand || '',
-              colour_finish: it.colour_finish || '',
-              size: it.size || '',
-              unit: it.unit || 'sheets',
-              quantity: String(it.quantity),
-              rate: String(it.rate),
-              discount_type: 'percent',
-              discount_value: '',
-              discount_amount: '',
-              amount: String(it.amount),
-              length: '',
-              width: '',
-              dimension_unit: 'ft',
-              calculated_sqft: '',
-            }))
-          );
+    const applyQuotation = (q: Quotation) => {
+      setSourceQuotation(q);
+      if (q.customer_id) {
+        const c = getCustomer(q.customer_id);
+        if (c) {
+          selectCustomer(c);
+        } else {
+          setSelectedCustomerId(q.customer_id);
+          setCustomerName(q.customer_name);
+          setCustomerPhone(q.customer_phone || '');
         }
-        showToast(`⚡ Pre-filled items & rates from Quotation ${q.quotation_number}`, 'info');
+      } else if (q.customer_name) {
+        setCustomerName(q.customer_name);
+        if (q.customer_phone) setCustomerPhone(q.customer_phone);
       }
+
+      if (q.site_id) setSelectedSiteId(q.site_id);
+      if (q.site_name) setSelectedSiteName(q.site_name);
+      if (q.delivery_address) {
+        setDeliveryAddress(q.delivery_address);
+      } else if (q.customer_address) {
+        setDeliveryAddress(q.customer_address);
+      }
+
+      // Auto-fetch transportation and loading charges
+      if (q.transportation_charges != null && Number(q.transportation_charges) > 0) {
+        setTransportCharges(String(q.transportation_charges));
+      }
+      const loadingAmt = (q as any).loading_charges ?? (q as any).loading_unloading_charges ?? (q as any).selection_charges;
+      if (loadingAmt != null && Number(loadingAmt) > 0) {
+        setLoadingCharges(String(loadingAmt));
+      }
+
+      // Auto-fetch overall discounts
+      if (q.discount_value != null && Number(q.discount_value) > 0) {
+        setOverallDiscountType(q.discount_type === 'amount' ? 'amount' : 'percent');
+        setOverallDiscountValue(String(q.discount_value));
+      }
+
+      // Auto-fetch GST & additional tax settings
+      if (q.apply_gst !== undefined) {
+        setApplyGst(Boolean(q.apply_gst));
+      }
+      if (q.apply_additional_9) {
+        setApplyAdditional9(true);
+      }
+
+      // Auto-fetch prepared_by / created_by
+      if (q.prepared_by || q.created_by) {
+        setCreatedBy(q.prepared_by || q.created_by || '');
+      }
+
+      // Auto-fetch all items with exact rates, quantities, descriptions, brands, finishes, and amounts
+      if (q.items && q.items.length > 0) {
+        setItems(
+          q.items.map((it) => ({
+            product_id: it.product_id || '',
+            item_description: it.item_description,
+            brand: it.brand || '',
+            colour_finish: it.colour_finish || '',
+            size: it.size || '',
+            unit: it.unit || 'sheets',
+            quantity: String(it.quantity || '1'),
+            rate: it.rate != null ? String(it.rate) : '',
+            discount_type: 'percent',
+            discount_value: '',
+            discount_amount: '',
+            amount: it.amount != null ? String(it.amount) : '',
+            length: '',
+            width: '',
+            dimension_unit: 'ft',
+            calculated_sqft: '',
+          }))
+        );
+      }
+      showToast(`⚡ Pre-filled items, rates, transport & loading from Quotation ${q.quotation_number}`, 'info');
+    };
+
+    const q = getQuotation(preselectedQuotationId);
+    if (q) {
+      applyQuotation(q);
+    } else {
+      fetch('/api/quotations')
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.quotations)) {
+            const found = data.quotations.find((item: Quotation) => item.id === preselectedQuotationId);
+            if (found) applyQuotation(found);
+          }
+        })
+        .catch(() => {});
     }
-  }, [preselectedQuotationId, getQuotation, getCustomer]);
+  }, [preselectedQuotationId, getQuotation, getCustomer, quotations]);
 
   // Pre-load from goods return if returnId is passed in URL
   useEffect(() => {
