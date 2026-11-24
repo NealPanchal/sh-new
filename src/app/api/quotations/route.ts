@@ -103,6 +103,85 @@ export async function POST(req: NextRequest) {
     await saveQuotationsAsync(current);
     invalidateDataCache('quotations.json');
 
+    // Auto-sync quoted items into customer's material_rates
+    try {
+      const qList: Quotation[] = Array.isArray(incoming) ? incoming : [incoming];
+      const { getAllCustomers, saveCustomersAsync } = await import('@/lib/server-accounting');
+      const allCusts = getAllCustomers();
+      let custsChanged = false;
+
+      qList.forEach((q) => {
+        if (!q.customer_id || !Array.isArray(q.items) || q.items.length === 0) return;
+        const cIdx = allCusts.findIndex((c) => c.id === q.customer_id);
+        if (cIdx === -1) return;
+
+        const cust = allCusts[cIdx];
+        const existingRates = Array.isArray(cust.material_rates) ? [...cust.material_rates] : [];
+        const rateMap = new Map<string, any>();
+        const getRateKey = (mr: any) => {
+          const sKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
+          const mKey = (mr.particulars || mr.material || '').trim().toLowerCase();
+          return `${sKey}::${mKey}`;
+        };
+
+        existingRates.forEach((mr: any) => {
+          if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);
+        });
+
+        q.items.forEach((it) => {
+          const desc = (it.item_description || '').trim();
+          const rate = Number(it.rate) || 0;
+          if (!desc || rate <= 0) return;
+
+          const brand = (it.brand || '').trim();
+          const sId = q.site_id || null;
+          const sName = q.site_name || null;
+          const sKey = (sName || sId || '').trim().toLowerCase();
+          const mKey = desc.toLowerCase();
+          const key = `${sKey}::${mKey}`;
+
+          const prev = rateMap.get(key);
+          if (prev) {
+            rateMap.set(key, {
+              ...prev,
+              particulars: desc,
+              material: desc,
+              company_name: brand || prev.company_name || 'Showhouse',
+              rate: rate,
+              site_id: sId || prev.site_id,
+              site_name: sName || prev.site_name,
+            });
+          } else {
+            rateMap.set(key, {
+              id: `mr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              site_id: sId,
+              site_name: sName,
+              material: desc,
+              particulars: desc,
+              room: 'General',
+              code: it.colour_finish || '',
+              company_name: brand || 'Showhouse',
+              rate: rate,
+            });
+          }
+        });
+
+        allCusts[cIdx] = {
+          ...cust,
+          material_rates: Array.from(rateMap.values()),
+          updated_at: new Date().toISOString(),
+        };
+        custsChanged = true;
+      });
+
+      if (custsChanged) {
+        await saveCustomersAsync(allCusts);
+        invalidateDataCache('customers.json');
+      }
+    } catch (e) {
+      console.warn('Quotation material sync error:', e);
+    }
+
     return NextResponse.json({
       success: true,
       quotation: Array.isArray(incoming) ? incoming[0] : incoming,

@@ -100,7 +100,9 @@ export default function DeliveryBillsPage() {
   const allChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
     try {
-      let list = (getChallans() || []).filter(Boolean);
+      let list = (getChallans() || []).filter(
+        (c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && (c.challan_number || c.customer_name)
+      );
       if (isEmp && currentUser) {
         const uName = (currentUser.name || '').toLowerCase();
         const uUser = (currentUser.username || '').toLowerCase();
@@ -146,7 +148,9 @@ export default function DeliveryBillsPage() {
     try {
       let list = (getChallans({
         search: search.trim() || undefined,
-      }) || []).filter(Boolean);
+      }) || []).filter(
+        (c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && (c.challan_number || c.customer_name)
+      );
       if (isEmp && currentUser) {
         const uName = (currentUser.name || '').toLowerCase();
         const uUser = (currentUser.username || '').toLowerCase();
@@ -246,7 +250,8 @@ export default function DeliveryBillsPage() {
   };
 
   const renderBillCard = (c: Challan) => {
-    const memoNo = c.reference_number || c.challan_number.split('/').pop() || '0120';
+    const memoNo =
+      c?.reference_number || (c?.challan_number ? String(c.challan_number).split('/').pop() : '') || '0120';
     const itemsSub = (c.items || []).reduce(
       (sum: number, it: ChallanItem) =>
         sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),
@@ -754,7 +759,7 @@ export default function DeliveryBillsPage() {
                 <tbody className="divide-y divide-surface-100">
                   {filteredBills.map((c) => {
                     const memoNo =
-                      c.reference_number || c.challan_number.split('/').pop() || '0120';
+                      c?.reference_number || (c?.challan_number ? String(c.challan_number).split('/').pop() : '') || '0120';
                     const itemsSub = (c.items || []).reduce(
                       (sum: number, it: ChallanItem) =>
                         sum + (Number(it.amount) || ((Number(it.rate) || 0) * (Number(it.quantity) || 0))),

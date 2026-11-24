@@ -64,6 +64,7 @@ function CreateQuotationContent() {
     peekNextQuotationNumber,
     createQuotation,
     createCustomer,
+    updateCustomer,
     profile,
     showToast,
   } = useApp();
@@ -130,6 +131,8 @@ function CreateQuotationContent() {
         setCustomerName(cust.business_name || cust.name || '');
         setCustomerPhone(cust.phone || '');
         setDeliveryAddress(cust.delivery_address || cust.billing_address || '');
+        let initialSiteName = 'Site 1';
+        let initialSiteId = '';
         if (cust.sites && cust.sites.length > 0) {
           setAvailableSites(cust.sites);
           if (preselectedSite) {
@@ -137,14 +140,48 @@ function CreateQuotationContent() {
               (s) => s.site_name?.toLowerCase() === preselectedSite.toLowerCase()
             );
             if (matched) {
+              initialSiteId = matched.id;
+              initialSiteName = matched.site_name;
               setSelectedSiteId(matched.id);
               setSelectedSiteName(matched.site_name);
               if (matched.site_address) setDeliveryAddress(matched.site_address);
             }
           } else {
-            setSelectedSiteId(cust.sites[0].id);
-            setSelectedSiteName(cust.sites[0].site_name || 'Site 1');
+            initialSiteId = cust.sites[0].id;
+            initialSiteName = cust.sites[0].site_name || 'Site 1';
+            setSelectedSiteId(initialSiteId);
+            setSelectedSiteName(initialSiteName);
             if (cust.sites[0].site_address) setDeliveryAddress(cust.sites[0].site_address);
+          }
+        }
+
+        // Auto-load material rates if available
+        if (cust.material_rates && cust.material_rates.length > 0) {
+          const siteFiltered = cust.material_rates.filter(
+            (mr) =>
+              !initialSiteName ||
+              initialSiteName === 'All Sites' ||
+              mr.site_name === initialSiteName ||
+              mr.site_id === initialSiteId ||
+              !mr.site_name
+          );
+          const source = siteFiltered.length > 0 ? siteFiltered : cust.material_rates;
+          const fetched: FormItem[] = source.map((mr, idx) => {
+            const roomPrefix = mr.room && mr.room !== 'General' ? `[ ${mr.room.toUpperCase()} ] ` : '';
+            const desc = mr.particulars || mr.material || 'LAMINATE / FINISH';
+            const r = Number(mr.rate) || 0;
+            return {
+              id: `it_af_${Date.now()}_${idx}`,
+              item_description: `${roomPrefix}${desc}`.trim(),
+              brand: mr.company_name || '',
+              unit: 'sheets',
+              quantity: '1',
+              rate: String(r),
+              amount: r,
+            };
+          });
+          if (fetched.length > 0) {
+            setItems(fetched);
           }
         }
       }
@@ -225,16 +262,53 @@ function CreateQuotationContent() {
     setCustomerPhone(customer.phone || '');
     setIsCustomerDropdownOpen(false);
 
+    let sId = '';
+    let sName = 'Site 1';
     if (customer.sites && customer.sites.length > 0) {
       setAvailableSites(customer.sites);
-      setSelectedSiteId(customer.sites[0].id);
-      setSelectedSiteName(customer.sites[0].site_name || 'Site 1');
+      sId = customer.sites[0].id;
+      sName = customer.sites[0].site_name || 'Site 1';
+      setSelectedSiteId(sId);
+      setSelectedSiteName(sName);
       setDeliveryAddress(customer.sites[0].site_address || customer.delivery_address || customer.billing_address || '');
     } else {
       setAvailableSites([]);
       setSelectedSiteId('');
       setSelectedSiteName('Site 1');
       setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
+    }
+
+    // Auto-load material rates if available and items are empty or default
+    if (customer.material_rates && customer.material_rates.length > 0) {
+      const siteFiltered = customer.material_rates.filter(
+        (mr) =>
+          !sName ||
+          sName === 'All Sites' ||
+          mr.site_name === sName ||
+          mr.site_id === sId ||
+          !mr.site_name
+      );
+      const source = siteFiltered.length > 0 ? siteFiltered : customer.material_rates;
+      const fetched: FormItem[] = source.map((mr, idx) => {
+        const roomPrefix = mr.room && mr.room !== 'General' ? `[ ${mr.room.toUpperCase()} ] ` : '';
+        const desc = mr.particulars || mr.material || 'LAMINATE / FINISH';
+        const r = Number(mr.rate) || 0;
+        return {
+          id: `it_af_${Date.now()}_${idx}`,
+          item_description: `${roomPrefix}${desc}`.trim(),
+          brand: mr.company_name || '',
+          unit: 'sheets',
+          quantity: '1',
+          rate: String(r),
+          amount: r,
+        };
+      });
+
+      if (fetched.length > 0 && (items.length <= 1 && (!items[0] || !items[0].item_description.trim()))) {
+        setItems(fetched);
+        showToast(`Loaded ${displayName} with ${fetched.length} agreed materials`, 'success');
+        return;
+      }
     }
 
     showToast(`Loaded ${displayName}`, 'info');

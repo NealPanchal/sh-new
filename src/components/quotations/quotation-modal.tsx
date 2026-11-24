@@ -99,12 +99,45 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       }
     } else {
       setQuotationNumber(peekNextQuotationNumber());
+      let initSiteId = '';
+      let initSiteName = '';
       if (sites.length > 0) {
-        setSelectedSiteId(sites[0].id);
-        setSelectedSiteName(sites[0].site_name);
+        initSiteId = sites[0].id;
+        initSiteName = sites[0].site_name;
+        setSelectedSiteId(initSiteId);
+        setSelectedSiteName(initSiteName);
         setDeliveryAddress(sites[0].site_address);
       } else {
         setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
+      }
+
+      if (customer.material_rates && customer.material_rates.length > 0) {
+        const siteFiltered = customer.material_rates.filter(
+          (mr) =>
+            !initSiteName ||
+            initSiteName === 'All Sites' ||
+            mr.site_name === initSiteName ||
+            mr.site_id === initSiteId ||
+            !mr.site_name
+        );
+        const source = siteFiltered.length > 0 ? siteFiltered : customer.material_rates;
+        const fetched: FormItem[] = source.map((mr, idx) => {
+          const roomPrefix = mr.room && mr.room !== 'General' ? `[ ${mr.room.toUpperCase()} ] ` : '';
+          const desc = mr.particulars || mr.material || 'LAMINATE / FINISH';
+          const r = Number(mr.rate) || 0;
+          return {
+            id: `it_af_${Date.now()}_${idx}`,
+            item_description: `${roomPrefix}${desc}`.trim(),
+            brand: mr.company_name || '',
+            unit: 'sheets',
+            quantity: '1',
+            rate: String(r),
+            amount: r,
+          };
+        });
+        if (fetched.length > 0) {
+          setItems(fetched);
+        }
       }
     }
   }, [editQuotation, peekNextQuotationNumber]);

@@ -163,15 +163,24 @@ export async function fetchSingleChallanFromFirestore(id: string): Promise<Chall
  * Fetch all active challans from Cloud Firestore REST API
  */
 export async function fetchAllChallansFromFirestore(): Promise<Challan[]> {
-  // 0. Try Supabase first (Instant, unlimited operations)
+  // 0. Try Supabase bundle first (Instant, unlimited operations)
   try {
+    const supaDoc = await fetchDocFromSupabase('challans', 'all_challans');
+    if (supaDoc && Array.isArray(supaDoc.list) && supaDoc.list.length > 0) {
+      const valid = supaDoc.list.filter(
+        (c: any) => c && !c.is_deleted && c.id !== 'all_challans' && !c.id.startsWith('all_') && c.challan_number
+      );
+      if (valid.length > 0) {
+        return valid as Challan[];
+      }
+    }
+
     const supaDocs = await fetchCollectionDocsFromSupabase('challans');
     if (Array.isArray(supaDocs) && supaDocs.length > 0) {
-      const valid = supaDocs.filter((c: any) => c && !c.is_deleted && c.id !== 'all_challans');
+      const valid = supaDocs.filter(
+        (c: any) => c && !c.is_deleted && c.id !== 'all_challans' && !c.id.startsWith('all_') && c.challan_number
+      );
       if (valid.length > 0) {
-        try {
-          safeWriteDataFile('challans.json', valid);
-        } catch {}
         return valid as Challan[];
       }
     }
@@ -182,6 +191,7 @@ export async function fetchAllChallansFromFirestore(): Promise<Challan[]> {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       cache: 'no-store',
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {
@@ -189,8 +199,10 @@ export async function fetchAllChallansFromFirestore(): Promise<Challan[]> {
       if (data.documents && Array.isArray(data.documents)) {
         const list: Challan[] = [];
         for (const doc of data.documents) {
+          const docId = doc.name ? doc.name.split('/').pop() : '';
+          if (docId === 'all_challans' || docId.startsWith('all_')) continue;
           const parsed = firestoreDocToChallan(doc);
-          if (parsed && !parsed.is_deleted) {
+          if (parsed && !parsed.is_deleted && parsed.id !== 'all_challans' && parsed.challan_number) {
             list.push(parsed);
           }
         }

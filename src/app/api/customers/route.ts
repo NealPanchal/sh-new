@@ -144,11 +144,43 @@ export async function POST(req: NextRequest) {
         : existingIdx >= 0 && Array.isArray(customers[existingIdx].sites) && customers[existingIdx].sites!.length > 0
         ? customers[existingIdx].sites
         : undefined,
-      material_rates: Array.isArray(material_rates)
-        ? material_rates
-        : existingIdx >= 0
-        ? customers[existingIdx].material_rates
-        : [],
+      material_rates: (() => {
+        const prevRates = existingIdx >= 0 && Array.isArray(customers[existingIdx].material_rates)
+          ? customers[existingIdx].material_rates!
+          : [];
+        if (!Array.isArray(material_rates)) return prevRates;
+        if (material_rates.length === 0) return prevRates;
+
+        const rateMap = new Map<string, any>();
+        const getRateKey = (mr: any) => {
+          const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
+          const matKey = (mr.particulars || mr.material || mr.id || '').trim().toLowerCase();
+          return `${siteKey}::${matKey}`;
+        };
+        prevRates.forEach((mr: any) => {
+          if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);
+        });
+        material_rates.forEach((mr: any) => {
+          if (mr && (mr.particulars || mr.material || mr.rate)) {
+            const k = getRateKey(mr);
+            const prev = rateMap.get(k);
+            if (!prev) {
+              rateMap.set(k, mr);
+            } else {
+              rateMap.set(k, {
+                ...prev,
+                ...mr,
+                particulars: mr.particulars || prev.particulars || mr.material || prev.material,
+                material: mr.material || prev.material || mr.particulars || prev.particulars,
+                company_name: mr.company_name || prev.company_name || '',
+                rate: Number(mr.rate) || Number(prev.rate) || 0,
+                room: mr.room || prev.room || 'General',
+              });
+            }
+          }
+        });
+        return Array.from(rateMap.values());
+      })(),
       is_active: true,
       created_at: existingIdx >= 0 ? customers[existingIdx].created_at : now,
       updated_at: now,

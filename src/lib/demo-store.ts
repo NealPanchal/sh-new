@@ -101,6 +101,14 @@ function loadState(): DemoState {
       if (!Array.isArray(parsed.products)) parsed.products = [];
       if (!Array.isArray(parsed.challanItems)) parsed.challanItems = [];
       if (!Array.isArray(parsed.activityLog)) parsed.activityLog = [];
+
+      // Filter out any bundle docs or invalid items from state
+      parsed.challans = parsed.challans.filter(
+        (c: any) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && (c.challan_number || c.customer_name)
+      );
+      parsed.customers = parsed.customers.filter(
+        (c: any) => c && c.id && c.id !== 'all_customers' && !c.id.startsWith('all_') && (c.name || c.business_name || c.contact_person)
+      );
       return parsed;
     }
   } catch {
@@ -285,6 +293,13 @@ export function createCustomer(data: Partial<Customer>): Customer {
   saveCustomerToFirebase(customer).catch((err) =>
     console.warn('Firebase saveCustomer sync:', err)
   );
+  if (typeof window !== 'undefined') {
+    fetch('/api/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(customer),
+    }).catch(() => {});
+  }
   return customer;
 }
 
@@ -303,16 +318,27 @@ export function updateCustomer(id: string, data: Partial<Customer>): Customer | 
     ? data.sites
     : state.customers[idx].sites;
 
+  // When updating material rates, never discard existing ones if partial
+  let material_rates = data.material_rates !== undefined ? data.material_rates : state.customers[idx].material_rates;
+
   state.customers[idx] = {
     ...state.customers[idx],
     ...data,
     sites,
+    material_rates,
     updated_at: new Date().toISOString(),
   };
   saveState(state);
   saveCustomerToFirebase(state.customers[idx]).catch((err) =>
     console.warn('Firebase updateCustomer sync:', err)
   );
+  if (typeof window !== 'undefined') {
+    fetch('/api/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.customers[idx]),
+    }).catch(() => {});
+  }
   return state.customers[idx];
 }
 
@@ -332,6 +358,7 @@ export function syncCustomersFromFirebase(remoteCustomers: Customer[]): void {
   const map = new Map<string, Customer>();
   state.customers.forEach((c) => map.set(c.id, c));
   remoteCustomers.forEach((rc) => {
+    if (!rc || !rc.id || rc.id === 'all_customers') return;
     const existing = map.get(rc.id);
     if (!existing) {
       map.set(rc.id, rc);
@@ -344,12 +371,37 @@ export function syncCustomersFromFirebase(remoteCustomers: Customer[]): void {
           : Array.isArray(existing.sites) && existing.sites.length > 0
           ? existing.sites
           : [];
-      const mergedRates =
-        Array.isArray(rc.material_rates) && rc.material_rates.length > 0
-          ? rc.material_rates
-          : Array.isArray(existing.material_rates) && existing.material_rates.length > 0
-          ? existing.material_rates
-          : [];
+
+      // Union-merge material rates so materials are NEVER dropped
+      const rateMap = new Map<string, any>();
+      const getRateKey = (mr: any) => {
+        const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
+        const matKey = (mr.particulars || mr.material || mr.id || '').trim().toLowerCase();
+        return `${siteKey}::${matKey}`;
+      };
+      (Array.isArray(existing.material_rates) ? existing.material_rates : []).forEach((mr: any) => {
+        if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);
+      });
+      (Array.isArray(rc.material_rates) ? rc.material_rates : []).forEach((mr: any) => {
+        if (mr && (mr.particulars || mr.material || mr.rate)) {
+          const k = getRateKey(mr);
+          const prev = rateMap.get(k);
+          if (!prev) {
+            rateMap.set(k, mr);
+          } else {
+            rateMap.set(k, {
+              ...prev,
+              ...mr,
+              particulars: mr.particulars || prev.particulars || mr.material || prev.material,
+              material: mr.material || prev.material || mr.particulars || prev.particulars,
+              company_name: mr.company_name || prev.company_name || '',
+              rate: Number(mr.rate) || Number(prev.rate) || 0,
+              room: mr.room || prev.room || 'General',
+            });
+          }
+        }
+      });
+      const mergedRates = Array.from(rateMap.values());
 
       if (tRemote >= tLocal) {
         map.set(rc.id, {
@@ -1115,7 +1167,7 @@ export function syncFromFirebase(firebaseChallans: Challan[]): void {
 
   // Filter out any challans that have been deleted locally or marked is_deleted
   const activeRemote = firebaseChallans.filter(
-    (c) => !c.is_deleted && !deletedSet.has(c.id)
+    (c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && !c.is_deleted && !deletedSet.has(c.id) && (c.challan_number || c.customer_name)
   );
 
   // If remote is empty and we have local challans, DO NOT wipe local challans!
@@ -1128,7 +1180,7 @@ export function syncFromFirebase(firebaseChallans: Challan[]): void {
 
   // 1. Keep existing local non-deleted challans
   state.challans.forEach((c) => {
-    if (!c.is_deleted && !deletedSet.has(c.id)) {
+    if (c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && !c.is_deleted && !deletedSet.has(c.id) && (c.challan_number || c.customer_name)) {
       map.set(c.id, c);
     }
   });
@@ -1147,7 +1199,9 @@ export function syncFromFirebase(firebaseChallans: Challan[]): void {
     }
   });
 
-  const merged = Array.from(map.values());
+  const merged = Array.from(map.values()).filter(
+    (c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && (c.challan_number || c.customer_name)
+  );
   state.challans = merged.sort((a, b) => {
     const da = new Date(b.challan_date || b.created_at || 0).getTime();
     const db = new Date(a.challan_date || a.created_at || 0).getTime();
@@ -1623,6 +1677,83 @@ export function peekNextQuotationNumber(targetDate?: Date | string): string {
   return `QT/${monthPadded}/${String(maxSeq + 1).padStart(3, '0')}`;
 }
 
+function autoSyncCustomerMaterialRates(
+  customerId: string,
+  items: Array<{ item_description?: string; brand?: string | null; rate?: number; colour_finish?: string | null }>,
+  siteId?: string | null,
+  siteName?: string | null
+) {
+  if (!customerId || !Array.isArray(items) || items.length === 0) return;
+  const custIdx = state.customers.findIndex((c) => c.id === customerId);
+  if (custIdx === -1) return;
+  const cust = state.customers[custIdx];
+  const existingRates = Array.isArray(cust.material_rates) ? [...cust.material_rates] : [];
+
+  const rateMap = new Map<string, any>();
+  const getRateKey = (mr: any) => {
+    const sKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
+    const mKey = (mr.particulars || mr.material || '').trim().toLowerCase();
+    return `${sKey}::${mKey}`;
+  };
+
+  existingRates.forEach((mr) => {
+    if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);
+  });
+
+  items.forEach((it) => {
+    const desc = (it.item_description || '').trim();
+    const rate = Number(it.rate) || 0;
+    if (!desc || rate <= 0) return;
+
+    const brand = (it.brand || '').trim();
+    const sId = siteId || null;
+    const sName = siteName || null;
+    const sKey = (sName || sId || '').trim().toLowerCase();
+    const mKey = desc.toLowerCase();
+    const key = `${sKey}::${mKey}`;
+
+    const prev = rateMap.get(key);
+    if (prev) {
+      rateMap.set(key, {
+        ...prev,
+        particulars: desc,
+        material: desc,
+        company_name: brand || prev.company_name || 'Showhouse',
+        rate: rate,
+        site_id: sId || prev.site_id,
+        site_name: sName || prev.site_name,
+      });
+    } else {
+      rateMap.set(key, {
+        id: `mr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        site_id: sId,
+        site_name: sName,
+        material: desc,
+        particulars: desc,
+        room: 'General',
+        code: it.colour_finish || '',
+        company_name: brand || 'Showhouse',
+        rate: rate,
+      });
+    }
+  });
+
+  const updatedRates = Array.from(rateMap.values());
+  state.customers[custIdx] = {
+    ...cust,
+    material_rates: updatedRates,
+    updated_at: new Date().toISOString(),
+  };
+  saveCustomerToFirebase(state.customers[custIdx]).catch(() => {});
+  if (typeof window !== 'undefined') {
+    fetch('/api/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.customers[custIdx]),
+    }).catch(() => {});
+  }
+}
+
 export function createQuotation(data: Partial<Quotation>, items: Partial<QuotationItem>[]): Quotation {
   const now = new Date().toISOString();
   const qId = generateId();
@@ -1688,6 +1819,21 @@ export function createQuotation(data: Partial<Quotation>, items: Partial<Quotati
   if (!state.quotations) state.quotations = [];
   state.quotations.push(quotation);
   saveState(state);
+
+  // Auto-sync quoted materials to customer's permanent agreed material_rates
+  if (quotation.customer_id) {
+    autoSyncCustomerMaterialRates(quotation.customer_id, cleanItems, quotation.site_id, quotation.site_name);
+  }
+
+  // Dual sync quotation to server API
+  if (typeof window !== 'undefined') {
+    fetch('/api/quotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(quotation),
+    }).catch(() => {});
+  }
+
   return quotation;
 }
 
@@ -1749,6 +1895,20 @@ export function updateQuotation(id: string, data: Partial<Quotation>, items?: Pa
   };
 
   saveState(state);
+
+  const updatedQ = state.quotations[idx];
+  if (updatedQ.customer_id) {
+    autoSyncCustomerMaterialRates(updatedQ.customer_id, cleanItems, updatedQ.site_id, updatedQ.site_name);
+  }
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/quotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedQ),
+    }).catch(() => {});
+  }
+
   return state.quotations[idx];
 }
 

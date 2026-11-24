@@ -218,6 +218,7 @@ export async function GET(req: NextRequest) {
   const map = new Map<string, any>();
 
   for (const c of localChallans) {
+    if (!c || !c.id || c.id === 'all_challans' || c.id.startsWith('all_') || !c.challan_number) continue;
     if (includeDeleted || !c.is_deleted) {
       map.set(c.id, c);
     }
@@ -226,6 +227,7 @@ export async function GET(req: NextRequest) {
   try {
     const remote = await fetchAllChallansFromFirestore();
     for (const rc of remote) {
+      if (!rc || !rc.id || rc.id === 'all_challans' || rc.id.startsWith('all_') || !rc.challan_number) continue;
       if (includeDeleted || !rc.is_deleted) {
         const existing = map.get(rc.id);
         if (!existing) {
@@ -243,11 +245,13 @@ export async function GET(req: NextRequest) {
     console.warn('API GET all challans remote merge note:', err);
   }
 
-  let list = Array.from(map.values()).sort((a, b) => {
-    const da = new Date(b.challan_date || b.created_at || 0).getTime();
-    const db = new Date(a.challan_date || a.created_at || 0).getTime();
-    return da - db;
-  });
+  let list = Array.from(map.values())
+    .filter((c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && c.challan_number)
+    .sort((a, b) => {
+      const da = new Date(b.challan_date || b.created_at || 0).getTime();
+      const db = new Date(a.challan_date || a.created_at || 0).getTime();
+      return da - db;
+    });
 
   // Filter by Customer ID or Name if requested (Party Challans Isolation)
   if (customerId || customerName) {

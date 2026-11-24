@@ -284,8 +284,10 @@ export async function fetchChallansFromFirebase(): Promise<Challan[]> {
     const snap = await getDocs(colRef);
     const list: Challan[] = [];
     snap.forEach((d) => {
+      if (d.id === 'all_challans' || d.id.startsWith('all_')) return;
       const data = d.data() as Challan;
-      list.push({ ...data, id: d.id || data.id, items: data.items || [] });
+      if (!data.challan_number && !data.customer_name) return;
+      list.push({ ...data, id: d.id || data.id, items: Array.isArray(data.items) ? data.items : [] });
     });
     return list;
   } catch (err) {
@@ -334,7 +336,9 @@ export async function fetchCustomersFromFirebase(): Promise<Customer[]> {
     const snap = await getDocs(colRef);
     const list: Customer[] = [];
     snap.forEach((d) => {
+      if (d.id === 'all_customers' || d.id.startsWith('all_')) return;
       const data = d.data() as Customer;
+      if (!data.name && !data.business_name && !data.contact_person) return;
       list.push({ ...data, id: d.id || data.id });
     });
     return list;
@@ -355,7 +359,9 @@ export function subscribeToCustomers(onUpdate: (customers: Customer[]) => void):
       (snapshot) => {
         const list: Customer[] = [];
         snapshot.forEach((d) => {
+          if (d.id === 'all_customers' || d.id.startsWith('all_')) return;
           const item = d.data() as Customer;
+          if (!item.name && !item.business_name && !item.contact_person) return;
           list.push({ ...item, id: d.id || item.id });
         });
         if (list.length > 0) {
@@ -472,8 +478,10 @@ export function subscribeToChallans(onUpdate: (challans: Challan[]) => void): ()
       (snapshot) => {
         const list: Challan[] = [];
         snapshot.forEach((d) => {
+          if (d.id === 'all_challans' || d.id.startsWith('all_')) return;
           const item = d.data() as Challan;
-          list.push({ ...item, id: d.id || item.id });
+          if (!item.challan_number && !item.customer_name) return;
+          list.push({ ...item, id: d.id || item.id, items: Array.isArray(item.items) ? item.items : [] });
         });
         // Only update if there are remote records; never wipe local records with empty list
         if (list.length > 0) {

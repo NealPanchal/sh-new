@@ -164,7 +164,9 @@ export default function ChallansPage() {
   const allChallans = useMemo(() => {
     if (!mounted || isLoading) return [];
     try {
-      let list = (getChallans() || []).filter(Boolean);
+      let list = (getChallans() || []).filter(
+        (c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && (c.challan_number || c.customer_name)
+      );
       if (isEmp && currentUser) {
         const uName = (currentUser.name || '').toLowerCase();
         const uUser = (currentUser.username || '').toLowerCase();
@@ -211,7 +213,9 @@ export default function ChallansPage() {
       let list = (getChallans({
         search: search || undefined,
         status: statusFilter !== 'all' ? (statusFilter as ChallanStatus) : undefined,
-      }) || []).filter(Boolean);
+      }) || []).filter(
+        (c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && (c.challan_number || c.customer_name)
+      );
       if (isEmp && currentUser) {
         const uName = (currentUser.name || '').toLowerCase();
         const uUser = (currentUser.username || '').toLowerCase();
@@ -233,7 +237,7 @@ export default function ChallansPage() {
         });
       }
       list = filterChallansByDate(list, dateFilter) || [];
-      return list.filter(Boolean);
+      return list.filter((c) => c && c.id && c.id !== 'all_challans' && !c.id.startsWith('all_') && (c.challan_number || c.customer_name));
     } catch (e) {
       console.error('Error filtering challans:', e);
       return [];
