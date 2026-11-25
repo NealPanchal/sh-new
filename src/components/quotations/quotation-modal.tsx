@@ -438,7 +438,7 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
 
           {/* Items Table */}
           <div className="border border-surface-200 rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-xs text-left border-collapse">
+            <table className="w-full text-xs text-left border-collapse min-w-[580px]">
               <thead className="bg-surface-100 border-b border-surface-200 font-bold uppercase text-[10px] text-surface-700">
                 <tr>
                   <th className="py-2 px-2 w-8 text-center">#</th>
@@ -630,42 +630,42 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
         </div>
 
         {/* Modal Footer */}
-        <div className="p-3.5 sm:p-4 bg-surface-50 border-t border-surface-200 flex flex-wrap items-center justify-between gap-2">
+        <div className="p-3 sm:p-4 bg-surface-50 border-t border-surface-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="btn-secondary py-1.5 px-3 text-xs"
+            className="btn-secondary py-2 sm:py-1.5 px-3 text-xs order-last sm:order-first"
           >
             Cancel
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
             <button
               type="button"
               onClick={() => handleSave(false, false)}
-              className="btn-secondary py-1.5 px-3 text-xs font-bold flex items-center gap-1.5"
+              className="btn-secondary py-2 sm:py-1.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5"
             >
               <Save size={13} />
-              <span>Save Draft</span>
+              <span>Save Quotation</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleSave(false, true)}
-              className="py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="py-2 sm:py-1.5 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               title="Save quotation and download PDF"
             >
               <Download size={13} />
-              <span>Download PDF</span>
+              <span>PDF</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleSave(true, false)}
-              className="py-1.5 px-3.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="col-span-2 sm:col-span-1 py-2 sm:py-1.5 px-3.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
             >
               <Send size={13} />
-              <span>Save &amp; Send WhatsApp 📲</span>
+              <span>Save &amp; WhatsApp 📲</span>
             </button>
           </div>
         </div>

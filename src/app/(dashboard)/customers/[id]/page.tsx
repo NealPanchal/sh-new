@@ -565,6 +565,18 @@ export default function CustomerDetailPage() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => {
+                            setEditingQuotation(q);
+                            setShowQuotationModal(true);
+                          }}
+                          className="py-1.5 px-2 text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg border border-amber-200 flex items-center justify-center gap-1 cursor-pointer"
+                          title="Edit Quotation"
+                        >
+                          <Edit size={11} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleShareQuotationWhatsApp(q)}
                           className="flex-1 py-1.5 px-2 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-1 cursor-pointer"
                           title="Share via WhatsApp"
@@ -575,19 +587,18 @@ export default function CustomerDetailPage() {
                         <button
                           type="button"
                           onClick={() => handleDownloadQuotationPDF(q)}
-                          className="flex-1 py-1.5 px-2 text-[11px] font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 rounded-lg border border-surface-300 flex items-center justify-center gap-1 cursor-pointer"
+                          className="py-1.5 px-2 text-[11px] font-bold bg-surface-100 hover:bg-surface-200 text-surface-800 rounded-lg border border-surface-300 flex items-center justify-center gap-1 cursor-pointer"
                           title="Download Quotation PDF"
                         >
                           <Download size={11} />
-                          <span>PDF</span>
                         </button>
                         <Link
                           href={`/challans/new?customerId=${customer.id}&quotationId=${q.id}`}
-                          className="flex-1 py-1.5 px-2 text-[11px] font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center justify-center gap-1"
+                          className="py-1.5 px-2 text-[11px] font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg flex items-center justify-center gap-1"
                           title="Convert to Delivery Challan"
                         >
                           <ArrowRight size={11} />
-                          <span>To Challan</span>
+                          <span>Challan</span>
                         </Link>
                       </div>
                     </div>
@@ -1133,6 +1144,11 @@ export default function CustomerDetailPage() {
         <QuotationViewModal
           quotation={viewingQuotation}
           onClose={() => setViewingQuotation(null)}
+          onEdit={(q) => {
+            setViewingQuotation(null);
+            setEditingQuotation(q);
+            setShowQuotationModal(true);
+          }}
         />
       )}
     </div>

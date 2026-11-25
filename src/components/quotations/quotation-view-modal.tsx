@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Quotation } from '@/types';
 import { useApp } from '@/lib/context';
-import { X, Send, Download, ArrowRight, Building2, Calendar, User, Phone, MapPin, Layers } from 'lucide-react';
+import { X, Send, Download, ArrowRight, Building2, Calendar, User, Phone, MapPin, Layers, Edit } from 'lucide-react';
 import { formatDateIndian, cn } from '@/lib/utils';
 import { shareQuotationViaWhatsApp } from '@/lib/whatsapp';
 import { exportQuotationToPDF } from '@/lib/pdf-quotation';
@@ -12,9 +12,10 @@ import { exportQuotationToPDF } from '@/lib/pdf-quotation';
 interface QuotationViewModalProps {
   quotation: Quotation | null;
   onClose: () => void;
+  onEdit?: (quotation: Quotation) => void;
 }
 
-export function QuotationViewModal({ quotation, onClose }: QuotationViewModalProps) {
+export function QuotationViewModal({ quotation, onClose, onEdit }: QuotationViewModalProps) {
   const { profile, showToast } = useApp();
 
   if (!quotation) return null;
@@ -77,13 +78,29 @@ export function QuotationViewModal({ quotation, onClose }: QuotationViewModalPro
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-surface-400 hover:text-surface-700 rounded-lg hover:bg-surface-200/60 cursor-pointer"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEdit(quotation);
+                }}
+                className="py-1 px-2.5 rounded-lg text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                title="Edit Quotation"
+              >
+                <Edit size={13} />
+                <span>Edit</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-surface-400 hover:text-surface-700 rounded-lg hover:bg-surface-200/60 cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -314,6 +331,20 @@ export function QuotationViewModal({ quotation, onClose }: QuotationViewModalPro
           </div>
 
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEdit(quotation);
+                }}
+                className="py-2 sm:py-1.5 px-3 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                title="Edit Quotation"
+              >
+                <Edit size={13} />
+                <span>Edit</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -323,7 +354,10 @@ export function QuotationViewModal({ quotation, onClose }: QuotationViewModalPro
             </button>
             <Link
               href={`/challans/new?customerId=${encodeURIComponent(quotation.customer_id)}&quotationId=${encodeURIComponent(quotation.id)}`}
-              className="py-2 sm:py-1.5 px-3.5 rounded-xl text-xs font-bold text-white bg-[#ea580c] hover:bg-[#c2410c] inline-flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+              className={cn(
+                "py-2 sm:py-1.5 px-3.5 rounded-xl text-xs font-bold text-white bg-[#ea580c] hover:bg-[#c2410c] inline-flex items-center justify-center gap-1.5 shadow-xs transition-colors",
+                onEdit ? "col-span-2 sm:col-span-1" : ""
+              )}
             >
               <ArrowRight size={13} />
               <span>Convert to Challan</span>
