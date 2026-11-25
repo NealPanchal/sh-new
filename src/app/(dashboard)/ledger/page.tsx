@@ -537,6 +537,7 @@ function MasterPartyLedgerContent() {
               setAllPartiesData(summ);
             }
           }
+          
         } catch (err) {
           console.warn('All parties summary fetch note:', err);
         } finally {
