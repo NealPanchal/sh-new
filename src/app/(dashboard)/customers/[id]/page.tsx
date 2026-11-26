@@ -1114,6 +1114,7 @@ export default function CustomerDetailPage() {
         <QuotationModal
           customer={customer}
           editQuotation={editingQuotation}
+          initialSiteName={activeSiteFilter !== 'all' ? activeSiteFilter : undefined}
           onClose={() => {
             setShowQuotationModal(false);
             setEditingQuotation(null);

@@ -11,6 +11,7 @@ import { exportQuotationToPDF } from '@/lib/pdf-quotation';
 interface QuotationModalProps {
   customer: Customer;
   editQuotation?: Quotation | null;
+  initialSiteName?: string | null;
   onClose: () => void;
   onSaved?: (quotation: Quotation) => void;
 }
@@ -27,7 +28,7 @@ interface FormItem {
   amount: number;
 }
 
-export function QuotationModal({ customer, editQuotation, onClose, onSaved }: QuotationModalProps) {
+export function QuotationModal({ customer, editQuotation, initialSiteName, onClose, onSaved }: QuotationModalProps) {
   const { createQuotation, updateQuotation, peekNextQuotationNumber, products, profile, showToast } = useApp();
   const currentUser = getCurrentUser();
 
@@ -46,8 +47,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
   const [preparedBy, setPreparedBy] = useState(currentUser?.name || 'Vrushank');
   const [notes, setNotes] = useState('');
 
-  // Customer Sites
-  const sites: CustomerSite[] = Array.isArray(customer.sites) && customer.sites.length > 0
+  // Customer Sites - de-duplicated by name to prevent duplicate options like Site 4
+  const rawSites: CustomerSite[] = Array.isArray(customer.sites) && customer.sites.length > 0
     ? customer.sites
     : customer.delivery_address
     ? [
@@ -61,6 +62,40 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       ]
     : [];
 
+  const sites = React.useMemo(() => {
+    const seen = new Set<string>();
+    const list: CustomerSite[] = [];
+    rawSites.forEach((s) => {
+      const key = (s.site_name || '').trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        list.push(s);
+      } else if (!key && !seen.has(s.id)) {
+        seen.add(s.id);
+        list.push(s);
+      }
+    });
+
+    // Also include any sites referenced in customer.material_rates
+    if (customer.material_rates) {
+      customer.material_rates.forEach((mr) => {
+        const sName = mr.site_name?.trim();
+        if (sName && sName.toLowerCase() !== 'all sites' && !seen.has(sName.toLowerCase())) {
+          seen.add(sName.toLowerCase());
+          list.push({
+            id: mr.site_id || `site_${sName.replace(/\s+/g, '_').toLowerCase()}`,
+            customer_id: customer.id,
+            site_name: sName,
+            site_address: customer.delivery_address || '',
+            created_at: new Date().toISOString(),
+          });
+        }
+      });
+    }
+
+    return list;
+  }, [customer.sites, customer.delivery_address, customer.id, customer.material_rates]);
+
   const [items, setItems] = useState<FormItem[]>([
     {
       id: `it_${Date.now()}_1`,
@@ -72,6 +107,74 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       amount: 0,
     },
   ]);
+
+  // Helper to filter materials strictly for the selected site
+  const getMaterialsForSite = (siteName?: string | null, siteId?: string | null) => {
+    if (!customer.material_rates || customer.material_rates.length === 0) return [];
+
+    const targetName = (siteName || '').trim().toLowerCase();
+    const targetId = (siteId || '').trim();
+
+    if (targetName && targetName !== 'all sites') {
+      // 1. Strict match by site_name or site_id
+      const strictMatches = customer.material_rates.filter((mr) => {
+        const mrSiteName = (mr.site_name || '').trim().toLowerCase();
+        const mrSiteId = (mr.site_id || '').trim();
+        return (mrSiteName && mrSiteName === targetName) || (targetId && mrSiteId && mrSiteId === targetId);
+      });
+
+      if (strictMatches.length > 0) {
+        return strictMatches;
+      }
+
+      // 2. If no rates are tagged strictly for this site, fall back to unassigned / "All Sites"
+      const generalMatches = customer.material_rates.filter((mr) => {
+        const mrSiteName = (mr.site_name || '').trim().toLowerCase();
+        return !mrSiteName || mrSiteName === 'all sites';
+      });
+      if (generalMatches.length > 0) {
+        return generalMatches;
+      }
+    }
+
+    return customer.material_rates;
+  };
+
+  // Helper to populate items for a site
+  const populateItemsForSite = (siteName?: string | null, siteId?: string | null, notify = false) => {
+    const matchedRates = getMaterialsForSite(siteName, siteId);
+    if (matchedRates.length === 0) {
+      if (notify) {
+        showToast(`No agreed rates found for ${siteName || 'selected site'}`, 'info');
+      }
+      return;
+    }
+
+    const fetched: FormItem[] = matchedRates.map((mr, idx) => {
+      const roomPrefix = mr.room && mr.room !== 'General' ? `[ ${mr.room.toUpperCase()} ] ` : '';
+      const desc = mr.particulars || mr.material || 'LAMINATE / FINISH';
+      const r = Number(mr.rate) || 0;
+      return {
+        id: `it_af_${Date.now()}_${idx}`,
+        item_description: `${roomPrefix}${desc}`.trim(),
+        brand: mr.company_name || (mr as any).brand || '',
+        code: mr.code || '',
+        product_id: mr.code || '',
+        unit: ((mr as any).unit as UnitType) || 'sheets',
+        quantity: '1',
+        rate: String(r),
+        amount: r,
+      };
+    });
+
+    setItems(fetched);
+    if (notify) {
+      showToast(
+        `⚡ Auto-fetched ${fetched.length} agreed materials for ${siteName || 'Site'} with locked rates!`,
+        'success'
+      );
+    }
+  };
 
   useEffect(() => {
     if (editQuotation) {
@@ -103,54 +206,34 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       }
     } else {
       setQuotationNumber(peekNextQuotationNumber());
-      let initSiteId = '';
-      let initSiteName = '';
-      if (sites.length > 0) {
-        initSiteId = sites[0].id;
-        initSiteName = sites[0].site_name;
-        setSelectedSiteId(initSiteId);
-        setSelectedSiteName(initSiteName);
-        setDeliveryAddress(sites[0].site_address);
-      } else {
-        setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
+      let initSite: CustomerSite | undefined;
+      if (initialSiteName) {
+        initSite = sites.find(
+          (s) => s.site_name.trim().toLowerCase() === initialSiteName.trim().toLowerCase()
+        );
+      }
+      if (!initSite && sites.length > 0) {
+        initSite = sites[0];
       }
 
-      if (customer.material_rates && customer.material_rates.length > 0) {
-        const siteFiltered = customer.material_rates.filter(
-          (mr) =>
-            !initSiteName ||
-            initSiteName === 'All Sites' ||
-            mr.site_name === initSiteName ||
-            mr.site_id === initSiteId ||
-            !mr.site_name
-        );
-        const source = siteFiltered.length > 0 ? siteFiltered : customer.material_rates;
-        const fetched: FormItem[] = source.map((mr, idx) => {
-          const roomPrefix = mr.room && mr.room !== 'General' ? `[ ${mr.room.toUpperCase()} ] ` : '';
-          const desc = mr.particulars || mr.material || 'LAMINATE / FINISH';
-          const r = Number(mr.rate) || 0;
-          return {
-            id: `it_af_${Date.now()}_${idx}`,
-            item_description: `${roomPrefix}${desc}`.trim(),
-            brand: mr.company_name || '',
-            code: mr.code || '',
-            product_id: mr.code || '',
-            unit: 'sheets',
-            quantity: '1',
-            rate: String(r),
-            amount: r,
-          };
-        });
-        if (fetched.length > 0) {
-          setItems(fetched);
-        }
+      if (initSite) {
+        setSelectedSiteId(initSite.id);
+        setSelectedSiteName(initSite.site_name);
+        setDeliveryAddress(initSite.site_address);
+        populateItemsForSite(initSite.site_name, initSite.id, false);
+      } else {
+        setSelectedSiteId('');
+        setSelectedSiteName('Site 1');
+        setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
+        populateItemsForSite('Site 1', '', false);
       }
     }
-  }, [editQuotation, peekNextQuotationNumber]);
+  }, [editQuotation, peekNextQuotationNumber, initialSiteName, sites]);
 
   const handleSiteChange = (siteId: string) => {
     setSelectedSiteId(siteId);
     const found = sites.find((s) => s.id === siteId);
+    const targetSiteName = found ? found.site_name : '';
     if (found) {
       setSelectedSiteName(found.site_name);
       setDeliveryAddress(found.site_address);
@@ -158,6 +241,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       setSelectedSiteName('');
       setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
     }
+    // Auto-fetch agreed materials strictly for the selected site
+    populateItemsForSite(targetSiteName, siteId, true);
   };
 
   const handleItemChange = (index: number, field: keyof FormItem, value: any) => {
@@ -194,50 +279,11 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
 
   // Auto-Fetch Customer Agreed Materials
   const handleAutoFetchAgreedMaterials = () => {
-    if (!customer.material_rates || customer.material_rates.length === 0) {
-      showToast('No agreed material rates configured for this customer', 'info');
-      return;
-    }
-
-    let source = customer.material_rates;
-    if (selectedSiteName && selectedSiteName !== 'All Sites') {
-      const siteFiltered = source.filter(
-        (mr) =>
-          mr.site_name?.toLowerCase() === selectedSiteName.toLowerCase() ||
-          mr.site_id === selectedSiteId ||
-          !mr.site_name ||
-          mr.site_name === 'All Sites'
-      );
-      if (siteFiltered.length > 0) {
-        source = siteFiltered;
-      }
-    }
-
-    const fetched: FormItem[] = source.map((mr, idx) => {
-      const roomPrefix = mr.room ? `[ ${mr.room.toUpperCase()} ] ` : '';
-      const desc = mr.particulars ? `${roomPrefix}${mr.particulars}` : `${roomPrefix}LAMINATE / FINISH`;
-      const r = Number(mr.rate) || 0;
-      return {
-        id: `it_af_${Date.now()}_${idx}`,
-        item_description: desc,
-        brand: mr.company_name || '',
-        code: mr.code || '',
-        product_id: mr.code || '',
-        unit: 'sheets',
-        quantity: '1',
-        rate: String(r),
-        amount: r,
-      };
-    });
-
-    setItems(fetched);
-    showToast(
-      `⚡ Auto-fetched ${fetched.length} agreed materials for ${selectedSiteName || 'Customer'} with locked rates!`,
-      'success'
-    );
+    populateItemsForSite(selectedSiteName, selectedSiteId, true);
   };
 
   // Computations
+  const currentSiteMaterials = getMaterialsForSite(selectedSiteName, selectedSiteId);
   const totalQuantity = items.reduce((sum, it) => sum + (parseFloat(it.quantity) || 0), 0);
   const itemsSubtotal = items.reduce((sum, it) => sum + (it.amount || 0), 0);
   const parsedTransport = parseFloat(transportCharges) || 0;
@@ -421,16 +467,16 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
             </div>
 
             <div className="flex items-center gap-2">
-              {customer.material_rates && customer.material_rates.length > 0 && (
+              {currentSiteMaterials.length > 0 && (
                 <button
                   type="button"
                   onClick={handleAutoFetchAgreedMaterials}
-                  className="py-1 px-2.5 text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                  title="Auto-fill items with locked customer rates"
+                  className="py-1 px-2.5 text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+                  title="Auto-fill items with locked customer rates for this site"
                 >
                   <Layers size={13} />
                   <span>
-                    ⚡ Auto-Fetch {selectedSiteName ? `${selectedSiteName} Materials` : 'Agreed Rates'} ({customer.material_rates.length})
+                    ⚡ Auto-Fetch {selectedSiteName ? `${selectedSiteName} Materials` : 'Agreed Rates'} ({currentSiteMaterials.length})
                   </span>
                 </button>
               )}

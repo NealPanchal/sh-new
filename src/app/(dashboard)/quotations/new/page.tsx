@@ -280,74 +280,61 @@ function CreateQuotationContent() {
       setDeliveryAddress(customer.delivery_address || customer.billing_address || '');
     }
 
-    // Auto-load material rates if available and items are empty or default
-    if (customer.material_rates && customer.material_rates.length > 0) {
-      const siteFiltered = customer.material_rates.filter(
-        (mr) =>
-          !sName ||
-          sName === 'All Sites' ||
-          mr.site_name === sName ||
-          mr.site_id === sId ||
-          !mr.site_name
-      );
-      const source = siteFiltered.length > 0 ? siteFiltered : customer.material_rates;
-      const fetched: FormItem[] = source.map((mr, idx) => {
-        const roomPrefix = mr.room && mr.room !== 'General' ? `[ ${mr.room.toUpperCase()} ] ` : '';
-        const desc = mr.particulars || mr.material || 'LAMINATE / FINISH';
-        const r = Number(mr.rate) || 0;
-        return {
-          id: `it_af_${Date.now()}_${idx}`,
-          item_description: `${roomPrefix}${desc}`.trim(),
-          brand: mr.company_name || '',
-          unit: 'sheets',
-          quantity: '1',
-          rate: String(r),
-          amount: r,
-        };
+    // Auto-load material rates for selected site
+    populateItemsForSite(sName, sId, false);
+    showToast(`Loaded ${displayName} (${sName})`, 'info');
+  };
+
+  // Helper to filter materials strictly for the selected site
+  const getMaterialsForSite = (siteName?: string | null, siteId?: string | null) => {
+    if (!matchedCustomer?.material_rates || matchedCustomer.material_rates.length === 0) return [];
+
+    const targetName = (siteName || '').trim().toLowerCase();
+    const targetId = (siteId || '').trim();
+
+    if (targetName && targetName !== 'all sites') {
+      const strictMatches = matchedCustomer.material_rates.filter((mr) => {
+        const mrSiteName = (mr.site_name || '').trim().toLowerCase();
+        const mrSiteId = (mr.site_id || '').trim();
+        return (mrSiteName && mrSiteName === targetName) || (targetId && mrSiteId && mrSiteId === targetId);
       });
 
-      if (fetched.length > 0 && (items.length <= 1 && (!items[0] || !items[0].item_description.trim()))) {
-        setItems(fetched);
-        showToast(`Loaded ${displayName} with ${fetched.length} agreed materials`, 'success');
-        return;
+      if (strictMatches.length > 0) {
+        return strictMatches;
+      }
+
+      const generalMatches = matchedCustomer.material_rates.filter((mr) => {
+        const mrSiteName = (mr.site_name || '').trim().toLowerCase();
+        return !mrSiteName || mrSiteName === 'all sites';
+      });
+      if (generalMatches.length > 0) {
+        return generalMatches;
       }
     }
 
-    showToast(`Loaded ${displayName}`, 'info');
+    return matchedCustomer.material_rates;
   };
 
-  // Auto-Fetch Customer Agreed Materials
-  const handleAutoFetchAgreedMaterials = () => {
-    if (!matchedCustomer?.material_rates || matchedCustomer.material_rates.length === 0) {
-      showToast('No agreed material rates configured for this customer', 'info');
+  const populateItemsForSite = (siteName?: string | null, siteId?: string | null, notify = false) => {
+    const matchedRates = getMaterialsForSite(siteName, siteId);
+    if (matchedRates.length === 0) {
+      if (notify) {
+        showToast(`No agreed rates found for ${siteName || 'selected site'}`, 'info');
+      }
       return;
     }
 
-    let source = matchedCustomer.material_rates;
-    if (selectedSiteName && selectedSiteName !== 'All Sites') {
-      const siteFiltered = source.filter(
-        (mr) =>
-          mr.site_name?.toLowerCase() === selectedSiteName.toLowerCase() ||
-          mr.site_id === selectedSiteId ||
-          !mr.site_name ||
-          mr.site_name === 'All Sites'
-      );
-      if (siteFiltered.length > 0) {
-        source = siteFiltered;
-      }
-    }
-
-    const fetched: FormItem[] = source.map((mr, idx) => {
-      const roomPrefix = mr.room ? `[ ${mr.room.toUpperCase()} ] ` : '';
-      const desc = mr.particulars ? `${roomPrefix}${mr.particulars}` : `${roomPrefix}LAMINATE / FINISH`;
+    const fetched: FormItem[] = matchedRates.map((mr, idx) => {
+      const roomPrefix = mr.room && mr.room !== 'General' ? `[ ${mr.room.toUpperCase()} ] ` : '';
+      const desc = mr.particulars || mr.material || 'LAMINATE / FINISH';
       const r = Number(mr.rate) || 0;
       return {
         id: `it_af_${Date.now()}_${idx}`,
-        item_description: desc,
-        brand: mr.company_name || '',
+        item_description: `${roomPrefix}${desc}`.trim(),
+        brand: mr.company_name || (mr as any).brand || '',
         code: mr.code || '',
         product_id: mr.code || '',
-        unit: 'sheets',
+        unit: ((mr as any).unit as UnitType) || 'sheets',
         quantity: '1',
         rate: String(r),
         amount: r,
@@ -355,10 +342,17 @@ function CreateQuotationContent() {
     });
 
     setItems(fetched);
-    showToast(
-      `⚡ Auto-fetched ${fetched.length} agreed materials for ${selectedSiteName || customerName} with locked rates!`,
-      'success'
-    );
+    if (notify) {
+      showToast(
+        `⚡ Auto-fetched ${fetched.length} agreed materials for ${siteName || 'Site'} with locked rates!`,
+        'success'
+      );
+    }
+  };
+
+  // Auto-Fetch Customer Agreed Materials
+  const handleAutoFetchAgreedMaterials = () => {
+    populateItemsForSite(selectedSiteName, selectedSiteId, true);
   };
 
   // Item row operations
@@ -789,9 +783,10 @@ function CreateQuotationContent() {
                       type="button"
                       onClick={() => {
                         setSelectedSiteId(s.id);
-                        setSelectedSiteName(s.site_name || s.name || `Site ${idx + 1}`);
+                        const sName = s.site_name || s.name || `Site ${idx + 1}`;
+                        setSelectedSiteName(sName);
                         if (s.site_address) setDeliveryAddress(s.site_address);
-                        showToast(`Selected ${s.site_name || `Site ${idx + 1}`}`, 'info');
+                        populateItemsForSite(sName, s.id, true);
                       }}
                       className={cn(
                         'px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer',
@@ -821,7 +816,7 @@ function CreateQuotationContent() {
                 <Sparkles size={16} className="text-[#ea580c]" />
                 <div className="text-xs">
                   <span className="font-bold text-orange-950">
-                    {matchedCustomer.material_rates.length} Agreed Material Rates found for this customer!
+                    {getMaterialsForSite(selectedSiteName, selectedSiteId).length} Agreed Material Rates found for {selectedSiteName || 'Customer'}!
                   </span>
                   <span className="text-orange-800/80 block text-[11px]">
                     Pre-fill descriptions, internal finishes, and agreed contract rates with 1-Click.
@@ -833,7 +828,7 @@ function CreateQuotationContent() {
                 onClick={handleAutoFetchAgreedMaterials}
                 className="py-1 px-2.5 text-xs font-bold bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-lg shadow-2xs shrink-0 cursor-pointer"
               >
-                ⚡ Auto-Fill Agreed Rates
+                ⚡ Auto-Fill {selectedSiteName ? `${selectedSiteName} Rates` : 'Agreed Rates'} ({getMaterialsForSite(selectedSiteName, selectedSiteId).length})
               </button>
             </div>
           )}
