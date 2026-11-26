@@ -289,7 +289,28 @@ export function generateChallanPDF({
     leftDetailY += leftLineGap;
   }
 
-  const siteInchargeDetails = resolveSiteInchargeDetails(challan, customer ? [customer] : undefined);
+  let activeCustomer = customer;
+  if (!activeCustomer && typeof window !== 'undefined') {
+    try {
+      const { getState } = require('@/lib/demo-store');
+      const st = getState();
+      activeCustomer = (st?.customers || []).find((c: any) =>
+        (c.id && challan.customer_id && c.id === challan.customer_id) ||
+        (c.name && challan.customer_name && c.name.toLowerCase() === challan.customer_name.toLowerCase()) ||
+        (c.business_name && challan.customer_name && c.business_name.toLowerCase() === challan.customer_name.toLowerCase())
+      );
+    } catch {}
+  }
+
+  const siteInchargeDetails = resolveSiteInchargeDetails(challan, activeCustomer ? [activeCustomer] : undefined);
+  if (siteInchargeDetails.siteName) {
+    const sNameUpper = siteInchargeDetails.siteName.toUpperCase();
+    if (!rawAddr.toUpperCase().includes(sNameUpper)) {
+      doc.text(`Site: ${sNameUpper}`, margin, leftDetailY);
+      leftDetailY += leftLineGap;
+    }
+  }
+
   if (siteInchargeDetails.inchargeName || siteInchargeDetails.inchargePhone) {
     const incText = `Site Incharge: ${siteInchargeDetails.inchargeName || ''}${siteInchargeDetails.inchargePhone ? ` (${siteInchargeDetails.inchargePhone})` : ''}`;
     doc.text(incText, margin, leftDetailY);
@@ -379,7 +400,9 @@ export function generateChallanPDF({
         4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
       };
 
-  const activeCustomer = customer || challan.customer;
+  if (!activeCustomer && challan.customer) {
+    activeCustomer = challan.customer;
+  }
   const resolvedCustomerMaterialRates = customerMaterialRates || activeCustomer?.material_rates || (() => {
     if (typeof window !== 'undefined') {
       try {

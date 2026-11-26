@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Quotation } from '@/types';
 import { useApp } from '@/lib/context';
 import { X, Send, Download, ArrowRight, Building2, Calendar, User, Phone, MapPin, Layers, Edit } from 'lucide-react';
-import { formatDateIndian, cn } from '@/lib/utils';
+import { formatDateIndian, cn, resolveSiteInchargeDetails } from '@/lib/utils';
 import { shareQuotationViaWhatsApp } from '@/lib/whatsapp';
 import { exportQuotationToPDF } from '@/lib/pdf-quotation';
 
@@ -16,9 +16,11 @@ interface QuotationViewModalProps {
 }
 
 export function QuotationViewModal({ quotation, onClose, onEdit }: QuotationViewModalProps) {
-  const { profile, showToast } = useApp();
+  const { profile, showToast, customers } = useApp();
 
   if (!quotation) return null;
+
+  const { inchargeName, inchargePhone } = resolveSiteInchargeDetails(quotation, customers);
 
   const handleShareWhatsApp = async () => {
     try {
@@ -137,6 +139,11 @@ export function QuotationViewModal({ quotation, onClose, onEdit }: QuotationView
               {quotation.delivery_address && (
                 <div className="text-surface-500 text-[11px] truncate">
                   {quotation.delivery_address}
+                </div>
+              )}
+              {(inchargeName || inchargePhone) && (
+                <div className="text-[11px] font-medium text-surface-700">
+                  Site Incharge: <span className="font-semibold text-surface-900">{inchargeName || ''}</span> {inchargePhone ? `(${inchargePhone})` : ''}
                 </div>
               )}
             </div>

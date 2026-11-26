@@ -784,6 +784,10 @@ export function generateQuotationWhatsAppMessage(
     const siteAddr = quotation.delivery_address ? ` (${quotation.delivery_address})` : '';
     msg += `*Site:* ${siteLabel}${siteAddr}\n`;
   }
+  const quoteSiteDetails = resolveSiteInchargeDetails(quotation);
+  if (quoteSiteDetails.inchargeName || quoteSiteDetails.inchargePhone) {
+    msg += `*Site Incharge:* ${quoteSiteDetails.inchargeName || ''}${quoteSiteDetails.inchargePhone ? ` (${quoteSiteDetails.inchargePhone})` : ''}\n`;
+  }
   msg += `*Prepared By:* ${attendee}\n`;
   msg += `────────────────────────────\n\n`;
 

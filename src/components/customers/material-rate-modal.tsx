@@ -167,6 +167,7 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
       phone: customer.phone || undefined,
       deliveryAddress: customer.delivery_address || customer.billing_address,
       siteName: activeSiteFilter !== 'all' ? activeSiteFilter : undefined,
+      customer,
       profile,
       preparedBy: currentUser?.name || 'VRUSHANK',
       selectedRates: list,

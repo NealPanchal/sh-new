@@ -5,7 +5,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { CustomerMaterialRate, BusinessProfile } from '@/types';
-import { formatDateIndian, formatPhone } from '@/lib/utils';
+import { formatDateIndian, formatPhone, resolveSiteInchargeDetails } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 
@@ -15,6 +15,9 @@ export interface ExportRatesPDFOptions {
   phone?: string | null;
   deliveryAddress?: string | null;
   siteName?: string | null;
+  siteIncharge?: string | null;
+  siteInchargePhone?: string | null;
+  customer?: any;
   preparedBy?: string | null;
   profile?: BusinessProfile | null;
   selectedRates: CustomerMaterialRate[];
@@ -30,6 +33,9 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
     phone,
     deliveryAddress,
     siteName,
+    siteIncharge,
+    siteInchargePhone,
+    customer,
     preparedBy,
     profile,
     selectedRates,
@@ -148,6 +154,34 @@ export function exportCustomerRatesToPDF(options: ExportRatesPDFOptions) {
   const addrLines = doc.splitTextToSize(rawAddr.toUpperCase(), addrWrapWidth);
   doc.text(addrLines, margin, leftDetailY);
   leftDetailY += addrLines.length * leftLineGap;
+
+  let activeCustomer = customer;
+  if (!activeCustomer && typeof window !== 'undefined') {
+    try {
+      const { getState } = require('@/lib/demo-store');
+      const st = getState();
+      activeCustomer = (st?.customers || []).find((c: any) =>
+        (c.name && customerName && c.name.toLowerCase() === customerName.toLowerCase()) ||
+        (c.business_name && customerName && c.business_name.toLowerCase() === customerName.toLowerCase())
+      );
+    } catch {}
+  }
+
+  const siteInchargeDetails = resolveSiteInchargeDetails(
+    {
+      site_name: siteName,
+      delivery_address: deliveryAddress,
+      site_incharge: siteIncharge,
+      site_incharge_phone: siteInchargePhone,
+    },
+    activeCustomer ? [activeCustomer] : undefined
+  );
+
+  if (siteInchargeDetails.inchargeName || siteInchargeDetails.inchargePhone) {
+    const incText = `Site Incharge: ${siteInchargeDetails.inchargeName || ''}${siteInchargeDetails.inchargePhone ? ` (${siteInchargeDetails.inchargePhone})` : ''}`;
+    doc.text(incText, margin, leftDetailY);
+    leftDetailY += leftLineGap;
+  }
 
   // Right: Showhouse Decor Studio Company Info
   doc.setFont('helvetica', 'bold');

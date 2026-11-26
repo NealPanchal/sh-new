@@ -98,6 +98,24 @@ export function exportLedgerToPDF(options: ExportLedgerPDFOptions) {
     doc.text(line, pageWidth / 2, y, { align: 'center' });
   });
 
+  const sitesList = (options.sites && options.sites.length > 0) ? options.sites : (customer.sites || []);
+  const inchargeTexts = sitesList
+    .map((s) => {
+      const inc = (s.contact_person || s.site_incharge || '').trim();
+      const ph = (s.phone || s.contact_phone || '').trim();
+      if (!inc && !ph) return null;
+      return `${s.site_name ? `${s.site_name}: ` : ''}${inc}${ph ? ` (${ph})` : ''}`;
+    })
+    .filter(Boolean);
+
+  if (inchargeTexts.length > 0) {
+    y += 3.5;
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Site Incharge: ${inchargeTexts.join(' | ')}`, pageWidth / 2, y, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+  }
+
   // Date Range (Centered, e.g. 1-Feb-24 to 31-Mar-27 or 21-Nov-26 to 31-Mar-27)
   y += 5;
   const isRK =

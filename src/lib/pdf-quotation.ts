@@ -6,7 +6,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Quotation, BusinessProfile } from '@/types';
-import { formatDateIndian, formatPhone, cleanChallanItemDescription } from '@/lib/utils';
+import { formatDateIndian, formatPhone, cleanChallanItemDescription, resolveSiteInchargeDetails } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 
@@ -151,6 +151,26 @@ export function exportQuotationToPDF(
   const addrLines = doc.splitTextToSize(rawAddr.toUpperCase(), addrWrapWidth);
   doc.text(addrLines, margin, leftDetailY);
   leftDetailY += addrLines.length * leftLineGap;
+
+  let activeCustomer: any = undefined;
+  if (typeof window !== 'undefined') {
+    try {
+      const { getState } = require('@/lib/demo-store');
+      const st = getState();
+      activeCustomer = (st?.customers || []).find((c: any) =>
+        (c.id && quotation.customer_id && c.id === quotation.customer_id) ||
+        (c.name && quotation.customer_name && c.name.toLowerCase() === quotation.customer_name.toLowerCase()) ||
+        (c.business_name && quotation.customer_name && c.business_name.toLowerCase() === quotation.customer_name.toLowerCase())
+      );
+    } catch {}
+  }
+
+  const siteInchargeDetails = resolveSiteInchargeDetails(quotation, activeCustomer ? [activeCustomer] : undefined);
+  if (siteInchargeDetails.inchargeName || siteInchargeDetails.inchargePhone) {
+    const incText = `Site Incharge: ${siteInchargeDetails.inchargeName || ''}${siteInchargeDetails.inchargePhone ? ` (${siteInchargeDetails.inchargePhone})` : ''}`;
+    doc.text(incText, margin, leftDetailY);
+    leftDetailY += leftLineGap;
+  }
 
   // Right: Showhouse Decor Studio Company Info
   doc.setFont('helvetica', 'bold');

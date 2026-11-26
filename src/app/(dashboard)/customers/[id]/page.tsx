@@ -206,6 +206,7 @@ export default function CustomerDetailPage() {
       phone: customer.phone,
       deliveryAddress: customer.delivery_address || customer.billing_address,
       siteName: activeSiteFilter !== 'all' ? activeSiteFilter : undefined,
+      customer,
       profile,
       preparedBy: currentUser?.name || 'VRUSHANK',
       selectedRates: list,
