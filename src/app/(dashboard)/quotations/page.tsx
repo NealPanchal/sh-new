@@ -72,16 +72,55 @@ export default function QuotationsPage() {
     } as any;
   }, [editingQuotation, customers]);
 
+  // Set of customer IDs and names assigned to or created by this employee
+  const employeeCustomerIds = useMemo(() => {
+    if (!isEmp || !currentUser) return null;
+    const uName = (currentUser.name || '').toLowerCase().trim();
+    const uUser = (currentUser.username || '').toLowerCase().trim();
+    const idSet = new Set<string>();
+    const nameSet = new Set<string>();
+
+    (customers || []).forEach((c) => {
+      const cr = (c.created_by || '').toLowerCase().trim();
+      const crN = (c.creator_name || '').toLowerCase().trim();
+      const uId = (c.user_id || '').toLowerCase().trim();
+      const assId = ((c as any).assigned_staff_id || '').toLowerCase().trim();
+      const assName = ((c as any).assigned_staff_name || '').toLowerCase().trim();
+      const matches =
+        (uUser && (cr === uUser || uId === uUser || assId === uUser)) ||
+        (uName && (cr.includes(uName) || crN.includes(uName) || uId.includes(uName) || assName.includes(uName)));
+      if (matches) {
+        if (c.id) idSet.add(c.id);
+        if (c.name) nameSet.add(c.name.toLowerCase().trim());
+        if (c.business_name) nameSet.add(c.business_name.toLowerCase().trim());
+      }
+    });
+    return { idSet, nameSet };
+  }, [isEmp, currentUser, customers]);
+
   const filteredQuotations = useMemo(() => {
     let list = quotations || [];
+    // Employee sees quotations for their assigned customers or created by them; Admin sees all
     if (isEmp && currentUser) {
-      const uName = (currentUser.name || '').toLowerCase();
-      const uUser = (currentUser.username || '').toLowerCase();
+      const uName = (currentUser.name || '').toLowerCase().trim();
+      const uUser = (currentUser.username || '').toLowerCase().trim();
       list = list.filter((q) => {
-        const prep = (q.prepared_by || '').toLowerCase();
-        const cr = (q.created_by || '').toLowerCase();
-        return (uName && (prep.includes(uName) || cr.includes(uName))) ||
-               (uUser && (prep === uUser || cr === uUser));
+        // 1. Direct match by employee's customer id or name
+        if (employeeCustomerIds) {
+          if (q.customer_id && employeeCustomerIds.idSet.has(q.customer_id)) return true;
+          const cName = (q.customer_name || '').toLowerCase().trim();
+          if (cName && employeeCustomerIds.nameSet.has(cName)) return true;
+        }
+
+        // 2. Direct match by created_by or prepared_by
+        const prep = (q.prepared_by || '').toLowerCase().trim();
+        const cr = (q.created_by || '').toLowerCase().trim();
+        const matchesStaff =
+          (uName && (prep.includes(uName) || cr.includes(uName))) ||
+          (uUser && (prep === uUser || cr === uUser));
+        if (matchesStaff) return true;
+
+        return false;
       });
     }
 
@@ -99,9 +138,13 @@ export default function QuotationsPage() {
     return list.sort(
       (a, b) => new Date(b.quotation_date || b.created_at || 0).getTime() - new Date(a.quotation_date || a.created_at || 0).getTime()
     );
-  }, [quotations, search, isEmp, currentUser]);
+  }, [quotations, search, isEmp, currentUser, employeeCustomerIds]);
 
   const handleDelete = (q: Quotation) => {
+    if (isEmp) {
+      showToast('Employees cannot delete quotations. Quotations must be preserved.', 'error');
+      return;
+    }
     if (!confirm(`Are you sure you want to delete quotation ${q.quotation_number}?`)) return;
     deleteQuotation(q.id);
     showToast(`Quotation ${q.quotation_number} deleted`, 'info');
@@ -129,14 +172,25 @@ export default function QuotationsPage() {
             <FileSpreadsheet size={20} />
           </div>
           <div>
-            <h1 className="text-lg sm:text-xl font-black text-surface-950 tracking-tight flex items-center gap-2">
+            <h1 className="text-lg sm:text-xl font-black text-surface-950 tracking-tight flex items-center gap-2 flex-wrap">
               <span>Quotations &amp; Estimates</span>
               <span className="text-xs px-2 py-0.5 rounded-full font-black bg-blue-100 text-blue-800">
                 {filteredQuotations.length}
               </span>
+              {isEmp ? (
+                <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200 font-bold">
+                  My Customers
+                </span>
+              ) : (
+                <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 font-bold">
+                  All Parties (Admin)
+                </span>
+              )}
             </h1>
             <p className="text-xs text-surface-500">
-              Pre-challan customer quotations. Share via WhatsApp or convert to delivery challans.
+              {isEmp
+                ? 'Pre-challan quotations for your assigned customers. Share via WhatsApp or convert to delivery challans.'
+                : 'All pre-challan customer quotations across all clients and staff.'}
             </p>
           </div>
         </div>
@@ -302,15 +356,17 @@ export default function QuotationsPage() {
                           <span>Challan</span>
                         </Link>
 
-                        {/* Delete */}
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(q)}
-                          className="p-1.5 rounded-lg text-surface-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                          title="Delete Quotation"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {/* Delete - Admin only */}
+                        {!isEmp && (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(q)}
+                            className="p-1.5 rounded-lg text-surface-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            title="Delete Quotation"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

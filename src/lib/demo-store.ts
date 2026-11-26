@@ -1711,9 +1711,11 @@ export function getQuotations(): Quotation[] {
 }
 
 export function getCustomerQuotations(customerId: string): Quotation[] {
+  const cust = (state.customers || []).find((c) => c.id === customerId);
+  const cName = (cust?.name || cust?.business_name || '').trim().toLowerCase();
   return (state.quotations || [])
-    .filter((q) => q.customer_id === customerId)
-    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    .filter((q) => q.customer_id === customerId || (cName && q.customer_name && q.customer_name.trim().toLowerCase() === cName))
+    .sort((a, b) => new Date(b.created_at || b.quotation_date || 0).getTime() - new Date(a.created_at || a.quotation_date || 0).getTime());
 }
 
 export function syncQuotations(list: Quotation[]): void {

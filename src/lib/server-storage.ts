@@ -458,6 +458,32 @@ function normalizeAndMergeWithLocal(filename: string, remoteData: any): any {
     return Array.from(map.values());
   }
 
+  if (filename === 'quotations.json') {
+    const local = safeReadDataFile<any[]>('quotations.json', []);
+    const remoteList = Array.isArray(remoteData) ? remoteData : [];
+    const map = new Map<string, any>();
+    for (const q of local) {
+      if (q && (q.id || q.quotation_number)) map.set(q.id || q.quotation_number, q);
+    }
+    for (const rq of remoteList) {
+      if (!rq || (!rq.id && !rq.quotation_number)) continue;
+      const key = rq.id || rq.quotation_number;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, rq);
+      } else {
+        const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
+        const tRemote = new Date(rq.updated_at || rq.created_at || 0).getTime();
+        map.set(key, tRemote >= tLocal ? { ...existing, ...rq } : { ...rq, ...existing });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      const da = new Date(b.quotation_date || b.created_at || 0).getTime();
+      const db = new Date(a.quotation_date || a.created_at || 0).getTime();
+      return da - db;
+    });
+  }
+
   return remoteData;
 }
 

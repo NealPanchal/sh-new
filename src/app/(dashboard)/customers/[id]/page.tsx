@@ -64,6 +64,8 @@ export default function CustomerDetailPage() {
   const [editingSite, setEditingSite] = useState<CustomerSite | null>(null);
 
   const [selectedRateIds, setSelectedRateIds] = useState<Set<string>>(new Set());
+  const currentUser = useMemo(() => getCurrentUser(), []);
+  const isEmp = currentUser?.role === 'employee';
 
   const customerId = params.id as string;
   const customer = useMemo(
@@ -261,6 +263,10 @@ export default function CustomerDetailPage() {
   };
 
   const handleDeleteQuotation = (q: Quotation) => {
+    if (isEmp) {
+      showToast('Employees cannot delete quotations. Quotations must be preserved.', 'error');
+      return;
+    }
     if (!confirm(`Delete quotation ${q.quotation_number}?`)) return;
     deleteQuotation(q.id);
     showToast(`Quotation ${q.quotation_number} deleted`, 'info');
@@ -714,15 +720,17 @@ export default function CustomerDetailPage() {
                                 <Edit size={13} />
                               </button>
 
-                              {/* Delete */}
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteQuotation(q)}
-                                className="p-1.5 rounded-lg text-surface-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                                title="Delete Quotation"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              {/* Delete - Admin only */}
+                              {!isEmp && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteQuotation(q)}
+                                  className="p-1.5 rounded-lg text-surface-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                  title="Delete Quotation"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

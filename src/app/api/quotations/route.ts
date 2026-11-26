@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession } from '@/lib/server-auth';
-import { getAllQuotations, saveQuotationsAsync } from '@/lib/server-accounting';
+import { getAllQuotations, saveQuotationsAsync, getAllCustomers } from '@/lib/server-accounting';
 import { syncFromFirestoreIfCold, invalidateDataCache } from '@/lib/server-storage';
 import { deleteDocFromFirestoreRest } from '@/lib/server-firestore';
 import { Quotation } from '@/types';
@@ -19,17 +19,45 @@ export async function GET(req: NextRequest) {
 
   let list = getAllQuotations();
 
-  // Employee data visibility
+  // Employee data visibility:
+  // Employee sees quotations belonging to their assigned/created customers + any they prepared/created.
+  // Admin sees all company quotations without restriction.
   if (session && session.role === 'employee') {
     const uName = (session.name || '').toLowerCase().trim();
     const uUser = (session.username || '').toLowerCase().trim();
+    const allCusts = getAllCustomers();
+    const empCustIds = new Set<string>();
+    const empCustNames = new Set<string>();
+
+    allCusts.forEach((c) => {
+      const cr = (c.created_by || '').toLowerCase().trim();
+      const crN = (c.creator_name || '').toLowerCase().trim();
+      const uId = (c.user_id || '').toLowerCase().trim();
+      const assId = ((c as any).assigned_staff_id || '').toLowerCase().trim();
+      const assName = ((c as any).assigned_staff_name || '').toLowerCase().trim();
+      const matches =
+        (uUser && (cr === uUser || uId === uUser || assId === uUser)) ||
+        (uName && (cr.includes(uName) || crN.includes(uName) || uId.includes(uName) || assName.includes(uName)));
+      if (matches) {
+        if (c.id) empCustIds.add(c.id);
+        if (c.name) empCustNames.add(c.name.toLowerCase().trim());
+        if (c.business_name) empCustNames.add(c.business_name.toLowerCase().trim());
+      }
+    });
+
     list = list.filter((q) => {
-      const pb = (q.prepared_by || '').toLowerCase();
-      const cb = (q.created_by || '').toLowerCase();
-      return (
-        (uUser && (cb === uUser || pb.includes(uUser))) ||
-        (uName && (pb.includes(uName) || cb.includes(uName)))
-      );
+      // 1. Belongs to employee's customer
+      if (q.customer_id && empCustIds.has(q.customer_id)) return true;
+      const cName = (q.customer_name || '').toLowerCase().trim();
+      if (cName && empCustNames.has(cName)) return true;
+
+      // 2. Created or prepared by this employee
+      const pb = (q.prepared_by || '').toLowerCase().trim();
+      const cb = (q.created_by || '').toLowerCase().trim();
+      if (uUser && (cb === uUser || pb === uUser || pb.includes(uUser))) return true;
+      if (uName && (pb.includes(uName) || cb.includes(uName))) return true;
+
+      return false;
     });
   }
 
@@ -245,6 +273,11 @@ export async function DELETE(req: NextRequest) {
   const session = getAuthenticatedSession(req);
   if (!session) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Employees cannot delete quotations; quotations must be preserved
+  if (session.role === 'employee') {
+    return NextResponse.json({ success: false, error: 'Employees cannot delete quotations. Quotations must be preserved.' }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);
