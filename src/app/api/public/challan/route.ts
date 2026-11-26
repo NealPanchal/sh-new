@@ -58,6 +58,29 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    if (!challan.customer) {
+      try {
+        const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
+        if (fs.existsSync(CUSTOMERS_FILE)) {
+          const rawCust = fs.readFileSync(CUSTOMERS_FILE, 'utf-8');
+          if (rawCust.trim()) {
+            const custList = JSON.parse(rawCust);
+            if (Array.isArray(custList)) {
+              const foundCust = custList.find(
+                (c: any) =>
+                  (c.id && c.id === challan.customer_id) ||
+                  (c.business_name && c.business_name.toLowerCase() === (challan.customer_name || '').toLowerCase()) ||
+                  (c.name && c.name.toLowerCase() === (challan.customer_name || '').toLowerCase())
+              );
+              if (foundCust) {
+                challan.customer = foundCust;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
     let profile: any = null;
     if (fs.existsSync(SETTINGS_FILE)) {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');

@@ -36,6 +36,8 @@ interface FormItem {
   id: string;
   item_description: string;
   brand?: string;
+  code?: string;
+  product_id?: string;
   unit: UnitType;
   quantity: string;
   rate: string;
@@ -343,6 +345,8 @@ function CreateQuotationContent() {
         id: `it_af_${Date.now()}_${idx}`,
         item_description: desc,
         brand: mr.company_name || '',
+        code: mr.code || '',
+        product_id: mr.code || '',
         unit: 'sheets',
         quantity: '1',
         rate: String(r),
@@ -496,6 +500,8 @@ function CreateQuotationContent() {
         serial_number: idx + 1,
         item_description: it.item_description.trim(),
         brand: it.brand?.trim() || null,
+        code: it.code?.trim() || it.product_id?.trim() || null,
+        product_id: it.product_id?.trim() || it.code?.trim() || null,
         unit: it.unit,
         quantity: parseFloat(it.quantity) || 1,
         rate: parseFloat(it.rate) || 0,

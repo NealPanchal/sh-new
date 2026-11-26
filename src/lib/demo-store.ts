@@ -841,11 +841,14 @@ export function createChallan(
       totalAmount = (totalAmount || 0) + itemAmount;
     }
 
+    const codeVal = (item as any).code || (item as any).item_code || item.product_id || null;
     return {
       id: item.id || generateId(),
       challan_id: challanId,
       serial_number: idx + 1,
-      product_id: item.product_id || null,
+      product_id: codeVal,
+      code: codeVal,
+      item_code: codeVal,
       item_description: item.item_description || '',
       brand: item.brand || null,
       colour_finish: item.colour_finish || null,
@@ -1034,11 +1037,14 @@ export function updateChallan(
       if (itemAmount !== null) {
         totalAmount = (totalAmount || 0) + itemAmount;
       }
+      const codeVal = (item as any).code || (item as any).item_code || item.product_id || null;
       return {
         id: generateId(),
         challan_id: id,
         serial_number: i + 1,
-        product_id: item.product_id || null,
+        product_id: codeVal,
+        code: codeVal,
+        item_code: codeVal,
         item_description: item.item_description || '',
         brand: item.brand || null,
         colour_finish: item.colour_finish || null,

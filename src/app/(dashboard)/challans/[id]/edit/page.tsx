@@ -30,6 +30,8 @@ import { resolveCustomerPhone } from '@/lib/whatsapp';
 
 const emptyItem = (): ChallanItemFormData => ({
   product_id: '',
+  code: '',
+  item_code: '',
   item_description: '',
   brand: '',
   colour_finish: '',
@@ -220,7 +222,9 @@ export default function EditChallanPage() {
     if (c.items && c.items.length > 0) {
       setItems(
         c.items.map((it: any) => ({
-          product_id: it.product_id || '',
+          product_id: it.product_id || it.code || '',
+          code: it.code || it.item_code || it.product_id || '',
+          item_code: it.item_code || it.code || it.product_id || '',
           item_description: it.item_description,
           brand: it.brand || '',
           colour_finish: it.colour_finish || '',
@@ -597,8 +601,11 @@ export default function EditChallanPage() {
               ? `${it.length}×${it.width} ${it.dimension_unit || 'ft'}`
               : `${it.length} ${it.dimension_unit || 'ft'}`;
           }
+          const itemCode = (it.code || it.item_code || it.product_id || '').trim();
           return {
-            product_id: it.product_id || undefined,
+            product_id: itemCode || undefined,
+            code: itemCode || undefined,
+            item_code: itemCode || undefined,
             item_description: it.item_description.trim(),
             brand: it.brand || undefined,
             colour_finish: it.colour_finish || undefined,
@@ -1168,6 +1175,38 @@ export default function EditChallanPage() {
                   <div className="text-xs font-mono font-bold text-surface-800 bg-surface-100/70 border border-surface-200 rounded px-2.5 py-1.5 h-[34px] flex items-center">
                     {item.amount ? `₹${Number(item.amount).toLocaleString('en-IN')}` : '—'}
                   </div>
+                </div>
+              </div>
+
+              {/* Brand and Item Code fields for Office Copy */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7 pt-1 border-t border-surface-200/60">
+                <div>
+                  <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-0.5">
+                    Brand / Company (Office Copy)
+                  </label>
+                  <input
+                    type="text"
+                    value={item.brand || ''}
+                    onChange={(e) => updateItem(idx, 'brand', e.target.value)}
+                    placeholder="e.g. Hitanshi, Red Bell, Showhouse"
+                    className="input text-xs py-1.5 bg-white w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-0.5">
+                    Item Code / Shade (Office Copy)
+                  </label>
+                  <input
+                    type="text"
+                    value={item.code || item.item_code || item.product_id || ''}
+                    onChange={(e) => {
+                      updateItem(idx, 'code' as any, e.target.value);
+                      updateItem(idx, 'item_code' as any, e.target.value);
+                      updateItem(idx, 'product_id', e.target.value);
+                    }}
+                    placeholder="e.g. 9571 szm, PLM 1001"
+                    className="input text-xs py-1.5 font-mono font-bold text-blue-700 bg-white w-full"
+                  />
                 </div>
               </div>
 

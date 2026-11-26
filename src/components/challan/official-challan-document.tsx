@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Challan, BusinessProfile } from '@/types';
+import { Challan, BusinessProfile, Customer } from '@/types';
 import { formatPhone, cleanChallanItemDescription, extractItemOfficeDetails, cn } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
@@ -9,6 +9,7 @@ import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
 
 interface OfficialChallanDocumentProps {
   challan: Challan;
+  customer?: Customer | null;
   profile?: BusinessProfile | null;
   viewMode?: 'challan' | 'pi' | 'slip' | 'office';
   hideRate?: boolean;
@@ -17,6 +18,7 @@ interface OfficialChallanDocumentProps {
 
 export function OfficialChallanDocument({
   challan,
+  customer,
   profile,
   viewMode = 'challan',
   hideRate = false,
@@ -25,6 +27,31 @@ export function OfficialChallanDocument({
   const isOffice = viewMode === 'office' || Boolean(showBrandAndCode);
   const isPI = viewMode === 'pi' && !hideRate;
   const isPaid = challan.payment_status === 'paid';
+
+  const activeCustomer = customer || challan.customer;
+  const customerMaterialRates = React.useMemo(() => {
+    if (activeCustomer?.material_rates && activeCustomer.material_rates.length > 0) {
+      return activeCustomer.material_rates;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('showhouse_customers_cache') || localStorage.getItem('showhouse_state');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const custList = Array.isArray(parsed) ? parsed : (parsed.customers || []);
+          const found = custList.find((c: any) =>
+            (c.id && c.id === challan.customer_id) ||
+            (c.business_name && c.business_name.toLowerCase() === (challan.customer_name || '').toLowerCase()) ||
+            (c.name && c.name.toLowerCase() === (challan.customer_name || '').toLowerCase())
+          );
+          if (found && Array.isArray(found.material_rates)) {
+            return found.material_rates;
+          }
+        }
+      } catch {}
+    }
+    return [];
+  }, [activeCustomer, challan.customer_id, challan.customer_name]);
 
   // Format Date (e.g. 21 NOVEMBER 2026)
   const rawDate = new Date(challan.challan_date);
@@ -112,7 +139,7 @@ export function OfficialChallanDocument({
             let codeStr = '';
 
             if (isOffice) {
-              const details = extractItemOfficeDetails(item);
+              const details = extractItemOfficeDetails(item, customerMaterialRates);
               desc = details.description;
               brandStr = details.brand;
               codeStr = details.code;

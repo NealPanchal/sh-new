@@ -37,6 +37,8 @@ const challanItemSchema = z.object({
   challan_id: z.string().nullish(),
   serial_number: z.coerce.number().int().nullish(),
   product_id: z.string().nullish(),
+  code: z.string().nullish(),
+  item_code: z.string().nullish(),
   item_description: z.string().nullish().transform((v) => v || ''),
   brand: z.string().nullish(),
   colour_finish: z.string().nullish(),
@@ -465,17 +467,23 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const cleanItems = (validChallan.items || []).map((it, i) => ({
-      ...it,
-      id: it.id || crypto.randomUUID(),
-      challan_id: validChallan.id,
-      serial_number: it.serial_number || i + 1,
-      unit: it.unit || 'sheets',
-      quantity: Number(it.quantity) || 0,
-      rate: it.rate != null ? Number(it.rate) : null,
-      amount: it.amount != null ? Number(it.amount) : null,
-      created_at: it.created_at || now,
-    }));
+    const cleanItems = (validChallan.items || []).map((it, i) => {
+      const codeVal = it.code || it.item_code || it.product_id || null;
+      return {
+        ...it,
+        id: it.id || crypto.randomUUID(),
+        challan_id: validChallan.id,
+        serial_number: it.serial_number || i + 1,
+        product_id: codeVal,
+        code: codeVal,
+        item_code: codeVal,
+        unit: it.unit || 'sheets',
+        quantity: Number(it.quantity) || 0,
+        rate: it.rate != null ? Number(it.rate) : null,
+        amount: it.amount != null ? Number(it.amount) : null,
+        created_at: it.created_at || now,
+      };
+    });
 
     // Revision Tracking: Track exact changes when challan is edited
     let revisionHistory = Array.isArray(challans[idx]?.revision_history)

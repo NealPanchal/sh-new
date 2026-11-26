@@ -112,6 +112,18 @@ export default function ChallanDetailPage() {
   // Only Administrator can edit or delete challan data
   const canEdit = !isEmp;
 
+  const matchedCustomer = useMemo(() => {
+    if (!challan) return null;
+    return (
+      (customers || []).find(
+        (c) =>
+          c.id === challan.customer_id ||
+          c.name?.toLowerCase() === challan.customer_name?.toLowerCase() ||
+          c.business_name?.toLowerCase() === challan.customer_name?.toLowerCase()
+      ) || challan.customer || null
+    );
+  }, [challan, customers]);
+
   const handleUpdateDeliveryStatus = async (
     newStatus: ChallanStatus,
     confirmed?: boolean,
@@ -378,6 +390,7 @@ export default function ChallanDetailPage() {
     const docType = typeOverride || activeDocType;
     printChallanPDF({
       challan,
+      customer: matchedCustomer || undefined,
       items: challan.items || [],
       profile,
       documentType: docType,
@@ -397,6 +410,7 @@ export default function ChallanDetailPage() {
     const docType = typeOverride || activeDocType;
     downloadChallanPDF({
       challan,
+      customer: matchedCustomer || undefined,
       items: challan.items || [],
       profile,
       documentType: docType,
@@ -411,6 +425,7 @@ export default function ChallanDetailPage() {
     if (!profile || !challan) return;
     printChallanPDF({
       challan,
+      customer: matchedCustomer || undefined,
       items: challan.items || [],
       profile,
       documentType: 'DELIVERY CHALLAN',
@@ -423,6 +438,7 @@ export default function ChallanDetailPage() {
     if (!profile || !challan) return;
     downloadChallanPDF({
       challan,
+      customer: matchedCustomer || undefined,
       items: challan.items || [],
       profile,
       documentType: 'DELIVERY CHALLAN',
@@ -435,6 +451,7 @@ export default function ChallanDetailPage() {
     if (!profile || !challan) return;
     printInternalChallanPDF({
       challan,
+      customer: matchedCustomer || undefined,
       items: challan.items || [],
       profile,
       documentType: 'DELIVERY CHALLAN',
@@ -446,6 +463,7 @@ export default function ChallanDetailPage() {
     if (!profile || !challan) return;
     downloadInternalChallanPDF({
       challan,
+      customer: matchedCustomer || undefined,
       items: challan.items || [],
       profile,
       documentType: 'DELIVERY CHALLAN',
@@ -874,6 +892,7 @@ export default function ChallanDetailPage() {
       {/* Official Showhouse Print Challan / Proforma Invoice Preview Document */}
       <OfficialChallanDocument
         challan={challan}
+        customer={matchedCustomer}
         profile={profile}
         viewMode={viewMode === 'office' ? 'office' : viewMode === 'pi' ? 'pi' : 'challan'}
         showBrandAndCode={viewMode === 'office'}

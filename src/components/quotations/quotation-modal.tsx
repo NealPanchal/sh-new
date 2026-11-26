@@ -19,6 +19,8 @@ interface FormItem {
   id: string;
   item_description: string;
   brand?: string;
+  code?: string;
+  product_id?: string;
   unit: UnitType;
   quantity: string;
   rate: string;
@@ -90,6 +92,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
             id: it.id,
             item_description: it.item_description,
             brand: it.brand || '',
+            code: (it as any).code || it.product_id || '',
+            product_id: it.product_id || (it as any).code || '',
             unit: it.unit || 'sheets',
             quantity: String(it.quantity),
             rate: String(it.rate),
@@ -129,6 +133,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
             id: `it_af_${Date.now()}_${idx}`,
             item_description: `${roomPrefix}${desc}`.trim(),
             brand: mr.company_name || '',
+            code: mr.code || '',
+            product_id: mr.code || '',
             unit: 'sheets',
             quantity: '1',
             rate: String(r),
@@ -215,6 +221,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
         id: `it_af_${Date.now()}_${idx}`,
         item_description: desc,
         brand: mr.company_name || '',
+        code: mr.code || '',
+        product_id: mr.code || '',
         unit: 'sheets',
         quantity: '1',
         rate: String(r),
@@ -274,6 +282,8 @@ export function QuotationModal({ customer, editQuotation, onClose, onSaved }: Qu
       serial_number: idx + 1,
       item_description: it.item_description.trim(),
       brand: it.brand?.trim() || null,
+      code: it.code?.trim() || it.product_id?.trim() || null,
+      product_id: it.product_id?.trim() || it.code?.trim() || null,
       unit: it.unit,
       quantity: parseFloat(it.quantity) || 1,
       rate: parseFloat(it.rate) || 0,

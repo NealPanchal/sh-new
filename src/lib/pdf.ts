@@ -5,13 +5,22 @@
  */
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Challan, ChallanItem, BusinessProfile } from '@/types';
+import { Challan, ChallanItem, BusinessProfile, Customer } from '@/types';
 import { formatDateIndian, formatPhone, cleanChallanItemDescription, extractItemOfficeDetails } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 
 export interface PDFOptions {
   challan: Challan;
+  customer?: Customer;
+  customerMaterialRates?: Array<{
+    particulars?: string | null;
+    material?: string | null;
+    room?: string | null;
+    code?: string | null;
+    company_name?: string | null;
+    rate?: number | string | null;
+  }> | null;
   items?: ChallanItem[];
   profile: BusinessProfile;
   documentType?: 'PROFORMA INVOICE' | 'DELIVERY CHALLAN';
@@ -118,6 +127,8 @@ function formatRateNum(rate: number | null | undefined): string {
 
 export function generateChallanPDF({
   challan,
+  customer,
+  customerMaterialRates,
   items,
   profile,
   documentType,
@@ -361,11 +372,33 @@ export function generateChallanPDF({
         4: { halign: 'right', cellWidth: colWidths[4], fontStyle: 'bold' },
       };
 
+  const activeCustomer = customer || challan.customer;
+  const resolvedCustomerMaterialRates = customerMaterialRates || activeCustomer?.material_rates || (() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('showhouse_customers_cache') || localStorage.getItem('showhouse_state');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const custList = Array.isArray(parsed) ? parsed : (parsed.customers || []);
+          const found = custList.find((c: any) =>
+            (c.id && c.id === challan.customer_id) ||
+            (c.business_name && c.business_name.toLowerCase() === (challan.customer_name || '').toLowerCase()) ||
+            (c.name && c.name.toLowerCase() === (challan.customer_name || '').toLowerCase())
+          );
+          if (found && Array.isArray(found.material_rates)) {
+            return found.material_rates;
+          }
+        }
+      } catch {}
+    }
+    return [];
+  })();
+
   const allTableRows: (string | number)[][] = itemList.map((item, idx) => {
     let desc = '';
     if (isOfficeCopy) {
       // Internal Office Copy: Dedicated BRAND & CODE columns, room name stripped from description
-      const details = extractItemOfficeDetails(item);
+      const details = extractItemOfficeDetails(item, resolvedCustomerMaterialRates);
       desc = details.description;
       const brandStr = details.brand;
       const codeStr = details.code;

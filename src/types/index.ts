@@ -25,6 +25,8 @@ export interface QuotationItem {
   serial_number: number;
   item_description: string;
   product_id?: string | null;
+  code?: string | null;
+  item_code?: string | null;
   brand?: string | null;
   colour_finish?: string | null;
   size?: string | null;
@@ -373,6 +375,8 @@ export interface ChallanItem {
   challan_id: string;
   serial_number: number;
   product_id: string | null;
+  code?: string | null;
+  item_code?: string | null;
   item_description: string;
   description?: string;
   brand: string | null;
@@ -673,6 +677,8 @@ export interface ChallanFormData {
 
 export interface ChallanItemFormData {
   product_id: string;
+  code?: string;
+  item_code?: string;
   item_description: string;
   brand: string;
   colour_finish: string;

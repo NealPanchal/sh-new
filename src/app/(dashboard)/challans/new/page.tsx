@@ -37,6 +37,8 @@ import { SiteModal } from '@/components/customers/site-modal';
 
 const emptyItem = (): ChallanItemFormData => ({
   product_id: '',
+  code: '',
+  item_code: '',
   item_description: '',
   brand: '',
   colour_finish: '',
@@ -344,11 +346,13 @@ function CreateChallanContent() {
     const newItems: ChallanItemFormData[] = targetRates.map((m) => {
       const roomPrefix = m.room ? `[ ${m.room.toUpperCase()} ] ` : '';
       const partStr = m.particulars?.trim() || m.material?.trim() || 'Laminate Finish';
-      const codePart = m.code ? ` ${m.code.trim()}` : '';
-      const desc = `${roomPrefix}${partStr}${codePart}`.trim();
+      const desc = `${roomPrefix}${partStr}`.trim();
+      const codeVal = m.code ? m.code.trim() : '';
 
       return {
-        product_id: m.code ? m.code.trim() : '',
+        product_id: codeVal,
+        code: codeVal,
+        item_code: codeVal,
         item_description: desc,
         brand: m.company_name ? m.company_name.trim() : '',
         colour_finish: m.room || '',
@@ -376,11 +380,13 @@ function CreateChallanContent() {
   const handleAddSingleAgreedMaterial = (m: CustomerMaterialRate) => {
     const roomPrefix = m.room ? `[ ${m.room.toUpperCase()} ] ` : '';
     const partStr = m.particulars?.trim() || m.material?.trim() || 'Laminate Finish';
-    const codePart = m.code ? ` ${m.code.trim()}` : '';
-    const desc = `${roomPrefix}${partStr}${codePart}`.trim();
+    const desc = `${roomPrefix}${partStr}`.trim();
+    const codeVal = m.code ? m.code.trim() : '';
 
     const newItem: ChallanItemFormData = {
-      product_id: m.code ? m.code.trim() : '',
+      product_id: codeVal,
+      code: codeVal,
+      item_code: codeVal,
       item_description: desc,
       brand: m.company_name ? m.company_name.trim() : '',
       colour_finish: m.room || '',
@@ -406,6 +412,30 @@ function CreateChallanContent() {
     });
 
     showToast(`Added ${m.particulars || m.code || 'agreed material'} @ ₹${m.rate}`, 'success');
+  };
+
+  const findCustomerMaterialRateEntry = (desc: string, prodId?: string, brand?: string | null): CustomerMaterialRate | null => {
+    const qDesc = (desc || '').trim().toLowerCase();
+    const qBrand = (brand || '').trim().toLowerCase();
+    if (!qDesc && !prodId) return null;
+
+    if (matchedCustomer?.material_rates && matchedCustomer.material_rates.length > 0) {
+      const foundMat = matchedCustomer.material_rates.find((mr) => {
+        const cCode = (mr.code || '').trim().toLowerCase();
+        const cComp = (mr.company_name || '').trim().toLowerCase();
+        const cRoom = (mr.room || '').trim().toLowerCase();
+        const cPart = (mr.particulars || '').trim().toLowerCase();
+
+        if (cPart && (qDesc.includes(cPart) || cPart.includes(qDesc))) return true;
+        if (cCode && (qDesc.includes(cCode) || cCode.includes(qDesc))) return true;
+        if (cComp && qBrand && (cComp === qBrand || qDesc.includes(cComp))) return true;
+        if (cComp && qDesc.includes(cComp)) return true;
+        if (cRoom && qDesc.includes(cRoom)) return true;
+        return false;
+      });
+      return foundMat || null;
+    }
+    return null;
   };
 
   const findCustomerMaterialRate = (desc: string, prodId?: string, brand?: string | null): number | null => {
@@ -817,11 +847,27 @@ function CreateChallanContent() {
       [field]: value,
     };
 
-    if (field === 'item_description' && (!it.rate || it.rate === '0')) {
-      const memoryRate = findCustomerMaterialRate(value);
-      if (memoryRate != null) {
-        it.rate = String(memoryRate);
-        showToast(`⚡ Price Memory: Auto-applied saved party rate ₹${memoryRate}`, 'info');
+    if (field === 'item_description') {
+      const matchedEntry = findCustomerMaterialRateEntry(value);
+      if (matchedEntry) {
+        if ((!it.rate || it.rate === '0') && Number(matchedEntry.rate) > 0) {
+          it.rate = String(matchedEntry.rate);
+          showToast(`⚡ Price Memory: Auto-applied saved party rate ₹${matchedEntry.rate}`, 'info');
+        }
+        if (!it.brand && matchedEntry.company_name) {
+          it.brand = matchedEntry.company_name;
+        }
+        if ((!it.code || !it.product_id) && matchedEntry.code) {
+          it.code = matchedEntry.code;
+          it.item_code = matchedEntry.code;
+          it.product_id = matchedEntry.code;
+        }
+      } else if (!it.rate || it.rate === '0') {
+        const memoryRate = findCustomerMaterialRate(value);
+        if (memoryRate != null) {
+          it.rate = String(memoryRate);
+          showToast(`⚡ Price Memory: Auto-applied saved party rate ₹${memoryRate}`, 'info');
+        }
       }
     }
 
@@ -1072,8 +1118,11 @@ function CreateChallanContent() {
               ? `${it.length}×${it.width} ${it.dimension_unit || 'ft'}`
               : `${it.length} ${it.dimension_unit || 'ft'}`;
           }
+          const itemCode = (it.code || it.item_code || it.product_id || '').trim();
           return {
-            product_id: it.product_id || null,
+            product_id: itemCode || null,
+            code: itemCode || null,
+            item_code: itemCode || null,
             item_description: it.item_description.trim(),
             brand: it.brand || null,
             colour_finish: it.colour_finish || null,
@@ -1838,6 +1887,38 @@ function CreateChallanContent() {
                   <div className="text-xs font-mono font-bold text-surface-800 bg-surface-100/70 border border-surface-200 rounded px-2.5 py-1.5 h-[34px] flex items-center">
                     {item.amount ? `₹${Number(item.amount).toLocaleString('en-IN')}` : '—'}
                   </div>
+                </div>
+              </div>
+
+              {/* Brand and Item Code fields for Office Copy */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7 pt-1 border-t border-surface-200/60">
+                <div>
+                  <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-0.5">
+                    Brand / Company (Office Copy)
+                  </label>
+                  <input
+                    type="text"
+                    value={item.brand || ''}
+                    onChange={(e) => updateItem(idx, 'brand', e.target.value)}
+                    placeholder="e.g. Hitanshi, Red Bell, Showhouse"
+                    className="input text-xs py-1.5 bg-white w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-surface-500 uppercase block mb-0.5">
+                    Item Code / Shade (Office Copy)
+                  </label>
+                  <input
+                    type="text"
+                    value={item.code || item.item_code || item.product_id || ''}
+                    onChange={(e) => {
+                      updateItem(idx, 'code' as any, e.target.value);
+                      updateItem(idx, 'item_code' as any, e.target.value);
+                      updateItem(idx, 'product_id', e.target.value);
+                    }}
+                    placeholder="e.g. 9571 szm, PLM 1001"
+                    className="input text-xs py-1.5 font-mono font-bold text-blue-700 bg-white w-full"
+                  />
                 </div>
               </div>
 

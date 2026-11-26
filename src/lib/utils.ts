@@ -308,13 +308,25 @@ export interface ItemOfficeDetails {
  * for internal office / warehouse copies.
  * Completely strips room tags (e.g. [ LIVING ROOM 1 ], [ MASTER ROOM 2 ]) from description.
  */
-export function extractItemOfficeDetails(item: {
-  item_description?: string | null;
-  brand?: string | null;
-  product_id?: string | null;
-  colour_finish?: string | null;
-  size?: string | null;
-}): ItemOfficeDetails {
+export function extractItemOfficeDetails(
+  item: {
+    item_description?: string | null;
+    brand?: string | null;
+    product_id?: string | null;
+    code?: string | null;
+    item_code?: string | null;
+    colour_finish?: string | null;
+    size?: string | null;
+  },
+  customerMaterialRates?: Array<{
+    particulars?: string | null;
+    material?: string | null;
+    room?: string | null;
+    code?: string | null;
+    company_name?: string | null;
+    rate?: number | string | null;
+  }> | null
+): ItemOfficeDetails {
   let cleanDesc = (item.item_description || '').trim();
 
   // Strip all leading bracketed rooms: e.g. [ LIVING ROOM 1 ], [ MASTER ROOM 2 ]
@@ -345,13 +357,72 @@ export function extractItemOfficeDetails(item: {
     }
   }
 
-  // Extract / resolve code
-  let code = (item.product_id || '').trim();
+  // Extract / resolve code: Check item properties first
+  let code = (item.code || item.item_code || item.product_id || '').trim();
+  if (code.startsWith('prod_') || code.startsWith('p_') || code.startsWith('it_')) {
+    code = '';
+  }
+
+  // Check code badge in cleanDesc: e.g. [ CODE: 9571 szm ] or [ SHADE: 1001 ]
   const codeBadgeMatch = cleanDesc.match(/\[\s*(?:CODE|SHADE)[:\s]+([^\]]+?)\s*\]/i);
   if (codeBadgeMatch) {
     if (!code) code = codeBadgeMatch[1].trim();
     cleanDesc = cleanDesc.replace(codeBadgeMatch[0], ' ').trim();
   }
+
+  // Auto-resolve code & brand from customer's agreed material rates / selection
+  if (!code && Array.isArray(customerMaterialRates) && customerMaterialRates.length > 0) {
+    const norm = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanDescNorm = norm(cleanDesc);
+    const itemDescNorm = norm(item.item_description);
+    const brandNorm = norm(brand);
+    const finishNorm = norm(item.colour_finish);
+
+    let bestMatch: (typeof customerMaterialRates)[0] | null = null;
+    let bestScore = 0;
+
+    for (const mr of customerMaterialRates) {
+      if (!mr) continue;
+      const partNorm = norm(mr.particulars || mr.material);
+      const mrBrandNorm = norm(mr.company_name);
+      const mrRoomNorm = norm(mr.room);
+
+      let score = 0;
+      if (partNorm) {
+        if (cleanDescNorm === partNorm || itemDescNorm === partNorm) {
+          score += 10;
+        } else if (cleanDescNorm.includes(partNorm) || itemDescNorm.includes(partNorm)) {
+          score += 6;
+        } else if (partNorm.includes(cleanDescNorm) && cleanDescNorm.length >= 3) {
+          score += 5;
+        }
+      }
+
+      if (mrBrandNorm && brandNorm && (mrBrandNorm === brandNorm || brandNorm.includes(mrBrandNorm) || mrBrandNorm.includes(brandNorm))) {
+        score += 4;
+      }
+
+      if (mrRoomNorm && (finishNorm === mrRoomNorm || cleanDescNorm.includes(mrRoomNorm) || itemDescNorm.includes(mrRoomNorm))) {
+        score += 3;
+      }
+
+      if (score > bestScore && score >= 4) {
+        bestScore = score;
+        bestMatch = mr;
+      }
+    }
+
+    if (bestMatch) {
+      if (bestMatch.code) {
+        code = bestMatch.code.trim();
+      }
+      if ((!brand || brand === '—') && bestMatch.company_name) {
+        brand = bestMatch.company_name.trim();
+      }
+    }
+  }
+
+  // Regex fallback: extract code patterns from trailing description
   if (!code) {
     const fullCodeMatch = cleanDesc.match(/^([A-Za-z]{1,4}\s*[-/]?\s*\d+[A-Za-z0-9\s\-/()]*)$/i);
     if (fullCodeMatch) {
