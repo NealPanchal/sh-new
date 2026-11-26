@@ -6,7 +6,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Challan, ChallanItem, BusinessProfile, Customer } from '@/types';
-import { formatDateIndian, formatPhone, cleanChallanItemDescription, extractItemOfficeDetails } from '@/lib/utils';
+import { formatDateIndian, formatPhone, cleanChallanItemDescription, extractItemOfficeDetails, resolveSiteInchargeDetails } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 
@@ -286,6 +286,13 @@ export function generateChallanPDF({
 
   if (challan.customer_gstin) {
     doc.text(`GSTIN: ${challan.customer_gstin}`, margin, leftDetailY);
+    leftDetailY += leftLineGap;
+  }
+
+  const siteInchargeDetails = resolveSiteInchargeDetails(challan, customer ? [customer] : undefined);
+  if (siteInchargeDetails.inchargeName || siteInchargeDetails.inchargePhone) {
+    const incText = `Site Incharge: ${siteInchargeDetails.inchargeName || ''}${siteInchargeDetails.inchargePhone ? ` (${siteInchargeDetails.inchargePhone})` : ''}`;
+    doc.text(incText, margin, leftDetailY);
     leftDetailY += leftLineGap;
   }
 

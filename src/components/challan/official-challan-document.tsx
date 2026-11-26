@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Challan, BusinessProfile, Customer } from '@/types';
-import { formatPhone, cleanChallanItemDescription, extractItemOfficeDetails, cn } from '@/lib/utils';
+import { formatPhone, cleanChallanItemDescription, extractItemOfficeDetails, resolveSiteInchargeDetails, cn } from '@/lib/utils';
 import { SHOWHOUSE_EMBLEM_BASE64 } from '@/lib/logo-data';
 import { SHOWHOUSE_PAYMENT_QR_BASE64 } from '@/lib/payment-qr';
 import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
@@ -98,6 +98,7 @@ export function OfficialChallanDocument({
   const clientName = (challan.customer_name || 'CLIENT').toUpperCase();
   const clientPhone = challan.customer_phone ? formatPhone(challan.customer_phone) : '';
   const clientAddress = (challan.delivery_address || challan.customer_address || '').toUpperCase();
+  const { inchargeName, inchargePhone } = resolveSiteInchargeDetails(challan, customer ? [customer] : undefined);
 
   const docNo = isPI
     ? challan.pi_number || challan.challan_number.replace(/^SH\//, 'PI/')
@@ -514,6 +515,11 @@ export function OfficialChallanDocument({
             </div>
             {clientPhone && <div>Phone No: {clientPhone}</div>}
             {clientAddress && <div>Address: {clientAddress}</div>}
+            {(inchargeName || inchargePhone) && (
+              <div className="font-semibold text-black">
+                Site Incharge: {inchargeName || ''} {inchargePhone ? `(${inchargePhone})` : ''}
+              </div>
+            )}
             {challan.customer_gstin && <div>GSTIN: {challan.customer_gstin}</div>}
           </div>
 

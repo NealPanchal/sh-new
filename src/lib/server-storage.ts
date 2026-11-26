@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { deduplicateMaterialRates } from './utils';
 import {
   saveDocToFirestoreRest,
   fetchDocFromFirestoreRest,
@@ -329,39 +330,12 @@ function normalizeAndMergeWithLocal(filename: string, remoteData: any): any {
             : Array.isArray(existing.sites) && existing.sites.length > 0
             ? existing.sites
             : [];
-        // Intelligently merge material rates: union all distinct materials, keeping latest rate
-        const rateMap = new Map<string, any>();
-        const getRateKey = (mr: any) => {
-          if (mr.id) return mr.id;
-          const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
-          const roomKey = (mr.room || 'general').trim().toLowerCase();
-          const matKey = (mr.particulars || mr.material || '').trim().toLowerCase();
-          const codeKey = (mr.code || '').trim().toLowerCase();
-          return `${siteKey}::${roomKey}::${matKey}::${codeKey}`;
-        };
-        (Array.isArray(existing.material_rates) ? existing.material_rates : []).forEach((mr: any) => {
-          if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);
-        });
-        (Array.isArray(rc.material_rates) ? rc.material_rates : []).forEach((mr: any) => {
-          if (mr && (mr.particulars || mr.material || mr.rate)) {
-            const k = getRateKey(mr);
-            const prev = rateMap.get(k);
-            if (!prev) {
-              rateMap.set(k, mr);
-            } else {
-              rateMap.set(k, {
-                ...prev,
-                ...mr,
-                particulars: mr.particulars || prev.particulars || mr.material || prev.material,
-                material: mr.material || prev.material || mr.particulars || prev.particulars,
-                company_name: mr.company_name || prev.company_name || '',
-                rate: Number(mr.rate) || Number(prev.rate) || 0,
-                room: mr.room || prev.room || 'General',
-              });
-            }
-          }
-        });
-        const mergedRates = Array.from(rateMap.values());
+        // Intelligently merge material rates: deduplicate canonical room + material/code, keeping latest rate
+        const rawRates = [
+          ...(Array.isArray(existing.material_rates) ? existing.material_rates : []),
+          ...(Array.isArray(rc.material_rates) ? rc.material_rates : []),
+        ];
+        const mergedRates = deduplicateMaterialRates(rawRates, mergedSites);
         const tLocal = new Date(existing.updated_at || existing.created_at || 0).getTime();
         const tRemote = new Date(rc.updated_at || rc.created_at || 0).getTime();
         const base = tRemote >= tLocal ? { ...existing, ...rc } : { ...rc, ...existing };

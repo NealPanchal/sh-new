@@ -4,7 +4,7 @@
  */
 
 import { Challan, BusinessProfile, ChallanItem, CustomerMaterialRate, Quotation } from '@/types';
-import { getWhatsAppNumber, formatDateIndian, cleanChallanItemDescription } from '@/lib/utils';
+import { getWhatsAppNumber, formatDateIndian, cleanChallanItemDescription, resolveSiteInchargeDetails } from '@/lib/utils';
 import { downloadChallanPDF, getChallanPDFBlob } from '@/lib/pdf';
 
 interface ShareOptions {
@@ -264,6 +264,14 @@ export function generateBillShareMessage(
     `Here is your *${businessName} Decor Studio Delivery Bill / Memo*.\n` +
     `*Memo No:* ${memoNo}\n` +
     `*Date:* ${formatDateIndian(challan.challan_date)}\n`;
+
+  const siteDetails = resolveSiteInchargeDetails(challan);
+  if (siteDetails.siteName) {
+    msg += `*Delivery Site:* ${siteDetails.siteName}\n`;
+  }
+  if (siteDetails.inchargeName || siteDetails.inchargePhone) {
+    msg += `*Site Incharge:* ${siteDetails.inchargeName || ''}${siteDetails.inchargePhone ? ` (${siteDetails.inchargePhone})` : ''}\n`;
+  }
 
   if (challan.items && challan.items.length > 0) {
     msg += `\n*Particulars:*\n`;

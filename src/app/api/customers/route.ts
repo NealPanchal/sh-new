@@ -3,6 +3,7 @@ import { getAuthenticatedSession } from '@/lib/server-auth';
 import { getAllCustomers, saveCustomers, saveCustomersAsync, recordAuditLog } from '@/lib/server-accounting';
 import { syncFromFirestoreIfCold } from '@/lib/server-storage';
 import { Customer } from '@/types';
+import { deduplicateMaterialRates } from '@/lib/utils';
 
 export async function GET(req: NextRequest) {
   const session = getAuthenticatedSession(req);
@@ -148,80 +149,10 @@ export async function POST(req: NextRequest) {
         const prevRates = existingIdx >= 0 && Array.isArray(customers[existingIdx].material_rates)
           ? customers[existingIdx].material_rates!
           : [];
-        if (!Array.isArray(material_rates)) return prevRates;
-        if (material_rates.length === 0) return prevRates;
+        if (!Array.isArray(material_rates)) return deduplicateMaterialRates(prevRates, sites);
+        if (material_rates.length === 0) return deduplicateMaterialRates(prevRates, sites);
 
-        const rateMap = new Map<string, any>();
-        const getRateKey = (mr: any) => {
-          const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
-          const raw = (mr.particulars || mr.material || mr.id || '').trim();
-          const cleanParticulars = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim().toLowerCase();
-          let r = (mr.room || 'general').trim().toLowerCase();
-          const bracketMatch = raw.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
-          if (bracketMatch && r === 'general') {
-            r = bracketMatch[1].trim().toLowerCase();
-          }
-          const cKey = (mr.code || '').trim().toLowerCase();
-          return `${siteKey}::${r}::${cleanParticulars}::${cKey}`;
-        };
-        prevRates.forEach((mr: any) => {
-          if (mr && (mr.particulars || mr.material || mr.rate)) {
-            const k = getRateKey(mr);
-            const raw = (mr.particulars || mr.material || '').trim();
-            const clean = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
-            let room = mr.room || 'General';
-            const bracketMatch = raw.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
-            if (bracketMatch && room === 'General') {
-              room = bracketMatch[1].trim();
-            }
-            rateMap.set(k, {
-              ...mr,
-              particulars: clean || mr.particulars,
-              material: clean || mr.material,
-              room,
-            });
-          }
-        });
-        material_rates.forEach((mr: any) => {
-          if (mr && (mr.particulars || mr.material || mr.rate)) {
-            const k = getRateKey(mr);
-            const prev = rateMap.get(k);
-            const raw = (mr.particulars || mr.material || '').trim();
-            const clean = raw.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
-            let incomingRoom = mr.room || 'General';
-            const bracketMatch = raw.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
-            if (bracketMatch && incomingRoom === 'General') {
-              incomingRoom = bracketMatch[1].trim();
-            }
-
-            if (!prev) {
-              rateMap.set(k, {
-                ...mr,
-                particulars: clean || mr.particulars,
-                material: clean || mr.material,
-                room: incomingRoom,
-              });
-            } else {
-              const preferredRoom =
-                (prev.room && prev.room !== 'General')
-                  ? prev.room
-                  : (incomingRoom && incomingRoom !== 'General')
-                  ? incomingRoom
-                  : 'General';
-              rateMap.set(k, {
-                ...prev,
-                ...mr,
-                particulars: clean || mr.particulars || prev.particulars,
-                material: clean || mr.material || prev.material,
-                company_name: mr.company_name || prev.company_name || 'Showhouse',
-                rate: Number(mr.rate) || Number(prev.rate) || 0,
-                room: preferredRoom,
-                code: mr.code || prev.code || '',
-              });
-            }
-          }
-        });
-        return Array.from(rateMap.values());
+        return deduplicateMaterialRates([...prevRates, ...material_rates], sites);
       })(),
       is_active: true,
       created_at: existingIdx >= 0 ? customers[existingIdx].created_at : now,

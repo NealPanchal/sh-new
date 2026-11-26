@@ -24,7 +24,7 @@ import {
   ExternalLink,
   Eye,
 } from 'lucide-react';
-import { formatPhone, formatDateIndian, cn } from '@/lib/utils';
+import { formatPhone, formatDateIndian, cn, deduplicateMaterialRates } from '@/lib/utils';
 import { CustomerFormModal } from '@/components/customers/customer-form-modal';
 import { QuotationModal } from '@/components/quotations/quotation-modal';
 import { QuotationViewModal } from '@/components/quotations/quotation-view-modal';
@@ -110,45 +110,17 @@ export default function CustomerDetailPage() {
   }, [customerId]);
 
   const materialRates: CustomerMaterialRate[] = useMemo(() => {
-    const raw = Array.isArray(customer?.material_rates) ? customer.material_rates : [];
-    if (raw.length === 0) return [];
-
-    const map = new Map<string, CustomerMaterialRate>();
-    const getKey = (mr: CustomerMaterialRate) => {
-      const sKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
-      const rKey = (mr.room || 'general').trim().toLowerCase();
-      const rawPart = (mr.particulars || mr.material || '').trim();
-      const cleanParticulars = rawPart.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim().toLowerCase();
-      const cKey = (mr.code || '').trim().toLowerCase();
-      return `${sKey}::${rKey}::${cleanParticulars}::${cKey}`;
-    };
-
-    raw.forEach((mr) => {
-      const key = getKey(mr);
-      const rawPart = (mr.particulars || mr.material || '').trim();
-      const cleanParticulars = rawPart.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
-      let room = mr.room || 'General';
-      const bracketMatch = rawPart.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
-      if (bracketMatch && room === 'General') {
-        room = bracketMatch[1].trim();
-      }
-
-      map.set(key, {
-        ...mr,
-        particulars: (cleanParticulars || mr.particulars || mr.material || undefined) as string | undefined,
-        material: cleanParticulars || mr.material || mr.particulars || undefined,
-        room,
-      });
-    });
-
-    return Array.from(map.values());
-  }, [customer?.material_rates]);
+    return deduplicateMaterialRates(customer?.material_rates, customer?.sites);
+  }, [customer?.material_rates, customer?.sites]);
 
   const displayedRates: CustomerMaterialRate[] = useMemo(() => {
     if (activeSiteFilter === 'all') return materialRates;
-    return materialRates.filter(
-      (r) => r.site_name === activeSiteFilter || r.site_id === activeSiteFilter || (!r.site_name && activeSiteFilter === 'all')
-    );
+    const norm = (s?: string | null) => (s || '').toLowerCase().replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').trim();
+    const filterNorm = norm(activeSiteFilter);
+    return materialRates.filter((r) => {
+      const siteNorm = norm(r.site_name || r.site_id);
+      return siteNorm === filterNorm || r.site_id === activeSiteFilter || (!r.site_name && activeSiteFilter === 'all');
+    });
   }, [materialRates, activeSiteFilter]);
 
   // Multiple Sites derivation
@@ -827,9 +799,12 @@ export default function CustomerDetailPage() {
                   All Materials ({materialRates.length})
                 </button>
                 {customerSites.map((site) => {
-                  const siteCount = materialRates.filter(
-                    (r) => r.site_name === site.site_name || r.site_id === site.id
-                  ).length;
+                  const norm = (s?: string | null) => (s || '').toLowerCase().replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').trim();
+                  const targetSiteNorm = norm(site.site_name);
+                  const siteCount = materialRates.filter((r) => {
+                    const rSiteNorm = norm(r.site_name || r.site_id);
+                    return rSiteNorm === targetSiteNorm || r.site_id === site.id;
+                  }).length;
                   return (
                     <button
                       key={site.id}

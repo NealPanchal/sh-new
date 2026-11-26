@@ -463,4 +463,162 @@ export function extractItemOfficeDetails(
   };
 }
 
+/**
+ * Resolves site incharge name, phone, and canonical site name for a challan or quotation.
+ * Handles embedded phone numbers like "SANDEEP C - 9930388381" or "Sandeep (9930388381)".
+ */
+export function resolveSiteInchargeDetails(
+  challan: any,
+  customers?: any[] | null
+): { siteName?: string; inchargeName?: string; inchargePhone?: string } {
+  if (!challan) return {};
+
+  let inchargeName = (challan.site_incharge || challan.site_contact_person || challan.contact_person || '').trim();
+  let inchargePhone = (challan.site_incharge_phone || challan.site_contact_phone || challan.contact_phone || '').trim();
+  let siteName = (challan.site_name || '').trim();
+
+  if (customers && customers.length > 0) {
+    const cust = customers.find(
+      (c) =>
+        c.id === challan.customer_id ||
+        (c.name && challan.customer_name && c.name.trim().toLowerCase() === challan.customer_name.trim().toLowerCase()) ||
+        (c.business_name && challan.customer_name && c.business_name.trim().toLowerCase() === challan.customer_name.trim().toLowerCase())
+    );
+
+    if (cust && Array.isArray(cust.sites) && cust.sites.length > 0) {
+      const norm = (s?: string | null) => (s || '').toLowerCase().replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').trim();
+      const targetSiteNorm = norm(challan.site_name);
+      const targetAddrNorm = norm(challan.delivery_address);
+
+      const matchedSite =
+        cust.sites.find((s: any) => s.id && challan.site_id && s.id === challan.site_id) ||
+        cust.sites.find((s: any) => s.site_name && targetSiteNorm && norm(s.site_name) === targetSiteNorm) ||
+        cust.sites.find((s: any) => s.site_address && targetAddrNorm && norm(s.site_address) === targetAddrNorm) ||
+        (cust.sites.length === 1 ? cust.sites[0] : undefined);
+
+      if (matchedSite) {
+        if (!siteName && matchedSite.site_name) {
+          siteName = matchedSite.site_name;
+        }
+        if (!inchargeName) {
+          inchargeName = (matchedSite.contact_person || matchedSite.site_incharge || matchedSite.incharge || '').trim();
+        }
+        if (!inchargePhone) {
+          inchargePhone = (matchedSite.phone || matchedSite.contact_phone || matchedSite.incharge_phone || '').trim();
+        }
+      }
+    }
+  }
+
+  // Extract phone if embedded in inchargeName: e.g. "SANDEEP C - 9930388381" or "Sandeep chandrakant (9930388381)"
+  if (inchargeName && !inchargePhone) {
+    const phoneMatch = inchargeName.match(/(?:\+?91[\s-]?)?[6-9]\d{9}/);
+    if (phoneMatch) {
+      inchargePhone = phoneMatch[0].trim();
+      const cleaned = inchargeName
+        .replace(phoneMatch[0], '')
+        .replace(/[()\-–—:]/g, '')
+        .trim();
+      if (cleaned) {
+        inchargeName = cleaned;
+      }
+    }
+  }
+
+  return {
+    siteName: siteName || undefined,
+    inchargeName: inchargeName || undefined,
+    inchargePhone: inchargePhone || undefined,
+  };
+}
+
+/**
+ * Deduplicates customer material rates so identical room + code / particulars for the same site
+ * never produce double entries (e.g. 7 selections turning into 14).
+ */
+export function deduplicateMaterialRates<T extends {
+  id?: string;
+  site_id?: string | null;
+  site_name?: string | null;
+  room?: string | null;
+  particulars?: string | null;
+  material?: string | null;
+  code?: string | null;
+  company_name?: string | null;
+  rate?: number | string | null;
+}>(rates: T[] | null | undefined, sites?: Array<{ id?: string; site_name?: string }> | null): T[] {
+  if (!Array.isArray(rates) || rates.length === 0) return [];
+
+  const normSite = (s?: string | null) => (s || '').toLowerCase().replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').trim();
+  const normCode = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const map = new Map<string, T>();
+
+  rates.forEach((mr) => {
+    if (!mr) return;
+
+    // Resolve canonical site key
+    let siteKey = normSite(mr.site_name || mr.site_id);
+    if (sites && sites.length > 0) {
+      const matched =
+        sites.find((s) => s.id && mr.site_id && s.id === mr.site_id) ||
+        sites.find((s) => s.site_name && normSite(s.site_name) === siteKey);
+      if (matched && matched.site_name) {
+        siteKey = normSite(matched.site_name);
+      }
+    }
+
+    // Room
+    let room = (mr.room || '').trim();
+    const rawPart = (mr.particulars || mr.material || '').trim();
+    if (!room || room.toLowerCase() === 'general') {
+      const bracketMatch = rawPart.match(/^\s*\[\s*([^\]]+?)\s*\]\s*/);
+      if (bracketMatch) {
+        room = bracketMatch[1].trim();
+      }
+    }
+    const roomKey = (room || 'general').toLowerCase().trim();
+
+    // Clean particulars (strip room bracket if any)
+    const cleanParticulars = rawPart.replace(/^\s*\[\s*([^\]]+?)\s*\]\s*/, '').trim();
+    const partKey = cleanParticulars.toLowerCase().replace(/\s+/g, ' ');
+
+    // Code
+    const codeKey = normCode(mr.code);
+
+    // Primary unique identity
+    const key = codeKey
+      ? `${siteKey}::${roomKey}::code:${codeKey}`
+      : `${siteKey}::${roomKey}::part:${partKey}`;
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, {
+        ...mr,
+        room: room || 'General',
+        particulars: cleanParticulars || mr.particulars || mr.material || '',
+        material: cleanParticulars || mr.material || mr.particulars || '',
+      });
+    } else {
+      // Merge keeping the non-empty particulars, company brand, and valid rate
+      const preferredRate = Number(mr.rate) || Number(existing.rate) || 0;
+      const preferredCompany = mr.company_name || existing.company_name || '';
+      const preferredCode = mr.code || existing.code || '';
+      map.set(key, {
+        ...existing,
+        ...mr,
+        id: existing.id || mr.id,
+        room: (existing.room && existing.room !== 'General') ? existing.room : (room || 'General'),
+        particulars: cleanParticulars || existing.particulars || mr.particulars || '',
+        material: cleanParticulars || existing.material || mr.material || '',
+        company_name: preferredCompany,
+        code: preferredCode,
+        rate: preferredRate as any,
+      });
+    }
+  });
+
+  return Array.from(map.values());
+}
+
 

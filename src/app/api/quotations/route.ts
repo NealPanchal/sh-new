@@ -4,6 +4,7 @@ import { getAllQuotations, saveQuotationsAsync, getAllCustomers } from '@/lib/se
 import { syncFromFirestoreIfCold, invalidateDataCache } from '@/lib/server-storage';
 import { deleteDocFromFirestoreRest } from '@/lib/server-firestore';
 import { Quotation } from '@/types';
+import { deduplicateMaterialRates } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -244,7 +245,7 @@ export async function POST(req: NextRequest) {
 
         allCusts[cIdx] = {
           ...cust,
-          material_rates: Array.from(rateMap.values()),
+          material_rates: deduplicateMaterialRates(Array.from(rateMap.values()), cust.sites),
           updated_at: new Date().toISOString(),
         };
         custsChanged = true;

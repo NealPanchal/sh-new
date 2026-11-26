@@ -17,7 +17,7 @@ import {
   QuotationItem,
   QuotationStatus,
 } from '@/types';
-import { generateId, getFinancialYear, generateChallanNumber, getTodayISO } from '@/lib/utils';
+import { generateId, getFinancialYear, generateChallanNumber, getTodayISO, deduplicateMaterialRates } from '@/lib/utils';
 import { getNextStaffPONumber } from '@/lib/po-sequence';
 import {
   saveChallanToFirebase,
@@ -341,8 +341,8 @@ export function updateCustomer(id: string, data: Partial<Customer>): Customer | 
     ? data.sites
     : state.customers[idx].sites;
 
-  // When updating material rates, never discard existing ones if partial
-  let material_rates = data.material_rates !== undefined ? data.material_rates : state.customers[idx].material_rates;
+  // When updating material rates, deduplicate canonical rates strictly
+  let material_rates = data.material_rates !== undefined ? deduplicateMaterialRates(data.material_rates, sites) : state.customers[idx].material_rates;
 
   state.customers[idx] = {
     ...state.customers[idx],
@@ -389,39 +389,12 @@ export function syncCustomersFromFirebase(remoteCustomers: Customer[]): void {
           ? existing.sites
           : [];
 
-      // Union-merge material rates so materials are NEVER dropped
-      const rateMap = new Map<string, any>();
-      const getRateKey = (mr: any) => {
-        if (mr.id) return mr.id;
-        const siteKey = (mr.site_name || mr.site_id || '').trim().toLowerCase();
-        const roomKey = (mr.room || 'general').trim().toLowerCase();
-        const matKey = (mr.particulars || mr.material || '').trim().toLowerCase();
-        const codeKey = (mr.code || '').trim().toLowerCase();
-        return `${siteKey}::${roomKey}::${matKey}::${codeKey}`;
-      };
-      (Array.isArray(existing.material_rates) ? existing.material_rates : []).forEach((mr: any) => {
-        if (mr && (mr.particulars || mr.material || mr.rate)) rateMap.set(getRateKey(mr), mr);
-      });
-      (Array.isArray(rc.material_rates) ? rc.material_rates : []).forEach((mr: any) => {
-        if (mr && (mr.particulars || mr.material || mr.rate)) {
-          const k = getRateKey(mr);
-          const prev = rateMap.get(k);
-          if (!prev) {
-            rateMap.set(k, mr);
-          } else {
-            rateMap.set(k, {
-              ...prev,
-              ...mr,
-              particulars: mr.particulars || prev.particulars || mr.material || prev.material,
-              material: mr.material || prev.material || mr.particulars || prev.particulars,
-              company_name: mr.company_name || prev.company_name || '',
-              rate: Number(mr.rate) || Number(prev.rate) || 0,
-              room: mr.room || prev.room || 'General',
-            });
-          }
-        }
-      });
-      const mergedRates = Array.from(rateMap.values());
+      // Deduplicate material rates across local and remote so items are never duplicated
+      const rawCombinedRates = [
+        ...(Array.isArray(existing.material_rates) ? existing.material_rates : []),
+        ...(Array.isArray(rc.material_rates) ? rc.material_rates : []),
+      ];
+      const mergedRates = deduplicateMaterialRates(rawCombinedRates, mergedSites);
 
       if (tRemote >= tLocal) {
         map.set(rc.id, {

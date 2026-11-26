@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { Challan, BusinessProfile } from '@/types';
-import { formatPhone, cleanChallanItemDescription } from '@/lib/utils';
+import { formatPhone, cleanChallanItemDescription, resolveSiteInchargeDetails } from '@/lib/utils';
+import { useApp } from '@/lib/context';
 import { MapPin, Phone, Mail } from 'lucide-react';
 import { PaidRubberStamp } from '@/components/accounting/paid-rubber-stamp';
 
@@ -19,6 +20,9 @@ export function DeliveryMemoBill({
   memoNumber,
   confirmBy,
 }: DeliveryMemoBillProps) {
+  const { customers } = useApp();
+  const { siteName, inchargeName, inchargePhone } = resolveSiteInchargeDetails(challan, customers);
+
   // Memo number defaults to reference_number or last 4 digits of challan sequence
   const displayMemoNo =
     memoNumber ||
@@ -170,14 +174,55 @@ export function DeliveryMemoBill({
             <span className="font-semibold text-surface-600 shrink-0 text-[11px]">
               Address:
             </span>
-            <div className="flex-1 border-b border-surface-400 text-surface-800 pb-0.5 px-1 truncate leading-tight">
-              {challan.delivery_address ||
-                challan.customer_address ||
-                '314, 3rd floor, Blue Nile Commercial Complex, Thane (w).'}
+            <div className="flex-1 border-b border-surface-400 text-surface-800 pb-0.5 px-1 truncate leading-tight flex items-center justify-between gap-1">
+              <span className="truncate">
+                {challan.delivery_address ||
+                  challan.customer_address ||
+                  '314, 3rd floor, Blue Nile Commercial Complex, Thane (w).'}
+              </span>
+              {(siteName || challan.site_name) && (
+                <span className="text-[10px] font-bold px-1.5 py-0.2 bg-amber-50 text-amber-900 border border-amber-200 rounded shrink-0">
+                  📍 {siteName || challan.site_name}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Row 3: Mobile No., Date, Memo No. */}
+          {/* Row 3: Site Incharge & Contact Details */}
+          {(inchargeName || inchargePhone || siteName || challan.site_name) && (
+            <div className="grid grid-cols-12 gap-2 items-baseline">
+              <div className="col-span-7 flex items-baseline gap-1">
+                <span className="font-semibold text-surface-600 shrink-0 text-[11px]">
+                  Site Incharge:
+                </span>
+                <div className="flex-1 border-b border-surface-400 font-bold text-surface-900 pb-0.5 px-1 truncate">
+                  {inchargeName ? (
+                    <span>
+                      {inchargeName}
+                      {(siteName || challan.site_name) && (
+                        <span className="font-normal text-surface-500 text-[10px] ml-1">
+                          ({siteName || challan.site_name})
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    siteName || challan.site_name || '—'
+                  )}
+                </div>
+              </div>
+
+              <div className="col-span-5 flex items-baseline gap-1">
+                <span className="font-semibold text-surface-600 shrink-0 text-[11px]">
+                  Incharge No.:
+                </span>
+                <div className="flex-1 border-b border-surface-400 font-bold text-blue-900 pb-0.5 px-1 truncate font-mono text-[11px]">
+                  {inchargePhone ? formatPhone(inchargePhone) : '—'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Row 4: Mobile No., Date, Memo No. */}
           <div className="grid grid-cols-12 gap-2 items-baseline pt-0.5">
             {/* Mobile */}
             <div className="col-span-5 flex items-baseline gap-1">

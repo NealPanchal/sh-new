@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { exportCustomerRatesToPDF } from '@/lib/pdf-rates';
 import { shareCustomerRatesViaWhatsApp } from '@/lib/whatsapp';
+import { deduplicateMaterialRates } from '@/lib/utils';
 
 interface MaterialRateModalProps {
   customer: Customer;
@@ -66,7 +67,7 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
     : [];
 
   const initialRates: CustomerMaterialRate[] = Array.isArray(customer.material_rates)
-    ? [...customer.material_rates]
+    ? deduplicateMaterialRates(customer.material_rates, customer.sites)
     : [];
 
   const [rates, setRates] = useState<CustomerMaterialRate[]>(initialRates);
@@ -194,15 +195,16 @@ export function MaterialRateModal({ customer, onClose, onSaved }: MaterialRateMo
 
   const handleSave = () => {
     const valid = rates.filter((r) => r.particulars?.trim() || r.code?.trim() || r.rate > 0 || r.room?.trim());
+    const deduped = deduplicateMaterialRates(valid, sites);
     const tc = transportCharges && !isNaN(parseFloat(transportCharges)) ? parseFloat(transportCharges) : null;
     const sc = selectionCharges && !isNaN(parseFloat(selectionCharges)) ? parseFloat(selectionCharges) : null;
     updateCustomer(customer.id, {
-      material_rates: valid,
+      material_rates: deduped,
       transportation_charges: tc,
       selection_charges: sc,
     });
-    showToast(`Saved ${valid.length} agreed material rate(s) successfully!`, 'success');
-    if (onSaved) onSaved(valid);
+    showToast(`Saved ${deduped.length} agreed material rate(s) successfully!`, 'success');
+    if (onSaved) onSaved(deduped);
     onClose();
   };
 
